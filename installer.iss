@@ -5,7 +5,7 @@
   #define AppBuild "dist\LumenRAW"
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.5.0"
+  #define AppVersion "1.5.1"
 #endif
 #define PackageDir "v" + StringChange(AppVersion, ".", "")
 
@@ -37,11 +37,28 @@ CreateUninstallRegKey=not PortableMode
 UsePreviousAppDir=not PortableMode
 
 [Languages]
+; 1.5.1: the same languages as the editor's 语言 / Language menu.  The choice is written to
+; settings.ini, so the editor starts in it.  Names: zhcn / en as in earlier installers (their
+; previous choice stays preselected on upgrade); the editor maps zhcn / zhtw to zh_CN / zh_TW.
 Name: "zhcn"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+Name: "zhtw"; MessagesFile: "compiler:Languages\ChineseTraditional.isl"
 Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "ja"; MessagesFile: "compiler:Languages\Japanese.isl"
+Name: "ko"; MessagesFile: "compiler:Languages\Korean.isl"
+Name: "de"; MessagesFile: "compiler:Languages\German.isl"
+Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
+Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
+Name: "ru"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "快捷方式"; Flags: unchecked; Check: not PortableMode
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; Check: not PortableMode
+
+[Dirs]
+Name: "{localappdata}\LUMEN RAW"; Flags: uninsneveruninstall; Check: not PortableMode
+
+[INI]
+; Read by lumen/i18n.py; the editor's language menu writes the same key.
+Filename: "{localappdata}\LUMEN RAW\settings.ini"; Section: "General"; Key: "language"; String: "{language}"; Check: not PortableMode
 
 [Files]
 Source: "{#AppBuild}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -59,7 +76,7 @@ Name: "{group}\LUMEN RAW"; Filename: "{app}\LumenRAW.exe"; Check: not PortableMo
 Name: "{userdesktop}\LUMEN RAW"; Filename: "{app}\LumenRAW.exe"; Tasks: desktopicon; Check: not PortableMode
 
 [Run]
-Filename: "{app}\LumenRAW.exe"; Description: "启动 LUMEN RAW"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\LumenRAW.exe"; Description: "{cm:LaunchProgram,LUMEN RAW}"; Flags: nowait postinstall skipifsilent
 
 [Code]
 function PortableMode: Boolean;

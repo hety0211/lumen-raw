@@ -20,12 +20,13 @@ LUMEN RAW 的源码许可不替代依赖许可。便携包保留动态库，Qt /
 | SkySeg 天空模型 | MIT，https://github.com/xiongzhu666/Sky-Segmentation-and-Post-processing；ONNX 发布 https://huggingface.co/JianyuanWang/skyseg；assets/SkySeg-LICENSE.txt |
 | TorchVision DeepLabV3 MobileNetV3 人物模型 | BSD-3-Clause，https://github.com/pytorch/vision；assets/TorchVision-LICENSE.txt |
 | U-2-Net / U2NetP 显著前景模型 | Apache-2.0，https://github.com/xuebinqin/U-2-Net；ONNX 发布 https://github.com/danielgatis/rembg/releases/tag/v0.0.0；assets/U2NET-LICENSE.txt |
-| Inno Setup 安装程序 | Inno Setup 自身许可，允许商业与非商业使用；https://jrsoftware.org/；licenses/Inno-Setup-LICENSE.txt |
+| Inno Setup 安装程序（含 1.5.1 起使用的简体中文、繁体中文、日语、韩语、德语、法语、西班牙语、俄语安装界面翻译） | Inno Setup 自身许可，允许商业与非商业使用；https://jrsoftware.org/；licenses/Inno-Setup-LICENSE.txt |
 | ExifTool 13.59 与随附 Perl | Perl 相同条款（Artistic / GPL）及依赖自身许可；https://exiftool.org/；完整许可在 assets/exiftool/exiftool_files/ |
 | MiDaS v2.1 small 相对深度模型 | MIT，Intel ISL，https://github.com/isl-org/MiDaS；assets/MiDaS-LICENSE.txt |
 | KAIR / FFDNet 彩色去杂色 | MIT，Kai Zhang，https://github.com/cszn/KAIR；assets/KAIR-LICENSE.txt |
 | DRUNet color | MIT，Kai Zhang，https://github.com/cszn/DPIR；assets/DRUNet-LICENSE.txt |
 | NAFNet SIDD | MIT，Megvii，https://github.com/megvii-research/NAFNet；assets/NAFNet-LICENSE.txt |
+| lensfun 镜头数据库（1.5.1，镜头校正：畸变、横向色差、暗角） | CC BY-SA 3.0，lensfun 项目，https://lensfun.github.io/ ；原样收录于 assets/lensfun/db（提交 bbd4332），许可见 assets/lensfun/COPYING.CC_BY-SA_3.0；未包含或链接 lensfun 程序库（LGPL-3.0），校正模型由 lumen/lens.py 实现 |
 | SenseVoice-Small 语音识别模型（1.5.0） | FunASR 模型开源协议 1.1，FunAudioLLM / 阿里巴巴集团，https://huggingface.co/FunAudioLLM/SenseVoiceSmall；ONNX 导出 k2-fsa / sherpa-onnx（Apache-2.0），https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17；assets/SenseVoice-LICENSE.txt |
 | 可选 CuPy | MIT，https://cupy.dev/ |
 | PyObjC（macOS 版，调用 Metal） | MIT，https://github.com/ronaldoussoren/pyobjc |

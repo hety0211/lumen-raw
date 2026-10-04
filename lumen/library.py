@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
 from . import model, engine, host
 from .scheduler import Activity as A
 from .widgets import qimage
+from .i18n import tr
 
 
 def new_document(path):
@@ -66,15 +67,15 @@ class LibraryMixin:
         layout.setContentsMargins(14,6,14,6)
         layout.setSpacing(4)
         row=QHBoxLayout()
-        self.library_count=QLabel('选片集 · 0 张')
+        self.library_count=QLabel(tr('选片集 · 0 张'))
         row.addWidget(self.library_count)
-        row.addWidget(self.button('＋ 导入多张',self.open_file))
-        row.addWidget(self.button('保存选片集',self.save_album))
+        row.addWidget(self.button(tr('＋ 导入多张'),self.open_file))
+        row.addWidget(self.button(tr('保存选片集'),self.save_album))
         row.addStretch()
-        tip=QLabel(f'{host.COMMAND} / Shift 多选 · 单击切换照片')
+        tip=QLabel(tr('{COMMAND} / Shift 多选 · 单击切换照片', COMMAND=host.COMMAND))
         tip.setObjectName('subtle')
         row.addWidget(tip)
-        self.sync_button=self.button('将当前调色套用到选中照片',self.sync_look,True)
+        self.sync_button=self.button(tr('将当前调色套用到选中照片'),self.sync_look,True)
         row.addWidget(self.sync_button)
         layout.addLayout(row)
         self.filmstrip=QListWidget()
@@ -152,15 +153,15 @@ class LibraryMixin:
     def film_context_menu(self):
         menu=QMenu(self);count=len(self.selected_paths())
         busy=self.work.busy()
-        remove=menu.addAction('删除（从图集移除）',self.remove_selected)
+        remove=menu.addAction(tr('删除（从图集移除）'),self.remove_selected)
         remove.setEnabled(count>0 and not busy and not self.jobs)
-        group=menu.addMenu('合成')
+        group=menu.addMenu(tr('合成'))
         from .merge import METHODS
         for kind,name in METHODS.items():
             action=group.addAction(name+'…',lambda checked=False,key=kind:self.open_merge(key))
             action.setEnabled(2<=count<=32 and not busy)
         menu.addSeparator()
-        export=menu.addAction(f'批量导出{f" {count} 张" if count>1 else ""}…',self.batch_export)
+        export=menu.addAction(tr('批量导出 {count} 张…',count=count) if count>1 else tr('批量导出…'),self.batch_export)
         export.setEnabled(count>0 and not busy)
         return menu
 
@@ -186,8 +187,8 @@ class LibraryMixin:
         self.work.begin(A.EXPORTING)
         self.cancel_detail()
         self.export_cancel=threading.Event()
-        self.export_dialog=QProgressDialog('正在准备批量导出…','取消批量导出',0,100,self)
-        self.export_dialog.setWindowTitle('批量导出')
+        self.export_dialog=QProgressDialog(tr('正在准备批量导出…'),tr('取消批量导出'),0,100,self)
+        self.export_dialog.setWindowTitle(tr('批量导出'))
         self.export_dialog.setAutoClose(False)
         self.export_dialog.setAutoReset(False)
         self.export_dialog.setMinimumDuration(0)
@@ -196,7 +197,7 @@ class LibraryMixin:
         self.export_dialog.show()
         self.export_button.setEnabled(False)
         self.open_button.setEnabled(False)
-        self.statusBar().showMessage(f'正在批量导出 {len(items)} 张照片…')
+        self.statusBar().showMessage(tr('正在批量导出 {n_items} 张照片…', n_items=len(items)))
         cancel=self.export_cancel
         def finish():
             self.export_dialog.reset()
@@ -208,16 +209,16 @@ class LibraryMixin:
             done=[r for r in results if r[1]]
             failed=[r for r in results if not r[1]]
             skipped=len(items)-len(results)
-            text=f'已导出 {len(done)} 张到：\n{options["folder"]}'
+            text=tr('已导出 {n_done} 张到：\n{folder}', n_done=len(done), folder=options["folder"])
             if failed:
-                text+=f'\n\n{len(failed)} 张未能导出：\n'+'\n'.join(f'{Path(p).name}：{e}' for p,_,e in failed[:8])
+                text+=tr('\n\n{n_failed} 张未能导出：\n', n_failed=len(failed))+'\n'.join(tr('{name}：{e}', name=Path(p).name, e=e) for p,_,e in failed[:8])
             if skipped:
-                text+=f'\n\n已取消，其余 {skipped} 张未导出。'
-            self.statusBar().showMessage(f'批量导出完成 · {len(done)} 张成功'+(f' · {len(failed)} 张失败' if failed else '')+(f' · {skipped} 张已取消' if skipped else ''))
-            QMessageBox.information(self,'批量导出',text)
+                text+=tr('\n\n已取消，其余 {skipped} 张未导出。', skipped=skipped)
+            self.statusBar().showMessage(tr('批量导出完成 · {n_done} 张成功', n_done=len(done))+(tr(' · {n_failed} 张失败', n_failed=len(failed)) if failed else '')+(tr(' · {skipped} 张已取消', skipped=skipped) if skipped else ''))
+            QMessageBox.information(self,tr('批量导出'),text)
         def failed(text):
             finish()
-            self.error('批量导出失败：\n'+text)
+            self.error(tr('批量导出失败：\n')+text)
         self.job(lambda:run(items,options,backend,self.export_progress.emit,cancel),success,failed)
 
     def clear_current_photo(self):
@@ -227,7 +228,7 @@ class LibraryMixin:
         self.current_mask=-1;self.clear_clone_source();self.pending=False
         self.canvas.image=self.canvas.before=self.canvas.clipping=None;self.canvas.crop=None;self.canvas.set_overlay(None);self.canvas.update()
         self.histogram.hist=None;self.histogram.update();self.navigator.clear();self.navigator.setText('LUMEN / RAW');self.library_info.clear()
-        self.file_label.setText('尚未打开原片');self.file_label.setToolTip('');self.clear_preset_selection();self.refresh()
+        self.file_label.setText(tr('尚未打开原片'));self.file_label.setToolTip('');self.clear_preset_selection();self.refresh()
 
     def remove_selected(self):
         if self.work.busy() or self.jobs:return
@@ -236,7 +237,7 @@ class LibraryMixin:
         self.stash_document()
         count=sum(dirty(self.documents[p]) for p in paths)
         if count:
-            answer=QMessageBox.question(self,'从图集移除',f'所选照片中 {count} 张有未保存编辑。是否先保存选片集？\n磁盘原片不会删除。',QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel)
+            answer=QMessageBox.question(self,tr('从图集移除'),tr('所选照片中 {count} 张有未保存编辑。是否先保存选片集？\n磁盘原片不会删除。', count=count),QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel)
             if answer==QMessageBox.StandardButton.Cancel:return
             if answer==QMessageBox.StandardButton.Save and not self.save_album():return
         removing_current=self.source_path in paths
@@ -246,11 +247,11 @@ class LibraryMixin:
             if item:self.filmstrip.takeItem(self.filmstrip.row(item))
             self.documents.pop(path,None)
         self.thumbnail_queue=[p for p in self.thumbnail_queue if p not in paths]
-        self.library_structure_dirty=True;self.state_label.setText('图集列表尚未保存');self.update_library_status();self.refresh_access()
+        self.library_structure_dirty=True;self.state_label.setText(tr('图集列表尚未保存'));self.update_library_status();self.refresh_access()
         if removing_current:
             available=next((p for p in self.documents if Path(p).is_file()),None)
             if available:self.open_path(available)
-        self.statusBar().showMessage(f'已从图集移除 {len(paths)} 张 · 磁盘原片保留')
+        self.statusBar().showMessage(tr('已从图集移除 {n_paths} 张 · 磁盘原片保留', n_paths=len(paths)))
 
     def stash_document(self):
         if not self.source_path or self.source is None:
@@ -282,7 +283,7 @@ class LibraryMixin:
     def update_library_status(self):
         if not hasattr(self,'filmstrip'):return
         count=len(self.filmstrip.selectedItems())
-        self.library_count.setText(f'选片集 · {len(self.documents)} 张 / 已选 {count} 张')
+        self.library_count.setText(tr('选片集 · {n_items} 张 / 已选 {count} 张', n_items=len(self.documents), count=count))
         self.sync_button.setEnabled(self.source is not None and count>0 and not self.loading)
 
     def sync_look(self):
@@ -297,17 +298,18 @@ class LibraryMixin:
             document=self.documents[path]
             before=copy.deepcopy(document['edits'])
             document['edits']=model.apply_look(before,look)
+            self.sync_lens(document['edits'])
             history=document.setdefault('history',model.History(before))
             history.push(document['edits'])
             item.setText(Path(path).name+' •')
             count+=1
-        self.statusBar().showMessage(f'已套用到 {count} 张照片 · 保留各自裁切、蒙版、修复与相机显影基准')
+        self.statusBar().showMessage(tr('已套用到 {count} 张照片 · 保留各自裁切、蒙版、修复与相机显影基准', count=count))
 
     def save_album(self,checked=False,path=None):
         self.stash_document()
         if not self.documents and not self.library_structure_dirty:return False
         if path is None:
-            path,_=QFileDialog.getSaveFileName(self,'保存全部照片的编辑',self.album_path or '旅行选片.lumenalbum','Lumen 选片集 (*.lumenalbum)')
+            path,_=QFileDialog.getSaveFileName(self,tr('保存全部照片的编辑'),self.album_path or tr('旅行选片.lumenalbum'),tr('Lumen 选片集 (*.lumenalbum)'))
         if not path:return False
         path=Path(path)
         if path.suffix.lower()!='.lumenalbum':path=path.with_suffix('.lumenalbum')
@@ -319,7 +321,7 @@ class LibraryMixin:
                 documents.append(dict(source=source,edits=model.validate(document['edits']),
                     snapshots=model.validate_snapshots(document['snapshots']),initialized=document['initialized']))
             data=json.dumps(dict(application='Lumen album',version=1,documents=documents),ensure_ascii=False)
-            if len(data.encode('utf-8'))>128*1024*1024:raise ValueError('选片集过大，请拆分保存。')
+            if len(data.encode('utf-8'))>128*1024*1024:raise ValueError(tr('选片集过大，请拆分保存。'))
             temp=path.with_suffix('.lumenalbum.tmp');temp.write_text(data,encoding='utf-8');temp.replace(path)
             self.album_path=str(path)
             self.library_structure_dirty=False
@@ -328,8 +330,8 @@ class LibraryMixin:
                 document['saved_snapshots']=copy.deepcopy(document['snapshots'])
             self.saved_edits=copy.deepcopy(self.edits)
             self.saved_snapshots=copy.deepcopy(self.snapshots)
-            self.state_label.setText('选片集已保存')
-            self.statusBar().showMessage('全部照片的编辑已保存 · '+str(path))
+            self.state_label.setText(tr('选片集已保存'))
+            self.statusBar().showMessage(tr('全部照片的编辑已保存 · ')+str(path))
             return True
         except Exception as exc:
             self.error(str(exc));return False
@@ -338,10 +340,10 @@ class LibraryMixin:
         if not self.confirm_close_library():return
         try:
             path=Path(path)
-            if path.stat().st_size>128*1024*1024:raise ValueError('选片集过大。')
+            if path.stat().st_size>128*1024*1024:raise ValueError(tr('选片集过大。'))
             data=json.loads(path.read_text(encoding='utf-8'))
             if data.get('application')!='Lumen album' or not 0<=len(data['documents'])<=2000:
-                raise ValueError('无效选片集。')
+                raise ValueError(tr('无效选片集。'))
             records={}
             for item in data['documents']:
                 source=str((path.parent/item['source']).resolve())
@@ -350,7 +352,7 @@ class LibraryMixin:
                 record['saved_edits']=copy.deepcopy(record['edits']);record['saved_snapshots']=copy.deepcopy(record['snapshots'])
                 records[source]=record
             available=[p for p in records if Path(p).exists()]
-            if records and not available:raise ValueError('选片集的原片均已移动或存储设备未连接。')
+            if records and not available:raise ValueError(tr('选片集的原片均已移动或存储设备未连接。'))
             self.source_path='';self.source=None
             self.documents={};self.filmstrip.clear();self.thumbnail_queue=[]
             self.add_documents(records)
@@ -365,8 +367,8 @@ class LibraryMixin:
         self.stash_document()
         count=sum(dirty(d) for d in self.documents.values())
         if not count and not self.library_structure_dirty:return True
-        message=f'{count} 张照片的编辑尚未保存。是否保存全部编辑为选片集？' if count else '图集照片列表有变化。是否保存选片集？'
-        answer=QMessageBox.question(self,'保存选片集',message,
+        message=tr('{count} 张照片的编辑尚未保存。是否保存全部编辑为选片集？', count=count) if count else tr('图集照片列表有变化。是否保存选片集？')
+        answer=QMessageBox.question(self,tr('保存选片集'),message,
             QMessageBox.StandardButton.Save|QMessageBox.StandardButton.Discard|QMessageBox.StandardButton.Cancel)
         if answer==QMessageBox.StandardButton.Save:return self.save_album()
         return answer==QMessageBox.StandardButton.Discard

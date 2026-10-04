@@ -18,9 +18,10 @@ from PySide6.QtCore import Qt,Signal,QPointF,QRectF
 from PySide6.QtGui import QPainter,QPainterPath,QPen,QColor
 from PySide6.QtWidgets import QWidget
 from .curves import IDENTITY,tone
+from .i18n import tr
 
 KEYS=('blacks','shadows','highlights','whites')
-LABELS=('黑色','暗部','亮部','白色')
+LABELS=(tr('黑色'),tr('暗部'),tr('亮部'),tr('白色'))
 #: Input tones the four sliders mainly describe; they decide which sliders a drag moves.
 ZONES=np.array([.08,.33,.67,.92])
 #: Gaussian falloff of a drag along the input tone axis.
@@ -171,7 +172,7 @@ class ExposureCurve(QWidget):
         self.drag_state=None;self.hover=None
         self.setFixedHeight(165)
         self.setMouseTracking(True)
-        self.setToolTip('在曲线任意位置上下拖动：该亮度附近平滑弯曲，黑色／暗部／亮部／白色随之联动。\n按住 Shift 拖动调整整体曝光。双击还原曲线。')
+        self.setToolTip(tr('在曲线任意位置上下拖动：该亮度附近平滑弯曲，黑色／暗部／亮部／白色随之联动。\n按住 Shift 拖动调整整体曝光。双击还原曲线。'))
 
     def area(self):return QRectF(18,12,self.width()-36,self.height()-42)
 

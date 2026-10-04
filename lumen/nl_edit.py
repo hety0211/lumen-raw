@@ -25,6 +25,7 @@ import urllib.request
 from pathlib import Path
 import numpy as np
 from . import model
+from .i18n import tr, N_
 
 # --------------------------------------------------------------------------- providers
 
@@ -34,19 +35,19 @@ from . import model
 PROVIDERS = {
     'ollama': ('Ollama', 'ollama', 'http://127.0.0.1:11434', '', True, 'json', 'ollama'),
     'lmstudio': ('LM Studio', 'openai', 'http://127.0.0.1:1234/v1', '', True, None, 'lmstudio'),
-    'llamacpp': ('llama.cpp（llama-server）', 'openai', 'http://127.0.0.1:8080/v1', '', True, 'json_object', 'llamacpp'),
-    'local': ('其他本地 OpenAI 兼容服务（vLLM、Jan、LocalAI…）', 'openai', 'http://127.0.0.1:8000/v1', '', True, None, 'template'),
+    'llamacpp': (N_('llama.cpp（llama-server）'), 'openai', 'http://127.0.0.1:8080/v1', '', True, 'json_object', 'llamacpp'),
+    'local': (N_('其他本地 OpenAI 兼容服务（vLLM、Jan、LocalAI…）'), 'openai', 'http://127.0.0.1:8000/v1', '', True, None, 'template'),
     'openai': ('OpenAI', 'openai', 'https://api.openai.com/v1', 'gpt-6-luna', False, 'json_object', 'openai'),
     'anthropic': ('Anthropic Claude', 'anthropic', 'https://api.anthropic.com', 'claude-opus-5-5', False, None, 'anthropic'),
     'gemini': ('Google Gemini', 'openai', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-3.8-flash', False, 'json_object', 'gemini'),
-    'deepseek': ('DeepSeek 深度求索', 'openai', 'https://api.deepseek.com', 'deepseek-flash', False, 'json_object', 'deepseek'),
-    'dashscope': ('阿里云百炼 · 通义千问', 'openai', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.7-flash', False, 'json_object', 'qwen'),
-    'moonshot': ('月之暗面 Kimi', 'openai', 'https://api.moonshot.cn/v1', 'kimi-k2.6', False, 'json_object', 'kimi'),
-    'zhipu': ('智谱 GLM', 'openai', 'https://open.bigmodel.cn/api/paas/v4', 'glm-5.3-flash', False, 'json_object', 'switch'),
-    'siliconflow': ('硅基流动 SiliconFlow', 'openai', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V4-Flash', False, 'json_object', 'budget'),
-    'volcengine': ('火山方舟 · 豆包', 'openai', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seed-2-0-lite-260428', False, 'json_object', 'ark'),
+    'deepseek': (N_('DeepSeek 深度求索'), 'openai', 'https://api.deepseek.com', 'deepseek-flash', False, 'json_object', 'deepseek'),
+    'dashscope': (N_('阿里云百炼 · 通义千问'), 'openai', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.7-flash', False, 'json_object', 'qwen'),
+    'moonshot': (N_('月之暗面 Kimi'), 'openai', 'https://api.moonshot.cn/v1', 'kimi-k2.6', False, 'json_object', 'kimi'),
+    'zhipu': (N_('智谱 GLM'), 'openai', 'https://open.bigmodel.cn/api/paas/v4', 'glm-5.3-flash', False, 'json_object', 'switch'),
+    'siliconflow': (N_('硅基流动 SiliconFlow'), 'openai', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V4-Flash', False, 'json_object', 'budget'),
+    'volcengine': (N_('火山方舟 · 豆包'), 'openai', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seed-2-0-lite-260428', False, 'json_object', 'ark'),
     'openrouter': ('OpenRouter', 'openai', 'https://openrouter.ai/api/v1', '', False, 'json_object', 'openrouter'),
-    'custom': ('自定义 OpenAI 兼容接口', 'openai', '', '', False, None, 'openai'),
+    'custom': (N_('自定义 OpenAI 兼容接口'), 'openai', '', '', False, None, 'openai'),
 }
 LOCAL_PROVIDERS = [k for k, v in PROVIDERS.items() if v[4]]
 CLOUD_PROVIDERS = [k for k, v in PROVIDERS.items() if not v[4]]
@@ -57,28 +58,29 @@ LEGACY = {'deepseek': ('https://api.deepseek.com/v1', 'deepseek-chat'), 'openai'
           'siliconflow': (None, 'Qwen/Qwen2.5-7B-Instruct'), 'volcengine': (None, '')}
 
 #: Thinking depth chosen in the settings; mapped per provider by ``thinking_request``.
-REASONING = {'default': '默认（由模型决定）', 'off': '关闭（最快、最省）', 'low': '低', 'medium': '中', 'high': '高', 'max': '最高'}
+REASONING = {'default': N_('默认（由模型决定）'), 'off': N_('关闭（最快、最省）'), 'low': N_('低'), 'medium': N_('中'),
+             'high': N_('高'), 'max': N_('最高')}
 _BUDGET = {'low': 1024, 'medium': 4096, 'high': 16384, 'max': 32768}
 THINKING_NOTES = {
-    'ollama': 'Ollama：关闭 = think:false；低 / 中 / 高 = think 档位（如 gpt-oss），模型不支持档位时改用默认。',
-    'lmstudio': 'LM Studio：关闭 = reasoning_effort none（qwen3 实测可关闭思考）；低 / 中 / 高 = reasoning_effort。',
-    'llamacpp': 'llama.cpp：关闭 = reasoning_effort none + enable_thinking false；其余 = reasoning_effort。',
-    'template': '关闭 = chat_template_kwargs.enable_thinking=false；其余 = reasoning_effort。',
-    'openai': 'reasoning_effort（关闭 = none；模型不支持时自动改用默认）。',
-    'anthropic': 'output_config.effort。当前 Claude 无法关闭思考，“关闭”按 low 处理；Opus 5.5 默认 medium。',
-    'gemini': 'reasoning_effort（关闭 = minimal，“最高”按 high）。',
-    'deepseek': 'thinking.type + reasoning_effort。DeepSeek 默认开启思考（high），只有 low / high / max 三档，“中”按 high。',
-    'qwen': 'enable_thinking + thinking_budget（低 1024 / 中 4096 / 高 16384 / 最高 32768 token）。开启思考时百炼不支持 JSON 模式，改由提示词约束。',
-    'budget': 'enable_thinking + thinking_budget（低 1024 / 中 4096 / 高 16384 / 最高 32768 token）。',
-    'kimi': 'kimi-k3 始终思考，用 reasoning_effort（low / high / max）；kimi-k2.x 用 thinking 开关。',
-    'switch': '智谱 thinking.type 开关：GLM 没有档位，低 / 中 / 高 / 最高都为开启。',
-    'ark': 'thinking.type + reasoning_effort（低 / 中 / 高，“最高”按 high）。',
-    'openrouter': 'reasoning.effort，由 OpenRouter 转换为各家参数。',
+    'ollama': N_('Ollama：关闭 = think:false；低 / 中 / 高 = think 档位（如 gpt-oss），模型不支持档位时改用默认。'),
+    'lmstudio': N_('LM Studio：关闭 = reasoning_effort none（qwen3 实测可关闭思考）；低 / 中 / 高 = reasoning_effort。'),
+    'llamacpp': N_('llama.cpp：关闭 = reasoning_effort none + enable_thinking false；其余 = reasoning_effort。'),
+    'template': N_('关闭 = chat_template_kwargs.enable_thinking=false；其余 = reasoning_effort。'),
+    'openai': N_('reasoning_effort（关闭 = none；模型不支持时自动改用默认）。'),
+    'anthropic': N_('output_config.effort。当前 Claude 无法关闭思考，“关闭”按 low 处理；Opus 5.5 默认 medium。'),
+    'gemini': N_('reasoning_effort（关闭 = minimal，“最高”按 high）。'),
+    'deepseek': N_('thinking.type + reasoning_effort。DeepSeek 默认开启思考（high），只有 low / high / max 三档，“中”按 high。'),
+    'qwen': N_('enable_thinking + thinking_budget（低 1024 / 中 4096 / 高 16384 / 最高 32768 token）。开启思考时百炼不支持 JSON 模式，改由提示词约束。'),
+    'budget': N_('enable_thinking + thinking_budget（低 1024 / 中 4096 / 高 16384 / 最高 32768 token）。'),
+    'kimi': N_('kimi-k3 始终思考，用 reasoning_effort（low / high / max）；kimi-k2.x 用 thinking 开关。'),
+    'switch': N_('智谱 thinking.type 开关：GLM 没有档位，低 / 中 / 高 / 最高都为开启。'),
+    'ark': N_('thinking.type + reasoning_effort（低 / 中 / 高，“最高”按 high）。'),
+    'openrouter': N_('reasoning.effort，由 OpenRouter 转换为各家参数。'),
 }
 
 
 def provider_label(key):
-    return PROVIDERS.get(key, PROVIDERS['custom'])[0]
+    return tr(PROVIDERS.get(key, PROVIDERS['custom'])[0])
 
 
 def default_settings():
@@ -177,7 +179,7 @@ def _keychain_read():
     if status == _NOT_FOUND:
         return None
     if status:
-        raise OSError(f'钥匙串拒绝读取 API Key（{status}）。')
+        raise OSError(tr('钥匙串拒绝读取 API Key（{status}）。', status=status))
     try:
         return ctypes.string_at(data, length.value)
     finally:
@@ -200,7 +202,7 @@ def _keychain_write(value):
         finally:
             cf.CFRelease(item)
     if status:
-        raise OSError(f'钥匙串拒绝保存 API Key（{status}）。')
+        raise OSError(tr('钥匙串拒绝保存 API Key（{status}）。', status=status))
 
 
 def keychain_keys():
@@ -240,7 +242,7 @@ def _dpapi(data, protect):
     crypt32, kernel32 = ctypes.windll.crypt32, ctypes.windll.kernel32
     call = crypt32.CryptProtectData if protect else crypt32.CryptUnprotectData
     if not call(ctypes.byref(source), None, None, None, None, 0x1, ctypes.byref(target)):
-        raise OSError('无法使用 Windows 数据保护读取 API Key。')
+        raise OSError(tr('无法使用 Windows 数据保护读取 API Key。'))
     try:
         return ctypes.string_at(target.pbData, target.cbData)
     finally:
@@ -328,7 +330,7 @@ def active(settings):
     model = entry['model'].strip()
     if style == 'qwen' and reasoning != 'off':
         json_mode = None  # Bailian: JSON mode is not available while the model thinks
-    return dict(provider=key, label=label, api=api, base_url=normalize_base(api, entry['base_url']),
+    return dict(provider=key, label=tr(label), api=api, base_url=normalize_base(api, entry['base_url']),
                 model=model, key=entry['key'].strip(), local=local, json_mode=json_mode,
                 timeout=settings.get('timeout', 180), reasoning=reasoning, thinking=thinking_request(style, reasoning, model))
 
@@ -337,43 +339,43 @@ def active(settings):
 
 #: Global sliders: key -> (name, low, high, meaning). Same ranges as ``model.validate``.
 PARAMS = {
-    'exposure': ('曝光', -5, 5, '整体亮度，单位 EV；+1 为亮一倍，日常修正多在 ±1 以内'),
-    'contrast': ('对比度', -100, 100, '正值增加反差，负值更柔和'),
-    'highlights': ('亮部', -100, 100, '负值压暗高光、找回天空和亮处细节，正值提亮亮部'),
-    'shadows': ('暗部', -100, 100, '正值提亮阴影细节，负值压暗阴影'),
-    'whites': ('白色', -100, 100, '白点；正值让最亮处更亮，负值防止过曝'),
-    'blacks': ('黑色', -100, 100, '黑点；负值加深最暗处，正值让黑色发灰（胶片感）'),
-    'temperature': ('冷暖', -100, 100, '相对相机白平衡；正值更暖（偏黄），负值更冷（偏蓝），±20 已较明显'),
-    'tint': ('色调', -100, 100, '正值偏洋红，负值偏绿'),
-    'saturation': ('饱和度', -100, 100, '所有颜色的浓度；-100 为黑白'),
-    'vibrance': ('自然饱和度', -100, 100, '优先提升低饱和颜色，对肤色更温和'),
-    'dehaze': ('去薄雾', -100, 100, '正值去雾、通透；负值加雾、柔和梦幻'),
-    'clarity': ('清晰度', -100, 100, '中间调局部对比；正值更有力度，负值柔焦'),
-    'texture': ('纹理', -100, 100, '细小纹理；正值强调细节，负值柔化皮肤'),
-    'sharpness': ('锐化', 0, 100, '输出锐化强度'),
-    'denoise': ('明度降噪', 0, 100, '减少亮度噪点；高 ISO 照片可用 20–50'),
-    'color_noise': ('彩色杂点', 0, 100, '减少彩色噪点；高 ISO 照片可用 25–50'),
+    'exposure': (N_('曝光'), -5, 5, '整体亮度，单位 EV；+1 为亮一倍，日常修正多在 ±1 以内'),
+    'contrast': (N_('对比度'), -100, 100, '正值增加反差，负值更柔和'),
+    'highlights': (N_('亮部'), -100, 100, '负值压暗高光、找回天空和亮处细节，正值提亮亮部'),
+    'shadows': (N_('暗部'), -100, 100, '正值提亮阴影细节，负值压暗阴影'),
+    'whites': (N_('白色'), -100, 100, '白点；正值让最亮处更亮，负值防止过曝'),
+    'blacks': (N_('黑色'), -100, 100, '黑点；负值加深最暗处，正值让黑色发灰（胶片感）'),
+    'temperature': (N_('冷暖'), -100, 100, '相对相机白平衡；正值更暖（偏黄），负值更冷（偏蓝），±20 已较明显'),
+    'tint': (N_('色调'), -100, 100, '正值偏洋红，负值偏绿'),
+    'saturation': (N_('饱和度'), -100, 100, '所有颜色的浓度；-100 为黑白'),
+    'vibrance': (N_('自然饱和度'), -100, 100, '优先提升低饱和颜色，对肤色更温和'),
+    'dehaze': (N_('去薄雾'), -100, 100, '正值去雾、通透；负值加雾、柔和梦幻'),
+    'clarity': (N_('清晰度'), -100, 100, '中间调局部对比；正值更有力度，负值柔焦'),
+    'texture': (N_('纹理'), -100, 100, '细小纹理；正值强调细节，负值柔化皮肤'),
+    'sharpness': (N_('锐化'), 0, 100, '输出锐化强度'),
+    'denoise': (N_('明度降噪'), 0, 100, '减少亮度噪点；高 ISO 照片可用 20–50'),
+    'color_noise': (N_('彩色杂点'), 0, 100, '减少彩色噪点；高 ISO 照片可用 25–50'),
 }
 EFFECTS = {
-    'vignette': ('暗角', -100, 100, '负值压暗四周，正值提亮四周'),
-    'midpoint': ('暗角中点', 0, 100, '暗角范围，越小越大，默认 50'),
-    'feather': ('暗角羽化', 0, 100, '过渡柔和度，默认 70'),
-    'grain': ('颗粒', 0, 100, '胶片颗粒数量'),
-    'grain_size': ('颗粒大小', 0, 100, '默认 30'),
+    'vignette': (N_('暗角'), -100, 100, '负值压暗四周，正值提亮四周'),
+    'midpoint': (N_('暗角中点'), 0, 100, '暗角范围，越小越大，默认 50'),
+    'feather': (N_('暗角羽化'), 0, 100, '过渡柔和度，默认 70'),
+    'grain': (N_('颗粒'), 0, 100, '胶片颗粒数量'),
+    'grain_size': (N_('颗粒大小'), 0, 100, '默认 30'),
 }
 #: (key, name, aliases). Order and hues follow ``model.COLORS``.
-HSL_COLORS = [('red', '红', ('红色',)), ('orange', '橙', ('橙色', '肤色')), ('yellow', '黄', ('黄色',)),
-              ('green', '绿', ('绿色',)), ('aqua', '青', ('cyan', '青色')), ('blue', '蓝', ('蓝色',)),
-              ('purple', '紫', ('紫色', 'violet')), ('magenta', '洋红', ('洋红色', 'pink', '粉'))]
-HSL_PARTS = [('hue', '色相', ('h', '色相')), ('saturation', '饱和度', ('s', 'sat', '饱和度')),
-             ('luminance', '明度', ('l', 'lightness', 'lum', 'brightness', '明度', '亮度'))]
-ZONES = [('shadows', '暗部'), ('midtones', '中间调'), ('highlights', '高光')]
+HSL_COLORS = [('red', N_('红'), ('红色',)), ('orange', N_('橙'), ('橙色', '肤色')), ('yellow', N_('黄'), ('黄色',)),
+              ('green', N_('绿'), ('绿色',)), ('aqua', N_('青'), ('cyan', '青色')), ('blue', N_('蓝'), ('蓝色',)),
+              ('purple', N_('紫'), ('紫色', 'violet')), ('magenta', N_('洋红'), ('洋红色', 'pink', '粉'))]
+HSL_PARTS = [('hue', N_('色相'), ('h', '色相')), ('saturation', N_('饱和度'), ('s', 'sat', '饱和度')),
+             ('luminance', N_('明度'), ('l', 'lightness', 'lum', 'brightness', '明度', '亮度'))]
+ZONES = [('shadows', N_('暗部')), ('midtones', N_('中间调')), ('highlights', N_('高光'))]
 #: Mask regions: AI selections (computed locally) and simple gradients.
 REGIONS = {
-    'sky': ('天空', 'sky'), 'subject': ('主体', 'subject'), 'person': ('人物', 'person'),
-    'background': ('背景', 'background'), 'foreground': ('近景', 'foreground'),
-    'top': ('上方渐变', 'linear'), 'bottom': ('下方渐变', 'linear'),
-    'center': ('中心径向', 'radial'), 'edges': ('四周径向', 'radial'),
+    'sky': (N_('天空'), 'sky'), 'subject': (N_('主体'), 'subject'), 'person': (N_('人物'), 'person'),
+    'background': (N_('背景'), 'background'), 'foreground': (N_('近景'), 'foreground'),
+    'top': (N_('上方渐变'), 'linear'), 'bottom': (N_('下方渐变'), 'linear'),
+    'center': (N_('中心径向'), 'radial'), 'edges': (N_('四周径向'), 'radial'),
 }
 AI_REGIONS = ('sky', 'subject', 'person', 'background', 'foreground')
 MAX_NEW_MASKS = 4
@@ -574,7 +576,7 @@ def _is_local(url):
 
 def _http(url, payload=None, headers=None, timeout=60, method=None):
     if not url.startswith(('http://', 'https://')):
-        raise ServiceError('接口地址需要以 http:// 或 https:// 开头。')
+        raise ServiceError(tr('接口地址需要以 http:// 或 https:// 开头。'))
     data = json.dumps(payload).encode('utf-8') if payload is not None else None
     request = urllib.request.Request(url, data=data, method=method or ('POST' if data else 'GET'))
     request.add_header('User-Agent', 'LUMEN-RAW')
@@ -593,17 +595,17 @@ def _http(url, payload=None, headers=None, timeout=60, method=None):
     except urllib.error.URLError as error:
         reason = error.reason
         if isinstance(reason, (socket.timeout, TimeoutError)):
-            raise ServiceError(f'连接 {url} 超时。') from None
+            raise ServiceError(tr('连接 {url} 超时。', url=url)) from None
         if isinstance(reason, ConnectionRefusedError) or 'refused' in str(reason).lower() or '积极拒绝' in str(reason):
-            raise ServiceError(f'无法连接 {_origin(url)}：服务未启动，或端口不对。'
-                               '本地模型请先在 Ollama / LM Studio / llama.cpp 中启动服务。') from None
-        raise ServiceError(f'无法连接 {_origin(url)}：{reason}') from None
+            raise ServiceError(tr('无法连接 {origin}：服务未启动，或端口不对。'
+                                  '本地模型请先在 Ollama / LM Studio / llama.cpp 中启动服务。', origin=_origin(url))) from None
+        raise ServiceError(tr('无法连接 {origin}：{reason}', origin=_origin(url), reason=reason)) from None
     except (socket.timeout, TimeoutError):
-        raise ServiceError(f'等待 {_origin(url)} 回复超时，可在设置中延长超时时间。') from None
+        raise ServiceError(tr('等待 {origin} 回复超时，可在设置中延长超时时间。', origin=_origin(url))) from None
     try:
         return json.loads(body.decode('utf-8'))
     except ValueError:
-        raise ServiceError('服务返回的不是 JSON：' + body[:300].decode('utf-8', 'replace')) from None
+        raise ServiceError(tr('服务返回的不是 JSON：') + body[:300].decode('utf-8', 'replace')) from None
 
 
 def _origin(url):
@@ -620,9 +622,9 @@ def _http_message(code, detail):
     except (ValueError, AttributeError):
         pass
     detail = ' '.join(str(detail).split())[:400]
-    hint = {401: 'API Key 无效或未填写。', 403: '没有访问该模型的权限，或账户未开通。',
-            404: '接口地址或模型名称不正确。', 402: '账户余额不足。', 429: '请求太频繁或额度已用完。'}.get(code, '')
-    return f'服务返回 HTTP {code}。{hint}{detail}'
+    hint = {401: tr('API Key 无效或未填写。'), 403: tr('没有访问该模型的权限，或账户未开通。'),
+            404: tr('接口地址或模型名称不正确。'), 402: tr('账户余额不足。'), 429: tr('请求太频繁或额度已用完。')}.get(code, '')
+    return tr('服务返回 HTTP {code}。', code=code) + hint + detail
 
 
 def _openai_headers(service):
@@ -642,7 +644,7 @@ def list_models(service):
     """Model names offered by the service."""
     api, base = service['api'], service['base_url']
     if not base:
-        raise ServiceError('请先填写接口地址。')
+        raise ServiceError(tr('请先填写接口地址。'))
     timeout = min(30, service.get('timeout', 30))
     if api == 'ollama':
         data = _http(base + '/api/tags', timeout=timeout)
@@ -687,11 +689,11 @@ def complete(service, messages, image=None, usage=None):
     timeout = service.get('timeout', 180)
     thinking = dict(service.get('thinking') or {})
     if not base:
-        raise ServiceError('请先在设置中填写接口地址。')
+        raise ServiceError(tr('请先在设置中填写接口地址。'))
     if not name:
-        raise ServiceError('请先在设置中选择或填写模型名称。')
+        raise ServiceError(tr('请先在设置中选择或填写模型名称。'))
     if not service['local'] and not service['key'] and service['provider'] != 'custom':
-        raise ServiceError(f'请先在设置中填写 {service["label"]} 的 API Key。')
+        raise ServiceError(tr('请先在设置中填写 {label} 的 API Key。', label=service['label']))
     system, chat = messages[0]['content'], [dict(m) for m in messages[1:]]
     if api == 'ollama':
         if image:
@@ -718,9 +720,9 @@ def complete(service, messages, image=None, usage=None):
                + (tokens.get('cache_creation_input_tokens') or 0), tokens.get('output_tokens'))
         text = ''.join(block.get('text', '') for block in data.get('content', []) if block.get('type') == 'text')
         if data.get('stop_reason') == 'refusal':
-            raise ServiceError('Claude 拒绝了这次请求，请换一种说法或换用其他模型。')
+            raise ServiceError(tr('Claude 拒绝了这次请求，请换一种说法或换用其他模型。'))
         if not text and data.get('stop_reason') == 'max_tokens':
-            raise ServiceError('回复超出长度上限（思考过长），可在设置中降低思考强度。')
+            raise ServiceError(tr('回复超出长度上限（思考过长），可在设置中降低思考强度。'))
         return text
     if image:
         chat[-1]['content'] = [dict(type='text', text=chat[-1]['content']),
@@ -736,12 +738,12 @@ def complete(service, messages, image=None, usage=None):
     _usage(usage, tokens.get('prompt_tokens'), tokens.get('completion_tokens'))
     choices = data.get('choices') or []
     if not choices:
-        raise ServiceError('服务没有返回结果：' + json.dumps(data, ensure_ascii=False)[:300])
+        raise ServiceError(tr('服务没有返回结果：') + json.dumps(data, ensure_ascii=False)[:300])
     content = (choices[0].get('message') or {}).get('content') or ''
     if isinstance(content, list):
         content = ''.join(part.get('text', '') for part in content if isinstance(part, dict))
     if not content.strip() and choices[0].get('finish_reason') == 'length':
-        raise ServiceError('回复超出长度上限（思考过长），可在设置中降低思考强度。')
+        raise ServiceError(tr('回复超出长度上限（思考过长），可在设置中降低思考强度。'))
     return content
 
 
@@ -786,7 +788,7 @@ def parse_reply(text):
                         return value
                     break
         start = text.find('{', start + 1)
-    raise ServiceError('模型没有返回可用的 JSON 参数：' + (text.strip()[:200] or '（空回复）'))
+    raise ServiceError(tr('模型没有返回可用的 JSON 参数：') + (text.strip()[:200] or tr('（空回复）')))
 
 
 def _number(value):
@@ -884,7 +886,7 @@ def plan(edits, reply):
     ``attach_regions`` once their coverage has been computed.
     """
     if not isinstance(reply, dict):
-        raise ServiceError('模型回复的格式不正确。')
+        raise ServiceError(tr('模型回复的格式不正确。'))
     base = copy.deepcopy(edits)
     target = copy.deepcopy(edits)
     notes = []
@@ -945,7 +947,7 @@ def plan(edits, reply):
             target['curves']['RGB'] = curve
             target['curve_mode'] = 'smooth'
         else:
-            notes.append('曲线格式无效，已忽略')
+            notes.append(tr('曲线格式无效，已忽略'))
     regions = []
     masks = reply.get('masks')
     if isinstance(masks, list):
@@ -960,23 +962,23 @@ def plan(edits, reply):
                 if 0 <= index < len(target['masks']):
                     _adjustments(values, target['masks'][index]['adjustments'])
                 else:
-                    notes.append(f'没有序号为 {index} 的蒙版')
+                    notes.append(tr('没有序号为 {index} 的蒙版', index=index))
                 continue
             region = str(request.get('region', '')).strip().lower()
             region = {'天空': 'sky', '主体': 'subject', '人物': 'person', '人像': 'person', '背景': 'background',
                       '近景': 'foreground', '前景': 'foreground', 'people': 'person', 'portrait': 'person'}.get(region, region)
             if region not in REGIONS:
-                notes.append(f'不支持的区域：{region or "（未指定）"}')
+                notes.append(tr('不支持的区域：{region}', region=region or tr('（未指定）')))
                 continue
             if len(regions) + len(target['masks']) - len(base['masks']) >= MAX_NEW_MASKS:
-                notes.append(f'一次最多新增 {MAX_NEW_MASKS} 个蒙版')
+                notes.append(tr('一次最多新增 {count} 个蒙版', count=MAX_NEW_MASKS))
                 break
             if len(target['masks']) + len(regions) >= 32:
-                notes.append('蒙版数量已达上限 32')
+                notes.append(tr('蒙版数量已达上限 32'))
                 break
             title, kind = REGIONS[region]
             mask = model.new_mask(kind, len(target['masks']) + len(regions) + 1)
-            mask['name'] = f'{title}（自然语言）'
+            mask['name'] = tr('{title}（自然语言）', title=tr(title))
             if kind in ('linear', 'radial'):
                 _gradient(region, mask)
             else:
@@ -997,7 +999,7 @@ def attach_regions(plan_, alphas):
     from . import selection
     for (kind, mask), alpha in zip(plan_.regions, alphas):
         if alpha is None:
-            plan_.notes.append(f'没有识别到{REGIONS[kind][0] if kind in REGIONS else kind}区域')
+            plan_.notes.append(tr('没有识别到{region}区域', region=tr(REGIONS[kind][0]) if kind in REGIONS else kind))
             continue
         mask = copy.deepcopy(mask)
         mask['raster'] = selection.encode(alpha) if not isinstance(alpha, str) else alpha
@@ -1053,32 +1055,33 @@ def changes(base, target):
         a, b = base['adjustments'][key], target['adjustments'][key]
         if abs(a - b) > 1e-6:
             digits = 2 if key == 'exposure' else 0
-            lines.append(f'{name}  {_signed(a, digits)} → {_signed(b, digits)}')
+            lines.append(f'{tr(name)}  {_signed(a, digits)} → {_signed(b, digits)}')
     for (_, color, _), ra, rb in zip(HSL_COLORS, base['hsl'], target['hsl']):
         for (_, part, _), a, b in zip(HSL_PARTS, ra, rb):
             if abs(a - b) > 1e-6:
-                lines.append(f'{color} · {part}  {_signed(a)} → {_signed(b)}')
+                lines.append(f'{tr(color)} · {tr(part)}  {_signed(a)} → {_signed(b)}')
     for zone, title in ZONES:
         if base['grading'][zone] != target['grading'][zone]:
             h, s = target['grading'][zone]
-            lines.append(f'{title}分级  {round(h)}° · {round(s)}' if s else f'{title}分级  清除')
+            lines.append(tr('{zone}分级  {hue}° · {strength}', zone=tr(title), hue=round(h), strength=round(s)) if s
+                         else tr('{zone}分级  清除', zone=tr(title)))
     if abs(base['grading']['balance'] - target['grading']['balance']) > 1e-6:
-        lines.append(f'分级平衡  {_signed(target["grading"]["balance"])}')
+        lines.append(tr('分级平衡  {value}', value=_signed(target['grading']['balance'])))
     for key, (name, _, _, _) in EFFECTS.items():
         a, b = base['effects'][key], target['effects'][key]
         if abs(a - b) > 1e-6:
-            lines.append(f'{name}  {a:g} → {round(b, 1):g}')
+            lines.append(f'{tr(name)}  {a:g} → {round(b, 1):g}')
     if base['monochrome'] != target['monochrome']:
-        lines.append('黑白处理  ' + ('开' if target['monochrome'] else '关'))
+        lines.append(tr('黑白处理  开') if target['monochrome'] else tr('黑白处理  关'))
     if base['curves'] != target['curves']:
-        lines.append('RGB 曲线  已调整')
+        lines.append(tr('RGB 曲线  已调整'))
     if base['tone_curve'] != target['tone_curve']:
-        lines.append('曝光曲线  已还原' if target['tone_curve'] == [[0., 0.], [1., 1.]] else '曝光曲线  已调整')
+        lines.append(tr('曝光曲线  已还原') if target['tone_curve'] == [[0., 0.], [1., 1.]] else tr('曝光曲线  已调整'))
     for index, mask in enumerate(target['masks']):
-        values = '，'.join(f'{PARAMS[k][0]} {_signed(v, 2 if k == "exposure" else 0)}'
+        values = tr('，').join(f'{tr(PARAMS[k][0])} {_signed(v, 2 if k == "exposure" else 0)}'
                           for k, v in mask['adjustments'].items() if abs(v) > 1e-6)
         if index >= len(base['masks']):
-            lines.append(f'新增蒙版 {mask["name"]}：{values or "无调整"}')
+            lines.append(tr('新增蒙版 {name}：{values}', name=mask['name'], values=values or tr('无调整')))
         elif mask['adjustments'] != base['masks'][index]['adjustments']:
-            lines.append(f'蒙版 {mask["name"]}：{values or "无调整"}')
+            lines.append(tr('蒙版 {name}：{values}', name=mask['name'], values=values or tr('无调整')))
     return lines

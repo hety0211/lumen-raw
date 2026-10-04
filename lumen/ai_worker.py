@@ -23,6 +23,7 @@ import types
 from pathlib import Path
 
 from . import compute
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -97,6 +98,9 @@ def _requests(conn, sessions):
 
 
 # ----------------------------------------------------------------------------- crash record
+
+#: Warnings that report a worker crash (the AI dialog shows them with the result).
+CRASH_NOTICES = set()
 
 def _record_path():
     from .host import data_folder
@@ -274,12 +278,13 @@ class RemoteSession:
                     culprit = _worker.trying or self.provider
                     adapter = compute.preferred_adapter()
                     if culprit in (None, 'CPUExecutionProvider'):
-                        raise RuntimeError(f'AI 推理进程在 CPU 上异常退出：{crash}') from crash
+                        raise RuntimeError(tr('AI 推理进程在 CPU 上异常退出：{crash}', crash=crash)) from crash
                     record().record(adapter, self.model, culprit, crash)
-                    self._notice = self.warning = f'{culprit} 在此显卡与驱动上运行 {self.model} 时崩溃，已自动改用其他设备重试。'
+                    self._notice = self.warning = tr('{culprit} 在此显卡与驱动上运行 {model} 时崩溃，已自动改用其他设备重试。', culprit=culprit, model=self.model)
+                    CRASH_NOTICES.add(self._notice)
                     compute.state.report('CPUExecutionProvider', warning=self.warning)
                     self._meta = None
-            raise RuntimeError('AI 推理进程多次异常退出，已停止。')
+            raise RuntimeError(tr('AI 推理进程多次异常退出，已停止。'))
 
     def run(self, output_names, inputs):
         def go():
@@ -289,7 +294,7 @@ class RemoteSession:
             self.provider, self.device = reply['provider'], reply['device']
             self.warning = self._notice or reply['warning']
             if self.provider == 'CPUExecutionProvider':
-                compute.state.report(self.provider, detail=f'{compute.performance.THREADS} 线程 · ONNX CPU（独立进程）',
+                compute.state.report(self.provider, detail=tr('{threads} 线程 · ONNX CPU（独立进程）', threads=compute.performance.THREADS),
                                      warning=self.warning)
             else:
                 compute.state.report(self.provider, self.device, f'{self.provider} · {self.device}', self.warning)

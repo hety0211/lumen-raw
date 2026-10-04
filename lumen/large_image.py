@@ -2,6 +2,7 @@
 import os,shutil,sys,tempfile,weakref
 from pathlib import Path
 import numpy as np
+from .i18n import tr
 
 MAX_PIXELS=400_000_000
 MAP_BYTES=256*1024*1024
@@ -10,7 +11,7 @@ STRIP_ROWS=64
 def validate_size(shape):
     h,w=map(int,shape[:2])
     if h<1 or w<1 or h*w>MAX_PIXELS:
-        raise ValueError('图像超过 4 亿像素，请裁切或降低输出倍率。')
+        raise ValueError(tr('图像超过 4 亿像素，请裁切或降低输出倍率。'))
 
 def _cleanup(mapping,path):
     try:mapping.close()
@@ -24,7 +25,7 @@ def allocate(shape,dtype=np.float32,zeros=False):
     if size<=MAP_BYTES:return np.zeros(shape,dtype) if zeros else np.empty(shape,dtype)
     folder=Path(tempfile.gettempdir())/'LumenRAW-cache';folder.mkdir(exist_ok=True)
     if shutil.disk_usage(folder).free<size+256*1024*1024:
-        raise ValueError(f'大图缓存需要至少 {size/2**30+.25:.1f} GB 可用磁盘空间。')
+        raise ValueError(tr('大图缓存需要至少 {v:.1f} GB 可用磁盘空间。', v=size/2**30+.25))
     fd,path=tempfile.mkstemp(prefix='image-',suffix='.tmp',dir=folder);os.close(fd)
     try:data=np.memmap(path,mode='w+',dtype=dtype,shape=shape)
     except BaseException:
@@ -44,7 +45,7 @@ def encode_strips(image,linear=False,bits=16):
     maximum=(1<<bits)-1
     dtype=np.uint16 if bits==16 else np.uint8
     for _,block in strips(image):
-        if not np.isfinite(block).all():raise ValueError('图像包含无效像素。')
+        if not np.isfinite(block).all():raise ValueError(tr('图像包含无效像素。'))
         if linear:block=to_linear(block)
         yield np.round(np.clip(block,0,1)*maximum).astype(dtype).tobytes()
 
@@ -110,7 +111,11 @@ def fits_in_memory(shape):
 
 def process(source,edits,backend,apply_crop,detail_scale,cache=None):
     """Stream point operations. Spatial edits retain the original whole-image math."""
-    from . import engine
+    from . import engine,lens
+    if lens.active(edits.get('lens')):
+        # 1.5.1: correct the lens once (disk-backed for large frames), then process without it.
+        source=lens.apply(source,edits['lens'])
+        edits=dict(edits,lens=dict(edits['lens'],enabled=False))
     a=edits['adjustments']
     spatial=any(a[k] for k in ('dehaze','clarity','texture','sharpness','denoise','color_noise'))
     spatial|=any(m['enabled'] and any(m['adjustments'].values()) for m in edits['masks'])
@@ -119,7 +124,7 @@ def process(source,edits,backend,apply_crop,detail_scale,cache=None):
     if spatial:
         available=available_memory();required=source.shape[0]*source.shape[1]*100
         if available is not None and required>available*.85:
-            raise ValueError(f'当前空间类编辑预计需要约 {required/2**30:.1f} GB 可用内存。可先裁切、关闭质感／蒙版／修复，或在内存更大的电脑处理。4 亿像素的基础调色、AI 副本和 DNG 导出使用分块缓存。')
+            raise ValueError(tr('当前空间类编辑预计需要约 {v:.1f} GB 可用内存。可先裁切、关闭质感／蒙版／修复，或在内存更大的电脑处理。4 亿像素的基础调色、AI 副本和 DNG 导出使用分块缓存。', v=required/2**30))
         return engine.process(source,edits,backend,apply_crop,detail_scale,_stream=False,cache=cache)
     output=allocate(source.shape)
     for y,block in strips(source):

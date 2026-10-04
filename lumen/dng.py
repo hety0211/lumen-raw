@@ -2,6 +2,7 @@
 from pathlib import Path
 import numpy as np
 import tifffile
+from .i18n import tr
 
 
 MODEL = 'Lumen Rendered Linear sRGB'
@@ -27,7 +28,7 @@ def read(path,preview_limit=None):
     data=tifffile.memmap(path,mode='r')
     try:
         if data.ndim != 3 or data.shape[-1] != 3 or data.dtype != np.uint16:
-            raise ValueError('不支持的 Lumen DNG 像素格式。')
+            raise ValueError(tr('不支持的 Lumen DNG 像素格式。'))
         if preview_limit and max(height,width)>preview_limit:
             # Sample all source pixels through OpenCV's area reducer without a
             # full-frame float conversion or an extra full-resolution array.

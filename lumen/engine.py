@@ -15,13 +15,14 @@ from PIL import Image, ImageCms, ImageOps
 from .model import COLORS
 from . import white_balance, retouch, develop, selection, dng, photo_metadata
 from . import curves as tone_curves
-from . import large_image, performance, compute, gpu_graphs
+from . import large_image, performance, compute, gpu_graphs, lens
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
 RAW_EXTENSIONS = {'.arw', '.sr2', '.srf', '.dng', '.nef', '.nrw', '.crw', '.cr2', '.cr3', '.raf', '.rw2', '.raw', '.orf'}
 RAW_FILTER = 'Sony (*.arw *.sr2 *.srf);;Canon (*.crw *.cr2 *.cr3);;Nikon (*.nef *.nrw);;Fujifilm (*.raf);;Panasonic (*.rw2 *.raw);;DNG (*.dng)'
-PHOTO_FILTER = '图片与工程 (' + ' '.join('*'+x for x in sorted(RAW_EXTENSIONS)) + ' *.jpg *.jpeg *.png *.tif *.tiff *.lumen *.lumenalbum);;' + RAW_FILTER + ';;所有文件 (*)'
+PHOTO_FILTER = tr('图片与工程 (') + ' '.join('*'+x for x in sorted(RAW_EXTENSIONS)) + ' *.jpg *.jpeg *.png *.tif *.tiff *.lumen *.lumenalbum);;' + RAW_FILTER + tr(';;所有文件 (*)')
 MAX_EXPORT_PIXELS = large_image.MAX_PIXELS
 Image.MAX_IMAGE_PIXELS = MAX_EXPORT_PIXELS
 
@@ -109,7 +110,7 @@ def load_image(path, preview_limit=1600, develop_reference=False):
     if path.suffix.lower() == '.dng' and dng.is_rendered(path):
         width,height=dng.dimensions(path)
         rgb = dng.read(path,preview_limit)
-        info.update(width=width,height=height,raw=False,note='Lumen 16-bit 线性 DNG · 已应用编辑')
+        info.update(width=width,height=height,raw=False,note=tr('Lumen 16-bit 线性 DNG · 已应用编辑'))
         info['photo'] = photo_metadata.embedded(path)
     elif path.suffix.lower() in RAW_EXTENSIONS:
         import rawpy
@@ -126,6 +127,7 @@ def load_image(path, preview_limit=1600, develop_reference=False):
             info['photo'] = photo_metadata.from_tags(tags)
             info['wb_warning'] = warning
             info['camera_wb_gains'] = list(raw.camera_whitebalance)
+            _lens_info(info, tags)
             rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16,
                                   gamma=(1, 1), output_color=rawpy.ColorSpace.sRGB,
                                   half_size=bool(preview_limit), user_flip=None,
@@ -134,25 +136,39 @@ def load_image(path, preview_limit=1600, develop_reference=False):
             if preview_limit or develop_reference:
                 curve,label = develop.camera_curve(raw, rgb, path)
                 info['develop'] = dict(mode='camera',curve=curve,source=label)
-        info['note'] = 'LibRaw · 相机白平衡 · 线性 sRGB · 16-bit 解码'
+        info['note'] = tr('LibRaw · 相机白平衡 · 线性 sRGB · 16-bit 解码')
     elif path.suffix.lower() in {'.tif', '.tiff', '.png'}:
         arr = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
         if arr is None:
-            raise ValueError('无法解码这张图片。')
+            raise ValueError(tr('无法解码这张图片。'))
         # Pillow handles EXIF orientation and ICC for 8-bit sources; preserve 16-bit input.
         if arr.dtype == np.uint16:
             if arr.ndim == 2:
                 arr = np.repeat(arr[..., None], 3, axis=2)
             rgb = to_linear(arr[..., :3][..., ::-1].astype(np.float32) / 65535)
             info.update(width=rgb.shape[1], height=rgb.shape[0], raw=False,
-                        note='16-bit 输入按 sRGB 解读（建议先转换非 sRGB 文件）')
-            info['photo'] = photo_metadata.embedded(path) or photo_metadata.from_tags(white_balance.metadata(path)[0])
+                        note=tr('16-bit 输入按 sRGB 解读（建议先转换非 sRGB 文件）'))
+            embedded = photo_metadata.embedded(path)
+            tags = {} if embedded else white_balance.metadata(path)[0]
+            info['photo'] = embedded or photo_metadata.from_tags(tags)
+            if not embedded:
+                _lens_info(info, tags)
         else:
             return load_pillow(path, preview_limit)
     else:
         return load_pillow(path, preview_limit)
     large_image.validate_size((info['height'],info['width']))
     return np.ascontiguousarray(resize_limit(rgb, preview_limit)), info
+
+
+def _lens_info(info, tags):
+    """EXIF facts and the lens profile match for lens corrections (1.5.1); never fails a load."""
+    try:
+        info['lens_exif'] = lens.exif_from_tags(tags)
+        info['lens_match'] = lens.identify(info['lens_exif'])
+    except Exception:
+        log.exception('lens identification failed')
+        info['lens_match'] = None
 
 
 def load_embedded(path, limit, info):
@@ -165,15 +181,15 @@ def load_embedded(path, limit, info):
         preview = previews.libraw_preview(raw)
         width, height = raw.sizes.width, raw.sizes.height
     if preview is None or preview.shape[0] * preview.shape[1] < .5 * width * height:
-        size = f'{preview.shape[1]} × {preview.shape[0]}' if preview is not None else '无'
-        raise ValueError(f'内置 LibRaw 无法解码这个文件的传感器数据（例如尼康“高效率”压缩），文件内嵌的预览（{size}）也不足以编辑。'
-                         '请在相机中改用无损压缩 RAW，或先用厂商软件转换为 DNG / TIFF。')
+        size = f'{preview.shape[1]} × {preview.shape[0]}' if preview is not None else tr('无')
+        raise ValueError(tr('内置 LibRaw 无法解码这个文件的传感器数据（例如尼康“高效率”压缩），文件内嵌的预览（{size}）也不足以编辑。请在相机中改用无损压缩 RAW，或先用厂商软件转换为 DNG / TIFF。', size=size))
     tags, warning = white_balance.metadata(path)
     info.update(width=preview.shape[1], height=preview.shape[0], raw=False, embedded=True,
-                format=info['format'] + ' · 内嵌 JPEG',
+                format=info['format'] + tr(' · 内嵌 JPEG'),
                 camera_model=tags.get('Model', ''), wb_warning=warning,
-                note='内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用')
+                note=tr('内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用'))
     info['photo'] = photo_metadata.from_tags(tags)
+    _lens_info(info, tags)
     large_image.validate_size(preview.shape)
     image = Image.fromarray(np.ascontiguousarray(preview))
     if limit:
@@ -195,8 +211,10 @@ def load_pillow(path, limit):
         else:
             img = img.convert('RGB')
         info = dict(name=path.name, width=img.width, height=img.height, raw=False,
-                    format=path.suffix[1:].upper(), path=str(path.resolve()), note='sRGB · EXIF 方向已应用')
-        info['photo'] = photo_metadata.from_tags(white_balance.metadata(path)[0])
+                    format=path.suffix[1:].upper(), path=str(path.resolve()), note=tr('sRGB · EXIF 方向已应用'))
+        tags = white_balance.metadata(path)[0]
+        info['photo'] = photo_metadata.from_tags(tags)
+        _lens_info(info, tags)
         if limit:
             img.thumbnail((limit, limit), Image.Resampling.LANCZOS)
         return to_linear(np.asarray(img).astype(np.float32) / 255), info
@@ -228,7 +246,7 @@ class Backend:
         self.warning = ''
         if mode == 'cpu' or compute.requested_mode() == 'cpu':
             if mode != 'cpu':
-                self.warning = 'LUMEN_COMPUTE=cpu：已按设置使用 CPU。'
+                self.warning = tr('LUMEN_COMPUTE=cpu：已按设置使用 CPU。')
             return
         if sys.platform == 'darwin':
             self._init_metal()
@@ -241,7 +259,7 @@ class Backend:
                     float(cp.asnumpy(test)[0])
                     self.xp = cp
                     name = cp.cuda.runtime.getDeviceProperties(0)['name']
-                    self.name = 'CUDA · ' + (name.decode() if isinstance(name, bytes) else str(name)) + '（实验）'
+                    self.name = 'CUDA · ' + (name.decode() if isinstance(name, bytes) else str(name)) + tr('（实验）')
             except Exception:
                 log.info('CuPy unavailable', exc_info=True)
         if self.xp is np:
@@ -255,16 +273,16 @@ class Backend:
             except Exception:
                 log.info('DirectML detection failed', exc_info=True)
         if self.xp is np and not self.use_dml:
-            self.warning = '没有可用的 DirectML / CUDA，已使用 CPU。'
+            self.warning = tr('没有可用的 DirectML / CUDA，已使用 CPU。')
 
     def _init_metal(self):
         from . import metal
         if compute.requested_mode() not in ('auto', 'metal'):
-            self.warning = f'LUMEN_COMPUTE={compute.requested_mode()} 不适用于 macOS，已使用 CPU。'
+            self.warning = tr('LUMEN_COMPUTE={v} 不适用于 macOS，已使用 CPU。', v=compute.requested_mode())
             return
         self.metal = metal.pipeline()
         if self.metal is None:
-            self.warning = 'Metal 不可用，已使用 CPU：' + metal.last_error()
+            self.warning = tr('Metal 不可用，已使用 CPU：') + metal.last_error()
         else:
             self.name = 'Metal · ' + self.metal.name
 
@@ -278,7 +296,7 @@ class Backend:
         return self.use_dml or self.metal is not None
 
     def _disable_gpu(self, warning):
-        self.name = f'CPU · {self.gpu_label} 回退'
+        self.name = tr('CPU · {gpu_label} 回退', gpu_label=self.gpu_label)
         self.use_dml = False
         self.metal = None
         self.warning = warning
@@ -295,7 +313,7 @@ class Backend:
         if self.metal is not None:
             from .metal import PROVIDER
             out = self.metal.run(kind, image, inputs)
-            compute.state.report(PROVIDER, self.metal.name, f'Metal · {self.metal.name} · 逐像素显影')
+            compute.state.report(PROVIDER, self.metal.name, tr('Metal · {name} · 逐像素显影', name=self.metal.name))
             return out
         session = self._session(kind)
         height, width = image.shape[:2]
@@ -305,7 +323,7 @@ class Backend:
                 tile = np.ascontiguousarray(image[y:y + GPU_TILE, x:x + GPU_TILE], dtype=np.float32)[None]
                 out[y:y + tile.shape[1], x:x + tile.shape[2]] = session.run(None, dict(inputs, image=tile))[0][0]
         if session.get_providers()[0] == 'CPUExecutionProvider' and self.use_dml:
-            self._disable_gpu(compute.state.snapshot()[3] or f'{self.gpu_label} 已回退 CPU。')
+            self._disable_gpu(compute.state.snapshot()[3] or tr('{gpu_label} 已回退 CPU。', gpu_label=self.gpu_label))
         return out
 
     def _gpu(self, kind, image, inputs):
@@ -313,7 +331,7 @@ class Backend:
             return self._run_graph(kind, image, inputs)
         except Exception as exc:
             log.exception('GPU graph %s failed', kind)
-            self._disable_gpu(f'{self.gpu_label} 运行失败，自动回退 CPU：' + str(exc)[:120])
+            self._disable_gpu(tr('{gpu_label} 运行失败，自动回退 CPU：', gpu_label=self.gpu_label) + str(exc)[:120])
             return None
 
     def tonal(self, image, a):
@@ -325,17 +343,17 @@ class Backend:
             result = self._tonal(image, a, self.xp)
             if self.xp is not np:
                 result = self.xp.asnumpy(result)
-                compute.state.report('CUDAExecutionProvider',self.name,'CuPy · CUDA 光影显影（实验）')
+                compute.state.report('CUDAExecutionProvider',self.name,tr('CuPy · CUDA 光影显影（实验）'))
             else:
-                compute.state.report('CPUExecutionProvider',detail=f'{performance.THREADS} 线程 · NumPy 光影显影')
+                compute.state.report('CPUExecutionProvider',detail=tr('{threads} 线程 · NumPy 光影显影', threads=performance.THREADS))
             return result
         except Exception as exc:
             if self.xp is np:
                 raise
             log.exception('CuPy tonal failed')
             self.xp = np
-            self.name = 'CPU · CUDA 回退'
-            self.warning = 'CUDA 运行失败，自动回退 CPU：' + str(exc)[:100]
+            self.name = tr('CPU · CUDA 回退')
+            self.warning = tr('CUDA 运行失败，自动回退 CPU：') + str(exc)[:100]
             compute.state.report('CPUExecutionProvider',warning=self.warning)
             return self._tonal(image, a, np)
 
@@ -546,7 +564,7 @@ def mask_alpha(mask, shape, reference=None, area=None):
         return alpha * (mask['opacity']/100)
     if mask['kind'] == 'luminance':
         if reference is None or reference.shape[:2] != (ah, aw):
-            raise ValueError('亮度范围蒙版需要原片亮度作为参考。')
+            raise ValueError(tr('亮度范围蒙版需要原片亮度作为参考。'))
         lum = reference[..., 0] * .2126 + reference[..., 1] * .7152 + reference[..., 2] * .0722
         lo, hi = np.array(mask.get('luminance_range', [50., 100.])) / 100
         falloff = max(.0001, mask.get('range_falloff', 20.) / 100)
@@ -623,7 +641,7 @@ class RenderCache:
     bound to the source array's identity and never mutated by the pipeline.
     """
 
-    STAGES = ('base', 'tonal', 'detail', 'global', 'reference')
+    STAGES = ('lens', 'base', 'tonal', 'detail', 'global', 'reference')
 
     def __init__(self, max_bytes=512 * 2**20, alpha_bytes=192 * 2**20):
         self.max_bytes, self.alpha_bytes = max_bytes, alpha_bytes
@@ -730,12 +748,15 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
     a = edits['adjustments']
     # Rotate at output only: mask / crop coordinates always refer to the original image.
     develop_settings = edits.get('develop', {})
+    # 1.5.1: lens corrections come first; retouching, masks and crop refer to the corrected frame.
+    lens_key = lens.key(edits.get('lens'))
+    corrected = cache.get('lens', _key(lens_key), lambda: lens.apply(source, edits['lens'])) if lens_key else source
     base_key = _key(edits.get('wb_gain', [1., 1., 1.]), edits.get('white_balance', {}),
-                    edits.get('retouch', []), develop_settings)
+                    edits.get('retouch', []), develop_settings, lens_key)
 
     def base():
         gain = np.asarray(edits.get('wb_gain', [1., 1., 1.]), np.float32) * white_balance.gains(edits.get('white_balance', {}))
-        repaired = develop.apply(retouch.apply(source, edits.get('retouch', [])), develop_settings)
+        repaired = develop.apply(retouch.apply(corrected, edits.get('retouch', [])), develop_settings)
         return repaired if np.all(gain == 1) else repaired * gain
 
     balanced = cache.get('base', base_key, base)
@@ -753,9 +774,9 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
         x = cache.get('global', _key(detail_key, color_key), lambda: backend.color(tonal, edits))
     masks = [m for m in edits['masks'] if m['enabled'] and any(m['adjustments'].values())]
     if masks:
-        reference_key = _key(develop_settings)
+        reference_key = _key(develop_settings, lens_key)
         mask_reference = cache.get('reference', reference_key,
-            lambda: np.clip(to_srgb(develop.apply(source, develop_settings)), 0, 1)) \
+            lambda: np.clip(to_srgb(develop.apply(corrected, develop_settings)), 0, 1)) \
             if any(m['kind'] == 'luminance' for m in masks) else None
         x = x.copy()  # stage results are shared with the cache
         for mask in masks:
@@ -780,7 +801,7 @@ def dehaze_context_for(source, edits, backend=None, detail_scale=1.):
         return None
     backend = backend or Backend('cpu')
     gain = _gain(edits)
-    balanced = develop.apply(retouch.apply(source, edits.get('retouch', [])), edits.get('develop', {}))
+    balanced = develop.apply(retouch.apply(lens.correct(source, edits), edits.get('retouch', [])), edits.get('develop', {}))
     if not np.all(gain == 1):
         balanced = balanced * gain
     tonal = np.ascontiguousarray(backend.tonal(balanced, a), dtype=np.float32)
@@ -808,7 +829,8 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
     if a.get('dehaze', 0) > 0 and dehaze_context is None:
         dehaze_context = dehaze_context_for(source, edits, backend, detail_scale)
     gain = _gain(edits)
-    balanced = develop.apply(retouch.apply(source, edits.get('retouch', []), (area.x0, area.y0, area.x1, area.y1)),
+    corrected = lens.view(source, edits)  # blocks of the lens-corrected frame on demand (1.5.1)
+    balanced = develop.apply(retouch.apply(corrected, edits.get('retouch', []), (area.x0, area.y0, area.x1, area.y1)),
                              develop_settings)
     if not np.all(gain == 1):
         balanced = balanced * gain
@@ -823,7 +845,7 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
         check()
         x = backend.color(x, edits)
     if masks:
-        reference = np.clip(to_srgb(develop.apply(source[area.y0:area.y1, area.x0:area.x1], develop_settings)), 0, 1) \
+        reference = np.clip(to_srgb(develop.apply(corrected[area.y0:area.y1, area.x0:area.x1], develop_settings)), 0, 1) \
             if any(m['kind'] == 'luminance' for m in masks) else None
         x = x.copy()
         for mask in masks:
@@ -980,7 +1002,7 @@ def sample_white_balance(source, position):
     patch = source[max(0, y - radius):min(h, y + radius + 1), max(0, x - radius):min(w, x + radius + 1)]
     sample = np.median(patch, axis=(0, 1))
     if np.min(sample) < .002 or np.max(sample) >= .985:
-        raise ValueError('这个区域太暗或已过曝，请选择有细节的中性灰／白色区域。')
+        raise ValueError(tr('这个区域太暗或已过曝，请选择有细节的中性灰／白色区域。'))
     target = float(sample @ np.array([.2126, .7152, .0722]))
     return np.clip(target / sample, .125, 8).astype(float).tolist()
 
@@ -1002,20 +1024,20 @@ def crop_rotate(image, edits):
 def super_resolve(rgb, scale=2, model_path=None, use_cuda=True, progress=None, cancel=None):
     h, w = rgb.shape[:2]
     if scale not in (1, 2, 4):
-        raise ValueError('仅支持 1×、2× 或 4×。')
+        raise ValueError(tr('仅支持 1×、2× 或 4×。'))
     if h * w * scale * scale > MAX_EXPORT_PIXELS:
-        raise ValueError('放大后超过 4 亿像素，请先裁切或降低倍数。')
+        raise ValueError(tr('放大后超过 4 亿像素，请先裁切或降低倍数。'))
     if scale == 1:
-        return rgb, '原始尺寸'
+        return rgb, tr('原始尺寸')
     if cancel is not None and cancel.is_set():
-        raise InterruptedError('已取消增强')
+        raise InterruptedError(tr('已取消增强'))
     if model_path == ':quality:':
         from .restoration import super_resolution
         return super_resolution(rgb,scale,use_cuda,progress,cancel)
     if model_path == ':builtin:':
         path = Path(__file__).resolve().parents[1] / 'assets' / 'models' / 'realesr-general-x4v3.onnx'
         if not path.exists():
-            raise FileNotFoundError('内置增强模型缺失，请重新解压完整软件包。')
+            raise FileNotFoundError(tr('内置增强模型缺失，请重新解压完整软件包。'))
         return onnx_super_resolve(rgb, scale, path, use_cuda, progress, cancel, native_scale=4)
     if model_path:
         return onnx_super_resolve(rgb, scale, model_path, use_cuda, progress, cancel)
@@ -1024,18 +1046,18 @@ def super_resolve(rgb, scale=2, model_path=None, use_cuda=True, progress=None, c
     for _ in range(3):
         error = rgb - cv2.resize(out, (w, h), interpolation=cv2.INTER_AREA)
         out += .65 * cv2.resize(error, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
-    return np.clip(out, 0, 1), 'Lanczos + 迭代反投影 · CPU'
+    return np.clip(out, 0, 1), tr('Lanczos + 迭代反投影 · CPU')
 
 
 def onnx_super_resolve(rgb, scale, path, use_cuda, progress=None, cancel=None, native_scale=None):
     sess = compute.session(path,use_cuda)
     inp = sess.get_inputs()
     if len(inp) != 1 or inp[0].type != 'tensor(float)' or len(inp[0].shape) != 4:
-        raise ValueError('模型需为单输入 float32 NCHW RGB，范围 0–1。')
+        raise ValueError(tr('模型需为单输入 float32 NCHW RGB，范围 0–1。'))
     if isinstance(inp[0].shape[1], int) and inp[0].shape[1] != 3:
-        raise ValueError('模型输入需为 3 通道 RGB。')
+        raise ValueError(tr('模型输入需为 3 通道 RGB。'))
     if any(isinstance(n, int) for n in inp[0].shape[2:]):
-        raise ValueError('分块超分要求模型支持动态宽高，当前模型为固定尺寸。')
+        raise ValueError(tr('分块超分要求模型支持动态宽高，当前模型为固定尺寸。'))
     h, w = rgb.shape[:2]
     out = large_image.allocate((h * scale, w * scale, 3))
     native = native_scale or scale
@@ -1045,7 +1067,7 @@ def onnx_super_resolve(rgb, scale, path, use_cuda, progress=None, cancel=None, n
     for y in range(0, h, tile):
         for x in range(0, w, tile):
             if cancel is not None and cancel.is_set():
-                raise InterruptedError('已取消增强')
+                raise InterruptedError(tr('已取消增强'))
             ey, ex = min(h, y + tile), min(w, x + tile)
             sy, sx = max(0, y - pad), max(0, x - pad)
             ty, tx = min(h, ey + pad), min(w, ex + pad)
@@ -1053,10 +1075,10 @@ def onnx_super_resolve(rgb, scale, path, use_cuda, progress=None, cancel=None, n
             predicted = sess.run(None, {inp[0].name: block})[0]
             expected = (1, 3, (ty - sy) * native, (tx - sx) * native)
             if predicted.shape != expected:
-                raise ValueError(f'模型输出尺寸 {predicted.shape} 与所选 {scale}× 不匹配。')
+                raise ValueError(tr('模型输出尺寸 {shape} 与所选 {scale}× 不匹配。', shape=predicted.shape, scale=scale))
             predicted = predicted[0].transpose(1, 2, 0)
             if not np.isfinite(predicted).all():
-                raise ValueError('超分模型返回无效像素。')
+                raise ValueError(tr('超分模型返回无效像素。'))
             if native != scale:
                 predicted = cv2.resize(predicted, ((tx - sx) * scale, (ty - sy) * scale), interpolation=cv2.INTER_AREA)
             out[y * scale:ey * scale, x * scale:ex * scale] = predicted[(y - sy) * scale:(ey - sy) * scale, (x - sx) * scale:(ex - sx) * scale]
@@ -1066,7 +1088,7 @@ def onnx_super_resolve(rgb, scale, path, use_cuda, progress=None, cancel=None, n
     label = 'Real-ESRGAN · ' if native_scale else 'ONNX · '
     provider = sess.get_providers()[0]
     if use_cuda and provider == 'CPUExecutionProvider':
-        label += 'GPU 不可用，'
+        label += tr('GPU 不可用，')
     return np.clip(out, 0, 1, out=out), label + provider
 
 
@@ -1075,10 +1097,10 @@ def export_image(path, rgb, quality=95, photo=None, provenance=None):
     path = Path(path)
     ext = path.suffix.lower()
     if ext not in {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.dng'}:
-        raise ValueError('请选择 JPEG、PNG、TIFF 或 DNG 格式。')
+        raise ValueError(tr('请选择 JPEG、PNG、TIFF 或 DNG 格式。'))
     large_image.validate_size(rgb.shape)
     if not large_image.finite(rgb):
-        raise ValueError('图像包含无效像素。')
+        raise ValueError(tr('图像包含无效像素。'))
     temp = path.with_name(path.stem + '.lumen-tmp' + ext)
     try:
         if ext == '.dng':

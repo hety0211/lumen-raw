@@ -3,6 +3,7 @@ import io
 import numpy as np
 import cv2
 from PIL import Image, ImageOps
+from .i18n import N_
 
 
 IDENTITY = [[0., 0.], [1., 1.]]
@@ -15,7 +16,7 @@ def luminance(rgb):
 def camera_curve(raw, linear, path=None):
     from .engine import to_linear, resize_limit
     from . import previews
-    label = '相机预览亮度参考'
+    label = N_('相机预览亮度参考')  # kept in the recipe; translated where shown
     try:
         try:
             thumb = raw.extract_thumb()
@@ -24,7 +25,7 @@ def camera_curve(raw, linear, path=None):
             hevc = previews.hevc_preview(path) if path else None
             if hevc is None:
                 raise
-            thumb, label = None, '相机 HDR 预览亮度参考（PQ 转 SDR）'
+            thumb, label = None, N_('相机 HDR 预览亮度参考（PQ 转 SDR）')
             preview = hevc.astype(np.float32)/255
         if thumb is not None and isinstance(thumb.data, bytes):
             with Image.open(io.BytesIO(thumb.data)) as im:
@@ -50,7 +51,7 @@ def camera_curve(raw, linear, path=None):
         # Fallback only when no embedded JPEG can be decoded; do not invent metadata.
         high = float(np.percentile(luminance(resize_limit(linear, 800)), 99.5))
         gain = float(np.clip(.8/max(high, .02), 1, 8))
-        return [[0.,0.],[.8/gain,.8],[1.,1.]], '标准亮度（相机预览不可用）'
+        return [[0.,0.],[.8/gain,.8],[1.,1.]], N_('标准亮度（相机预览不可用）')
 
 
 def apply(source, settings):

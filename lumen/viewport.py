@@ -25,7 +25,8 @@ import cv2
 import numpy as np
 from PySide6.QtGui import QImage
 
-from . import engine
+from . import engine, lens
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -236,7 +237,8 @@ class DetailSource:
         a = edits['adjustments']
         key = engine._key(edits.get('wb_gain'), edits.get('white_balance'), edits.get('retouch'),
                           edits.get('develop'), {k: a.get(k, 0) for k in engine.TONAL_KEYS},
-                          a.get('denoise', 0), a.get('color_noise', 0), a.get('dehaze', 0), backend.gpu_pointwise)
+                          a.get('denoise', 0), a.get('color_noise', 0), a.get('dehaze', 0), backend.gpu_pointwise,
+                          lens.key(edits.get('lens')))
         with self.lock:
             if key not in self.contexts:
                 self.contexts.clear()
@@ -248,7 +250,7 @@ def render(holder, request, cancel):
     """Worker: render blocks of tiles; returns ``[(kind, key, level, {index: Tile})]``."""
     def check():
         if cancel.is_set():
-            raise InterruptedError('细节渲染已过期')
+            raise InterruptedError(tr('细节渲染已过期'))
     started = time.perf_counter()
     edits, backend, level, final = request['edits'], request['backend'], request['level'], request['final']
     source = holder.level(level)

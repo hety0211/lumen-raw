@@ -8,13 +8,14 @@ import math
 import cv2
 import numpy as np
 from . import large_image
+from .i18n import tr
 
 PANORAMA_MAX_PIXELS=200_000_000
-METHODS={'focus':'景深合成','hdr':'HDR堆栈','panorama':'全景合成'}
+METHODS={'focus':tr('景深合成'),'hdr':tr('HDR堆栈'),'panorama':tr('全景合成')}
 
 
 def check(cancel):
-    if cancel is not None and cancel.is_set():raise InterruptedError('已取消合成')
+    if cancel is not None and cancel.is_set():raise InterruptedError(tr('已取消合成'))
 
 
 def notify(progress,value,message,cancel=None):
@@ -40,7 +41,7 @@ def check_memory(pixels,count):
     # OpenCV Mertens and focus analysis allocate native full-frame temporaries.
     available=large_image.available_memory();required=pixels*(120+count*80)
     if available and required>available*.8:
-        raise ValueError(f'此组堆栈预计需要约 {required/2**30:.1f} GiB 可用内存。请减少照片数量、裁切后再合成，或使用内存更大的电脑。')
+        raise ValueError(tr('此组堆栈预计需要约 {v:.1f} GiB 可用内存。请减少照片数量、裁切后再合成，或使用内存更大的电脑。', v=required/2**30))
 
 
 def stack_transforms(images,reference,cancel=None):
@@ -73,10 +74,10 @@ def stack_transforms(images,reference,cancel=None):
                     matrix=np.linalg.inv(np.vstack([warp,[0,0,1]]))@adjust
             except cv2.error:pass
         if matrix is None:
-            raise ValueError(f'第 {index+1} 张无法对齐。堆栈需要相同构图、足够的重叠和可识别细节。')
+            raise ValueError(tr('第 {v} 张无法对齐。堆栈需要相同构图、足够的重叠和可识别细节。', v=index+1))
         full=np.linalg.inv(sref)@matrix@scale
         determinant=np.linalg.det(full[:2,:2])
-        if not np.isfinite(full).all() or not .01<determinant<100:raise ValueError(f'第 {index+1} 张对齐结果无效。')
+        if not np.isfinite(full).all() or not .01<determinant<100:raise ValueError(tr('第 {v} 张对齐结果无效。', v=index+1))
         transforms.append(full)
     return transforms
 
@@ -85,7 +86,7 @@ def aligned_stack(images,reference,progress=None,cancel=None):
     matrices=stack_transforms(images,reference,cancel);h,w=images[reference].shape[:2]
     aligned=[];valid=large_image.allocate((h,w),np.uint8,True);valid[:]=255
     for index,(im,matrix) in enumerate(zip(images,matrices)):
-        notify(progress,25+int(20*index/len(images)),f'对齐照片 {index+1} / {len(images)}',cancel)
+        notify(progress,25+int(20*index/len(images)),tr('对齐照片 {v} / {n_images}', v=index+1, n_images=len(images)),cancel)
         result=large_image.allocate((h,w,3));mask=large_image.allocate((h,w),np.uint8)
         source_mask=np.full(im.shape[:2],255,np.uint8)
         for y in range(0,h,256):
@@ -93,7 +94,7 @@ def aligned_stack(images,reference,progress=None,cancel=None):
             result[y:y+height]=cv2.warpPerspective(im,shift,(w,height),flags=cv2.INTER_LINEAR,borderMode=cv2.BORDER_REPLICATE)
             mask[y:y+height]=cv2.warpPerspective(source_mask,shift,(w,height),flags=cv2.INTER_NEAREST,borderMode=cv2.BORDER_CONSTANT)
         np.minimum(valid,mask,out=valid);aligned.append(result)
-    if np.count_nonzero(valid)<h*w*.15:raise ValueError('对齐后的共同区域太小，请选择相同构图的照片。')
+    if np.count_nonzero(valid)<h*w*.15:raise ValueError(tr('对齐后的共同区域太小，请选择相同构图的照片。'))
     return aligned,valid
 
 
@@ -112,13 +113,13 @@ def inner_crop(valid):
                 if area>best[0]:best=(area,left,y-height+1,x,y+1)
                 start=left
             if not stack or stack[-1][1]<value:stack.append((start,value))
-    if not best[0]:raise ValueError('没有可用的完整矩形区域，请关闭自动裁边或重新选择照片。')
+    if not best[0]:raise ValueError(tr('没有可用的完整矩形区域，请关闭自动裁边或重新选择照片。'))
     _,x0,y0,x1,y1=best
     return x0*step,y0*step,min(w,x1*step),min(h,y1*step)
 
 
 def ghost_mask(images,reference,level):
-    if level not in ('low','medium','high'):raise ValueError('无效去伪影档位')
+    if level not in ('low','medium','high'):raise ValueError(tr('无效去伪影档位'))
     threshold,radius={'low':(.20,2),'medium':(.12,5),'high':(.065,9)}[level]
     ref=gray(images[reference]);refblur=cv2.GaussianBlur(ref,(0,0),1.2)
     sampling=max(1,math.ceil(max(ref.shape)/1000));percentiles=np.linspace(2,98,33)
@@ -196,10 +197,10 @@ def bounded_rois(sizes,matrices,rotations,scale,maximum=PANORAMA_MAX_PIXELS):
         x0=min(r[0] for r in rois);y0=min(r[1] for r in rois)
         x1=max(r[0]+r[2] for r in rois);y1=max(r[1]+r[3] for r in rois)
         w,h=x1-x0,y1-y0
-        if w<=0 or h<=0 or not np.isfinite(scale):raise ValueError('全景投影无效。')
+        if w<=0 or h<=0 or not np.isfinite(scale):raise ValueError(tr('全景投影无效。'))
         if w*h<=maximum:return rois,(x0,y0,w,h),scale
         scale*=math.sqrt(maximum/(w*h))*.998
-    raise ValueError('无法将全景画布限制在 2 亿像素内。')
+    raise ValueError(tr('无法将全景画布限制在 2 亿像素内。'))
 
 
 def spherical_map(rect,scale,k,r):
@@ -213,7 +214,7 @@ def spherical_map(rect,scale,k,r):
 
 def panorama(images,reference,progress=None,cancel=None,maximum=PANORAMA_MAX_PIXELS):
     previews=[small(im,1200) for im in images]
-    notify(progress,22,'估算全景相机位置与球面投影…',cancel)
+    notify(progress,22,tr('估算全景相机位置与球面投影…'),cancel)
     # SIFT gives more stable focal/camera estimation than the high-level
     # Stitcher's ORB defaults on low-contrast photographic terrain.
     finder=cv2.SIFT_create(nfeatures=6000);features=[]
@@ -221,7 +222,7 @@ def panorama(images,reference,progress=None,cancel=None,maximum=PANORAMA_MAX_PIX
     for im,_ in previews:
         check(cancel);features.append(cv2.detail.computeImageFeatures2(finder,np.uint8(np.clip(im[...,::-1],0,1)*255)))
     if any(len(feature.keypoints)<10 for feature in features):
-        raise ValueError('全景匹配失败：部分照片缺少可识别细节，请移除纯色、严重模糊或过曝的照片。')
+        raise ValueError(tr('全景匹配失败：部分照片缺少可识别细节，请移除纯色、严重模糊或过曝的照片。'))
     # The default cutoff of 3 treats exceptionally consistent matches as
     # duplicate images. Dense, well-aligned textures also exceed that cutoff;
     # keep those valid pairs (the confidence formula is bounded by 10/3).
@@ -235,14 +236,14 @@ def panorama(images,reference,progress=None,cancel=None,maximum=PANORAMA_MAX_PIX
     while previous!=connected:
         previous=connected.copy()
         for i in previous:connected.update(edges[i])
-    if len(connected)!=len(images):raise ValueError('全景匹配失败：部分照片没有足够重叠或可识别细节，请移除这些照片后重试。')
+    if len(connected)!=len(images):raise ValueError(tr('全景匹配失败：部分照片没有足够重叠或可识别细节，请移除这些照片后重试。'))
     success,cameras=cv2.detail_HomographyBasedEstimator().apply(features,matches,None)
-    if not success:raise ValueError('无法估算全景相机参数，请选择同一视点、约 30% 以上重叠的照片。')
+    if not success:raise ValueError(tr('无法估算全景相机参数，请选择同一视点、约 30% 以上重叠的照片。'))
     for camera in cameras:camera.R=camera.R.astype(np.float32)
     adjuster=cv2.detail_BundleAdjusterRay();adjuster.setConfThresh(.6)
     refinement=np.zeros((3,3),np.uint8);refinement[0,0]=refinement[0,1]=refinement[0,2]=refinement[1,1]=refinement[1,2]=1
     adjuster.setRefinementMask(refinement);success,cameras=adjuster.apply(features,matches,cameras);check(cancel)
-    if not success:raise ValueError('全景相机优化失败。请避免明显视差、模糊或重复纹理，并增加照片间的重叠。')
+    if not success:raise ValueError(tr('全景相机优化失败。请避免明显视差、模糊或重复纹理，并增加照片间的重叠。'))
     corrected=cv2.detail.waveCorrect([camera.R.copy() for camera in cameras],cv2.detail.WAVE_CORRECT_HORIZ)
     for camera,rotation in zip(cameras,corrected):camera.R=rotation
     component=list(range(len(images)));ordered=images
@@ -251,8 +252,8 @@ def panorama(images,reference,progress=None,cancel=None,maximum=PANORAMA_MAX_PIX
     scale=float(np.median([k[0,0] for k in matrices]))
     rois,bounds,scale=bounded_rois(sizes,matrices,rotations,scale,maximum)
     x0,y0,w,h=bounds
-    if w*h>maximum:raise ValueError('全景超过 2 亿像素。')
-    notify(progress,35,f'全景画布 {w} × {h}，开始分块融合…',cancel)
+    if w*h>maximum:raise ValueError(tr('全景超过 2 亿像素。'))
+    notify(progress,35,tr('全景画布 {w} × {h}，开始分块融合…', w=w, h=h),cancel)
     output=large_image.allocate((h,w,3));valid=large_image.allocate((h,w),np.uint8,True)
     # Estimate scalar exposure gains from low-resolution overlaps, anchored to
     # the chosen reference. No geometrically disconnected photo is silently lost.
@@ -286,30 +287,30 @@ def panorama(images,reference,progress=None,cancel=None,maximum=PANORAMA_MAX_PIX
                 accum+=warped*(alpha*gain)[...,None];weight+=alpha
             output[y:y+th,x:x+tw]=np.clip(accum/np.maximum(weight[...,None],1e-8),0,1)
             valid[y:y+th,x:x+tw]=np.uint8(weight>0)*255
-            done+=1;notify(progress,35+int(55*done/total),f'全景融合分块 {done} / {total}',cancel)
+            done+=1;notify(progress,35+int(55*done/total),tr('全景融合分块 {done} / {total}', done=done, total=total),cancel)
     return output,valid,dict(canvas=[w,h],projection='spherical',pixel_limit=maximum,gains=gains.tolist())
 
 
 def merge_images(images,kind,reference=0,ghost='medium',crop=True,align=True,progress=None,cancel=None):
-    if kind not in METHODS or not 2<=len(images)<=32:raise ValueError('合成需选择 2–32 张照片。')
-    if not 0<=reference<len(images):raise ValueError('无效参考照片。')
+    if kind not in METHODS or not 2<=len(images)<=32:raise ValueError(tr('合成需选择 2–32 张照片。'))
+    if not 0<=reference<len(images):raise ValueError(tr('无效参考照片。'))
     for image in images:
         large_image.validate_size(image.shape)
-        if image.ndim!=3 or image.shape[2]!=3:raise ValueError('合成需要 RGB 照片。')
+        if image.ndim!=3 or image.shape[2]!=3:raise ValueError(tr('合成需要 RGB 照片。'))
     check(cancel)
     if kind=='panorama':output,valid,info=panorama(images,reference,progress,cancel)
     else:
         h,w=images[reference].shape[:2];check_memory(h*w,len(images))
         if align:images,valid=aligned_stack(images,reference,progress,cancel)
         else:
-            if any(im.shape!=images[reference].shape for im in images):raise ValueError('关闭对齐时，堆栈照片尺寸必须相同。')
+            if any(im.shape!=images[reference].shape for im in images):raise ValueError(tr('关闭对齐时，堆栈照片尺寸必须相同。'))
             valid=np.full((h,w),255,np.uint8)
-        notify(progress,50,'Mertens 曝光融合与去伪影…' if kind=='hdr' else '分析多尺度清晰度并合成景深…',cancel)
+        notify(progress,50,tr('Mertens 曝光融合与去伪影…') if kind=='hdr' else tr('分析多尺度清晰度并合成景深…'),cancel)
         output=fuse_hdr(images,reference,ghost,cancel) if kind=='hdr' else fuse_focus(images,cancel)
         info=dict(algorithm='Mertens exposure fusion' if kind=='hdr' else 'multiscale focus selection',deghost=ghost if kind=='hdr' else None)
     check(cancel)
     if crop:
         x0,y0,x1,y1=inner_crop(valid);output=output[y0:y1,x0:x1];info['crop']=[x0,y0,x1,y1]
-    if not large_image.finite(output):raise ValueError('合成结果包含无效像素。')
-    notify(progress,94,'合成完成，准备保存…',cancel)
+    if not large_image.finite(output):raise ValueError(tr('合成结果包含无效像素。'))
+    notify(progress,94,tr('合成完成，准备保存…'),cancel)
     return output,info

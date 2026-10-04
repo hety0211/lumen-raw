@@ -12,6 +12,7 @@ import threading
 import wave
 from pathlib import Path
 import numpy as np
+from .i18n import tr
 
 RATE = 16000
 MODEL_DIR = Path(__file__).resolve().parents[1] / 'assets' / 'models' / 'sensevoice'
@@ -138,7 +139,7 @@ def recognizer():
     with _lock:
         if _recognizer is None:
             if not available():
-                raise FileNotFoundError('未找到语音识别模型（assets/models/sensevoice）。')
+                raise FileNotFoundError(tr('未找到语音识别模型（assets/models/sensevoice）。'))
             _recognizer = Recognizer()
         return _recognizer
 
@@ -151,6 +152,6 @@ def read_wav(path):
     """Mono 16-bit PCM WAV at 16 kHz -> int16 samples (used by tests and tools)."""
     with wave.open(str(path), 'rb') as stream:
         if stream.getsampwidth() != 2 or stream.getframerate() != RATE:
-            raise ValueError('需要 16 kHz、16 位 PCM WAV。')
+            raise ValueError(tr('需要 16 kHz、16 位 PCM WAV。'))
         data = np.frombuffer(stream.readframes(stream.getnframes()), np.int16)
         return data.reshape(-1, stream.getnchannels())[:, 0]

@@ -20,21 +20,22 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushB
 from . import nl_edit, speech, engine, host
 from .scheduler import Activity as A
 from .widgets import AdjustSlider
+from .i18n import tr
 
 EXAMPLES = [
-    ('示例指令…', ''),
-    ('通透自然', '整体通透自然一些，压一点高光、提亮暗部，颜色干净'),
-    ('天空更蓝', '天空更蓝更有层次，地面保持自然'),
-    ('温暖日落', '做成温暖的日落氛围，高光偏金色，暗部略带青蓝'),
-    ('日系清新', '日系清新风格：明亮、低对比、略偏青、饱和度低一点'),
-    ('电影青橙', '电影感青橙色调，暗部偏青，高光偏橙，加一点暗角'),
-    ('复古胶片', '复古胶片感：黑位抬起、轻微褪色、加颗粒'),
-    ('黑白高反差', '高反差黑白，强调纹理和光影'),
-    ('夜景降噪', '夜景：压暗高光防止过曝，提亮暗部并降噪'),
-    ('人像柔肤', '人像：人物提亮一点，肤色自然通透，纹理柔和'),
+    (tr('示例指令…'), ''),
+    (tr('通透自然'), tr('整体通透自然一些，压一点高光、提亮暗部，颜色干净')),
+    (tr('天空更蓝'), tr('天空更蓝更有层次，地面保持自然')),
+    (tr('温暖日落'), tr('做成温暖的日落氛围，高光偏金色，暗部略带青蓝')),
+    (tr('日系清新'), tr('日系清新风格：明亮、低对比、略偏青、饱和度低一点')),
+    (tr('电影青橙'), tr('电影感青橙色调，暗部偏青，高光偏橙，加一点暗角')),
+    (tr('复古胶片'), tr('复古胶片感：黑位抬起、轻微褪色、加颗粒')),
+    (tr('黑白高反差'), tr('高反差黑白，强调纹理和光影')),
+    (tr('夜景降噪'), tr('夜景：压暗高光防止过曝，提亮暗部并降噪')),
+    (tr('人像柔肤'), tr('人像：人物提亮一点，肤色自然通透，纹理柔和')),
 ]
 RECORD_LIMIT = 30
-VOICE = '语音'
+VOICE = tr('语音')
 
 
 class _Relay(QObject):
@@ -89,7 +90,7 @@ class VoiceRecorder(QObject):
         from PySide6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices
         device = QMediaDevices.defaultAudioInput()
         if device.isNull():
-            self.failed.emit('没有找到麦克风。请连接麦克风，并在系统隐私设置中允许应用使用麦克风。')
+            self.failed.emit(tr('没有找到麦克风。请连接麦克风，并在系统隐私设置中允许应用使用麦克风。'))
             return False
         wanted = QAudioFormat()
         wanted.setSampleRate(speech.RATE)
@@ -103,7 +104,7 @@ class VoiceRecorder(QObject):
         self.device = self.source.start()
         if self.device is None:
             self.source = None
-            self.failed.emit('无法打开麦克风。')
+            self.failed.emit(tr('无法打开麦克风。'))
             return False
         self.device.readyRead.connect(self._read)
         self.timer = QTimer(self)
@@ -151,14 +152,14 @@ class VoiceRecorder(QObject):
         # QtAudio.Error since Qt 6.7 (QAudio.Error before); compare by name.
         if getattr(self.source.error(), 'name', 'NoError') != 'NoError':
             self.cancel()
-            self.failed.emit('麦克风录音出错。请在系统隐私设置中允许应用使用麦克风。')
+            self.failed.emit(tr('麦克风录音出错。请在系统隐私设置中允许应用使用麦克风。'))
             return
         elapsed = time.monotonic() - self.started
         if self.heard and self.quiet_since is not None and time.monotonic() - self.quiet_since > 1.2:
             self.stop()
         elif not self.heard and elapsed > 8:
             self.cancel()
-            self.failed.emit('没有听到声音。请检查麦克风是否静音，或靠近一些再说。')
+            self.failed.emit(tr('没有听到声音。请检查麦克风是否静音，或靠近一些再说。'))
         elif elapsed > RECORD_LIMIT:
             self.stop()
 
@@ -190,31 +191,31 @@ class VoiceRecorder(QObject):
 class SettingsDialog(QDialog):
     def __init__(self, parent, settings):
         super().__init__(parent)
-        self.setWindowTitle('自然语言修图 · 模型设置')
+        self.setWindowTitle(tr('自然语言修图 · 模型设置'))
         self.setMinimumWidth(560)
         self.settings = copy.deepcopy(settings)
         self.relay = _Relay(self)
         layout = QVBoxLayout(self)
         form = QFormLayout()
         self.provider = QComboBox()
-        for title, keys in (('本地模型（不需要 API Key）', nl_edit.LOCAL_PROVIDERS), ('云端 API', nl_edit.CLOUD_PROVIDERS)):
+        for title, keys in ((tr('本地模型（不需要 API Key）'), nl_edit.LOCAL_PROVIDERS), (tr('云端 API'), nl_edit.CLOUD_PROVIDERS)):
             self.provider.addItem(f'—— {title} ——', None)
             self.provider.model().item(self.provider.count() - 1).setEnabled(False)
             for key in keys:
                 self.provider.addItem(nl_edit.provider_label(key), key)
-        form.addRow('服务', self.provider)
+        form.addRow(tr('服务'), self.provider)
         url_row = QHBoxLayout()
         self.base_url = QLineEdit()
         url_row.addWidget(self.base_url, 1)
-        default = QPushButton('默认地址')
+        default = QPushButton(tr('默认地址'))
         default.clicked.connect(lambda: self.base_url.setText(nl_edit.PROVIDERS[self.current][2]))
         url_row.addWidget(default)
-        form.addRow('接口地址', url_row)
+        form.addRow(tr('接口地址'), url_row)
         key_row = QHBoxLayout()
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
         key_row.addWidget(self.key, 1)
-        show = QCheckBox('显示')
+        show = QCheckBox(tr('显示'))
         show.toggled.connect(lambda on: self.key.setEchoMode(QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password))
         key_row.addWidget(show)
         form.addRow('API Key', key_row)
@@ -223,40 +224,40 @@ class SettingsDialog(QDialog):
         self.model_name.setEditable(True)
         self.model_name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         model_row.addWidget(self.model_name, 1)
-        self.refresh_button = QPushButton('获取模型列表')
+        self.refresh_button = QPushButton(tr('获取模型列表'))
         self.refresh_button.clicked.connect(self.fetch_models)
         model_row.addWidget(self.refresh_button)
-        form.addRow('模型', model_row)
+        form.addRow(tr('模型'), model_row)
         self.timeout = QSpinBox()
         self.timeout.setRange(10, 900)
-        self.timeout.setSuffix(' 秒')
+        self.timeout.setSuffix(tr(' 秒'))
         self.timeout.setValue(settings['timeout'])
-        form.addRow('超时', self.timeout)
+        form.addRow(tr('超时'), self.timeout)
         self.reasoning = QComboBox()
-        for code, title in nl_edit.REASONING.items():
+        for code, title in ((code, tr(title)) for code, title in nl_edit.REASONING.items()):
             self.reasoning.addItem(title, code)
         self.reasoning.setCurrentIndex(max(0, self.reasoning.findData(settings.get('reasoning', 'default'))))
-        self.reasoning.setToolTip('思考越深，结果可能越细致，但更慢、消耗的 token 更多；修图参数通常“低”或“关闭”就够用。')
+        self.reasoning.setToolTip(tr('思考越深，结果可能越细致，但更慢、消耗的 token 更多；修图参数通常“低”或“关闭”就够用。'))
         self.reasoning.currentIndexChanged.connect(self.show_thinking_note)
-        form.addRow('思考强度', self.reasoning)
+        form.addRow(tr('思考强度'), self.reasoning)
         self.thinking_note = QLabel('')
         self.thinking_note.setWordWrap(True)
         self.thinking_note.setObjectName('subtle')
         form.addRow('', self.thinking_note)
-        self.attach = QCheckBox('附带当前预览图（长边 768 像素；模型需支持图像输入）')
+        self.attach = QCheckBox(tr('附带当前预览图（长边 768 像素；模型需支持图像输入）'))
         self.attach.setChecked(settings['attach_image'])
         form.addRow('', self.attach)
         self.voice = QComboBox()
-        for title, code in (('自动（中文 / English）', 'auto'), ('中文', 'zh'), ('English', 'en')):
+        for title, code in ((tr('自动（中文 / English）'), 'auto'), (tr('中文'), 'zh'), ('English', 'en')):
             self.voice.addItem(title, code)
         self.voice.setCurrentIndex(max(0, self.voice.findData(settings['voice_language'])))
-        form.addRow('语音识别', self.voice)
-        self.auto_send = QCheckBox('说完后自动修图')
+        form.addRow(tr('语音识别'), self.voice)
+        self.auto_send = QCheckBox(tr('说完后自动修图'))
         self.auto_send.setChecked(settings['auto_send'])
         form.addRow('', self.auto_send)
         layout.addLayout(form)
         test_row = QHBoxLayout()
-        self.test_button = QPushButton('测试连接')
+        self.test_button = QPushButton(tr('测试连接'))
         self.test_button.clicked.connect(self.test)
         test_row.addWidget(self.test_button)
         self.status = QLabel('')
@@ -292,32 +293,32 @@ class SettingsDialog(QDialog):
         label, api, url, suggested, local, _, _ = nl_edit.PROVIDERS[key]
         self.base_url.setText(entry['base_url'])
         self.key.setText(entry['key'])
-        self.key.setPlaceholderText('本地服务通常留空' if local else '在服务商控制台创建')
+        self.key.setPlaceholderText(tr('本地服务通常留空') if local else tr('在服务商控制台创建'))
         self.model_name.clear()
         if entry['model']:
             self.model_name.addItem(entry['model'])
         self.model_name.setCurrentText(entry['model'])
-        self.model_name.lineEdit().setPlaceholderText(suggested or '点“获取模型列表”或直接填写')
+        self.model_name.lineEdit().setPlaceholderText(suggested or tr('点“获取模型列表”或直接填写'))
         self.status.setText('')
         if local:
             self.hint.setText({
-                'ollama': 'Ollama：安装后保持运行即可（默认端口 11434）。用 ollama pull qwen3:8b 等下载模型；带图像输入可选 qwen2.5vl、gemma3 等。',
-                'lmstudio': 'LM Studio：在“开发者”页面加载模型并启动本地服务（默认端口 1234）。',
-                'llamacpp': 'llama.cpp：运行 llama-server -m 模型.gguf --port 8080；图像输入需要同时加载 --mmproj。',
-            }.get(key, '任何提供 /v1/chat/completions 的本地服务都可以使用。') +
-                '\n指令、参数和照片统计只发送到本机服务。')
+                'ollama': tr('Ollama：安装后保持运行即可（默认端口 11434）。用 ollama pull qwen3:8b 等下载模型；带图像输入可选 qwen2.5vl、gemma3 等。'),
+                'lmstudio': tr('LM Studio：在“开发者”页面加载模型并启动本地服务（默认端口 1234）。'),
+                'llamacpp': tr('llama.cpp：运行 llama-server -m 模型.gguf --port 8080；图像输入需要同时加载 --mmproj。'),
+            }.get(key, tr('任何提供 /v1/chat/completions 的本地服务都可以使用。')) +
+                tr('\n指令、参数和照片统计只发送到本机服务。'))
         else:
-            self.hint.setText('云端服务会收到：你的指令、当前调色参数、照片统计信息和拍摄参数（不含 GPS）'
-                              + ('，以及一张预览图' if self.attach.isChecked() else '') +
-                              '。费用按服务商计费。API Key 仅保存在本机' + ('，使用 Windows 数据保护加密。' if host.WINDOWS else
-                                                       '，存放在 macOS 钥匙串中。' if host.MACOS else '。'))
+            self.hint.setText(tr('云端服务会收到：你的指令、当前调色参数、照片统计信息和拍摄参数（不含 GPS）')
+                              + (tr('，以及一张预览图') if self.attach.isChecked() else '') +
+                              tr('。费用按服务商计费。API Key 仅保存在本机') + (tr('，使用 Windows 数据保护加密。') if host.WINDOWS else
+                                                       tr('，存放在 macOS 钥匙串中。') if host.MACOS else tr('。')))
         if not local and key == 'custom':
-            self.key.setPlaceholderText('如果接口需要，填写 Key')
+            self.key.setPlaceholderText(tr('如果接口需要，填写 Key'))
         self.show_thinking_note()
 
     def show_thinking_note(self, *_):
         if self.current:
-            self.thinking_note.setText(nl_edit.THINKING_NOTES.get(nl_edit.PROVIDERS[self.current][6], ''))
+            self.thinking_note.setText(tr(nl_edit.THINKING_NOTES.get(nl_edit.PROVIDERS[self.current][6], '')))
 
     def service(self):
         self.store()
@@ -327,14 +328,14 @@ class SettingsDialog(QDialog):
     def fetch_models(self):
         service = self.service()
         self.refresh_button.setEnabled(False)
-        self.status.setText('正在获取模型列表…')
+        self.status.setText(tr('正在获取模型列表…'))
         def ok(names):
             self.refresh_button.setEnabled(True)
             current = self.model_name.currentText()
             self.model_name.clear()
             self.model_name.addItems(names)
             self.model_name.setCurrentText(current if current else (names[0] if names else ''))
-            self.status.setText(f'找到 {len(names)} 个模型。' if names else '服务没有返回模型；可直接填写模型名称。')
+            self.status.setText(tr('找到 {n_names} 个模型。', n_names=len(names)) if names else tr('服务没有返回模型；可直接填写模型名称。'))
         def fail(error):
             self.refresh_button.setEnabled(True)
             self.status.setText(str(error))
@@ -343,7 +344,7 @@ class SettingsDialog(QDialog):
     def test(self):
         service = self.service()
         self.test_button.setEnabled(False)
-        self.status.setText('正在测试…')
+        self.status.setText(tr('正在测试…'))
         started = time.monotonic()
         messages = [dict(role='system', content='只输出 JSON。'), dict(role='user', content='请回复 {"ok": true}')]
         usage = {}
@@ -352,9 +353,9 @@ class SettingsDialog(QDialog):
             try:
                 nl_edit.parse_reply(text)
                 tokens = f' · {usage["total"]:,} token' if usage else ''
-                self.status.setText(f'连接正常 · {service["model"]} · {time.monotonic() - started:.1f} 秒{tokens}')
+                self.status.setText(tr('连接正常 · {model} · {v:.1f} 秒{tokens}', model=service["model"], v=time.monotonic() - started, tokens=tokens))
             except nl_edit.ServiceError:
-                self.status.setText('已连接，但模型没有按要求返回 JSON：' + text.strip()[:120])
+                self.status.setText(tr('已连接，但模型没有按要求返回 JSON：') + text.strip()[:120])
         def fail(error):
             self.test_button.setEnabled(True)
             self.status.setText(str(error))
@@ -402,13 +403,13 @@ class NaturalLanguageMixin:
         self.nl_service.setWordWrap(True)
         row.addWidget(self.nl_service, 1)
         settings = QToolButton()
-        settings.setText('设置')
-        settings.setToolTip('选择本地模型或云端 API')
+        settings.setText(tr('设置'))
+        settings.setToolTip(tr('选择本地模型或云端 API'))
         settings.clicked.connect(self.nl_configure)
         row.addWidget(settings)
         v.addLayout(row)
         self.nl_input = InstructionEdit()
-        self.nl_input.setPlaceholderText('一句话描述想要的效果，例如：\n天空更蓝，整体暖一点，人物提亮')
+        self.nl_input.setPlaceholderText(tr('一句话描述想要的效果，例如：\n天空更蓝，整体暖一点，人物提亮'))
         self.nl_input.setFixedHeight(78)
         self.nl_input.submitted.connect(lambda: None if self.nl_busy else self.nl_send())
         v.addWidget(self.nl_input)
@@ -419,11 +420,13 @@ class NaturalLanguageMixin:
         v.addWidget(self.nl_examples)
         row = QHBoxLayout()
         self.nl_voice = QPushButton(VOICE)
-        self.nl_voice.setToolTip(f'离线语音识别（中文 / English），说完停顿约 1 秒自动结束 · {host.keys("Ctrl+Shift+Space")}')
+        self.nl_voice.setToolTip(tr('离线语音识别（中文 / English），说完停顿约 1 秒自动结束 · {v}', v=host.keys("Ctrl+Shift+Space")))
         self.nl_voice.clicked.connect(self.nl_toggle_voice)
         row.addWidget(self.nl_voice)
-        self.nl_go = self.button('一键修图', self.nl_send, True)
-        self.nl_go.setToolTip('Enter 发送，Shift+Enter 换行')
+        self.nl_go = self.button(tr('一键修图'), self.nl_send, True)
+        # Takes the rest of the row and never widens the narrow left panel (longer languages).
+        self.nl_go.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.nl_go.setToolTip(tr('Enter 发送，Shift+Enter 换行'))
         row.addWidget(self.nl_go, 1)
         v.addLayout(row)
         self.nl_meter = QProgressBar()
@@ -454,15 +457,15 @@ class NaturalLanguageMixin:
         self.nl_changes.setFont(font)
         self.nl_changes.setMinimumHeight(84)
         v.addWidget(self.nl_changes, 1)
-        self.nl_amount = AdjustSlider('应用强度 %', 0, 150)
+        self.nl_amount = AdjustSlider(tr('应用强度 %'), 0, 150)
         self.nl_amount.default_value = 100
         self.nl_amount.setValue(100)
         self.nl_amount.changed.connect(self.nl_strength)
         self.nl_amount.committed.connect(self.commit)
         v.addWidget(self.nl_amount)
         row = QHBoxLayout()
-        self.nl_revert = self.button('撤销本次', self.nl_undo)
-        self.nl_again = self.button('重新生成', self.nl_regenerate)
+        self.nl_revert = self.button(tr('撤销本次'), self.nl_undo)
+        self.nl_again = self.button(tr('重新生成'), self.nl_regenerate)
         row.addWidget(self.nl_revert)
         row.addWidget(self.nl_again)
         v.addLayout(row)
@@ -481,8 +484,8 @@ class NaturalLanguageMixin:
 
     def nl_update_service(self):
         service = nl_edit.active(self.nl_settings)
-        name = service['model'] or '未选择模型'
-        self.nl_service.setText(f'{"本地" if service["local"] else "云端"} · {service["label"].split("（")[0]} · {name}')
+        name = service['model'] or tr('未选择模型')
+        self.nl_service.setText(f'{tr("本地") if service["local"] else tr("云端")} · {service["label"].split("（")[0]} · {name}')
         self.nl_service.setToolTip(service['base_url'])
 
     def refresh_natural_language(self):
@@ -500,7 +503,7 @@ class NaturalLanguageMixin:
         self.nl_go.setEnabled(ready or self.nl_busy)
         self.nl_voice.setEnabled(speech.available() and (ready or self.nl_recorder.recording) and not self.nl_transcribing)
         if not speech.available():
-            self.nl_voice.setToolTip('未安装语音识别模型（assets/models/sensevoice）')
+            self.nl_voice.setToolTip(tr('未安装语音识别模型（assets/models/sensevoice）'))
         live = self.nl_plan is not None and self.edits == self.nl_applied
         self.nl_amount.setEnabled(live and not self.nl_busy)
         self.nl_revert.setEnabled(live and not self.nl_busy)
@@ -508,7 +511,7 @@ class NaturalLanguageMixin:
 
     def nl_set_busy(self, busy):
         self.nl_busy = busy
-        self.nl_go.setText('取消' if busy else '一键修图')
+        self.nl_go.setText(tr('取消') if busy else tr('一键修图'))
         self.nl_go.setObjectName('' if busy else 'primary')
         self.nl_go.style().unpolish(self.nl_go)
         self.nl_go.style().polish(self.nl_go)
@@ -521,7 +524,7 @@ class NaturalLanguageMixin:
 
     def nl_progress(self):
         service = nl_edit.active(self.nl_settings)
-        self.nl_status.setText(f'{service["label"].split("（")[0]} · {service["model"]} 正在思考… {time.monotonic() - self.nl_started:.0f} 秒')
+        self.nl_status.setText(tr('{v} · {model} 正在思考… {v2:.0f} 秒', v=service["label"].split("（")[0], model=service["model"], v2=time.monotonic() - self.nl_started))
 
     def nl_show_result(self, plan, lines=None):
         self.nl_changes.clear()
@@ -533,11 +536,11 @@ class NaturalLanguageMixin:
             self.nl_revert.hide()
             self.nl_again.hide()
             return
-        text = plan.explanation or '已按指令调整。'
+        text = plan.explanation or tr('已按指令调整。')
         if plan.notes:
-            text += '\n注意：' + '；'.join(plan.notes)
+            text += tr('\n注意：') + tr('；').join(plan.notes)
         self.nl_explanation.setText(text)
-        self.nl_changes.addItems(lines or ['没有参数变化'])
+        self.nl_changes.addItems(lines or [tr('没有参数变化')])
         for widget in (self.nl_explanation, self.nl_changes, self.nl_amount, self.nl_revert, self.nl_again):
             widget.show()
 
@@ -555,7 +558,7 @@ class NaturalLanguageMixin:
             try:
                 nl_edit.save_settings(self.nl_settings)
             except OSError as error:
-                self.error('无法保存模型设置：' + str(error))
+                self.error(tr('无法保存模型设置：') + str(error))
             self.nl_update_service()
 
     # ----------------------------------------------------------------- requests
@@ -564,13 +567,13 @@ class NaturalLanguageMixin:
         if self.nl_busy:
             self.nl_request += 1
             self.nl_set_busy(False)
-            self.nl_status.setText('已取消。')
+            self.nl_status.setText(tr('已取消。'))
             return
         instruction = (instruction if isinstance(instruction, str) else self.nl_input.toPlainText()).strip()
         if self.source is None or self.loading:
             return
         if not instruction:
-            self.nl_status.setText('请先输入或说出想要的效果。')
+            self.nl_status.setText(tr('请先输入或说出想要的效果。'))
             return
         self.commit()
         service = nl_edit.active(self.nl_settings)
@@ -606,7 +609,7 @@ class NaturalLanguageMixin:
             if request != self.nl_request:
                 return
             self.nl_set_busy(False)
-            self.nl_status.setText(str(error) if isinstance(error, nl_edit.ServiceError) else f'请求失败：{error}')
+            self.nl_status.setText(str(error) if isinstance(error, nl_edit.ServiceError) else tr('请求失败：{error}', error=error))
         run_async(self.nl_relay, lambda: nl_edit.complete(service, messages, image, usage), ok, fail)
 
     def nl_resolve(self, plan, instruction):
@@ -614,7 +617,7 @@ class NaturalLanguageMixin:
         if not plan.regions:
             return self.nl_finish(nl_edit.attach_regions(plan, []))
         if not self.work.can_start(A.SELECTION):
-            plan.notes.append('正在进行其他识别，区域蒙版未创建')
+            plan.notes.append(tr('正在进行其他识别，区域蒙版未创建'))
             plan.regions = []
             return self.nl_finish(nl_edit.attach_regions(plan, []))
         from . import develop, selection
@@ -622,7 +625,7 @@ class NaturalLanguageMixin:
         token, source, profile = self.document_token, self.source, self.edits['develop'].copy()
         cuda = self.backend_combo.currentIndex() == 0
         kinds = [kind for kind, _ in plan.regions]
-        self.nl_status.setText('正在本地识别' + '、'.join(nl_edit.REGIONS[k][0] for k in kinds) + '…')
+        self.nl_status.setText(tr('正在本地识别') + tr('、').join(tr(nl_edit.REGIONS[k][0]) for k in kinds) + '…')
         def work():
             rgb = engine.to_srgb(develop.apply(source, profile)).clip(0, 1)
             alphas = []
@@ -637,7 +640,7 @@ class NaturalLanguageMixin:
         def failed(text):
             self.work.end(A.SELECTION)
             if token == self.document_token:
-                plan.notes.append('区域识别失败：' + text.strip().splitlines()[-1][:120])
+                plan.notes.append(tr('区域识别失败：') + text.strip().splitlines()[-1][:120])
                 plan.regions = []
                 self.nl_finish(nl_edit.attach_regions(plan, []))
         self.job(work, ready, failed)
@@ -658,10 +661,10 @@ class NaturalLanguageMixin:
         self.commit()
         self.nl_show_result(plan, lines)
         tokens = f' · {self.nl_usage["total"]:,} token' if self.nl_usage.get('total') else ''
-        self.nl_status.setText((f'已应用 {len(lines)} 项调整' if lines else '模型认为不需要调整') + tokens +
-                               (f' · {host.keys("Ctrl+Z")} 可撤销' if lines else '。'))
-        self.nl_status.setToolTip(f'输入 {self.nl_usage.get("input", 0):,} · 输出 {self.nl_usage.get("output", 0):,} token' if tokens else '')
-        self.statusBar().showMessage('自然语言修图：' + (plan.explanation[:80] or f'{len(lines)} 项调整'))
+        self.nl_status.setText((tr('已应用 {n_lines} 项调整', n_lines=len(lines)) if lines else tr('模型认为不需要调整')) + tokens +
+                               (tr(' · {v} 可撤销', v=host.keys("Ctrl+Z")) if lines else tr('。')))
+        self.nl_status.setToolTip(tr('输入 {v:,} · 输出 {v2:,} token', v=self.nl_usage.get("input", 0), v2=self.nl_usage.get("output", 0)) if tokens else '')
+        self.statusBar().showMessage(tr('自然语言修图：') + (plan.explanation[:80] or tr('{n_lines} 项调整', n_lines=len(lines))))
         self.refresh_natural_language()
 
     def nl_strength(self, value):
@@ -688,7 +691,7 @@ class NaturalLanguageMixin:
         self.changed()
         self.commit()
         self.nl_show_result(None)
-        self.nl_status.setText('已撤销本次修图。')
+        self.nl_status.setText(tr('已撤销本次修图。'))
         self.refresh_natural_language()
 
     def nl_regenerate(self):
@@ -698,7 +701,7 @@ class NaturalLanguageMixin:
         base, history = copy.deepcopy(self.nl_plan.base), self.nl_history[:-1]
         self.nl_undo()
         self.nl_history = history
-        self.nl_status.setText('正在重新生成…')
+        self.nl_status.setText(tr('正在重新生成…'))
         # Wait for the restored preview so the statistics describe the starting point.
         deadline = time.monotonic() + 10
         def attempt():
@@ -720,10 +723,10 @@ class NaturalLanguageMixin:
         if host.MACOS and not self.nl_microphone_permission():
             return
         if self.nl_recorder.start():
-            self.nl_voice.setText('停止')
+            self.nl_voice.setText(tr('停止'))
             self.nl_meter.setValue(0)
             self.nl_meter.show()
-            self.nl_status.setText('正在听…说完停顿一下即可')
+            self.nl_status.setText(tr('正在听…说完停顿一下即可'))
             # Load the recognizer while the user speaks.
             threading.Thread(target=lambda: self.nl_preload(), daemon=True).start()
 
@@ -747,7 +750,7 @@ class NaturalLanguageMixin:
         if status == Qt.PermissionStatus.Undetermined:
             QApplication.instance().requestPermission(permission, self, lambda *_: self.nl_toggle_voice())
             return False
-        self.nl_status.setText('没有麦克风权限：请在“系统设置 → 隐私与安全性 → 麦克风”中允许 LUMEN RAW。')
+        self.nl_status.setText(tr('没有麦克风权限：请在“系统设置 → 隐私与安全性 → 麦克风”中允许 LUMEN RAW。'))
         return False
 
     def nl_level(self, value):
@@ -763,25 +766,25 @@ class NaturalLanguageMixin:
         self.nl_voice.setText(VOICE)
         self.nl_meter.hide()
         if len(samples) < speech.RATE * .3:
-            self.nl_status.setText('录音太短，请再说一次。')
+            self.nl_status.setText(tr('录音太短，请再说一次。'))
             return
         self.nl_transcribing = True
-        self.nl_status.setText('正在识别语音…')
+        self.nl_status.setText(tr('正在识别语音…'))
         self.refresh_natural_language()
         language = self.nl_settings['voice_language']
         def ok(text):
             self.nl_transcribing = False
             self.refresh_natural_language()
             if not speech.meaningful(text):
-                self.nl_status.setText('没有识别到文字，请再说一次。')
+                self.nl_status.setText(tr('没有识别到文字，请再说一次。'))
                 return
             self.nl_input.setPlainText(text)
             if self.nl_settings['auto_send'] and not self.nl_busy:
                 self.nl_send(text)
             else:
-                self.nl_status.setText('已识别，按 Enter 或“一键修图”发送。')
+                self.nl_status.setText(tr('已识别，按 Enter 或“一键修图”发送。'))
         def fail(error):
             self.nl_transcribing = False
             self.refresh_natural_language()
-            self.nl_status.setText(f'语音识别失败：{error}')
+            self.nl_status.setText(tr('语音识别失败：{error}', error=error))
         run_async(self.nl_relay, lambda: speech.transcribe(samples, language), ok, fail)

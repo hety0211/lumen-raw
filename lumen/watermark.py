@@ -5,12 +5,13 @@ from functools import lru_cache
 from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from .i18n import tr
 
-PRESETS = {'gallery':('画廊白',(250,249,246),(39,43,39)),
-           'noir':('暗夜黑',(20,23,23),(231,234,225)),
-           'travel':('旅行纸',(238,231,214),(74,71,54)),
-           'sage':('山野绿',(220,228,214),(41,62,43))}
-LABELS = {'date':'拍摄时间','body':'机身','lens':'镜头','aperture':'光圈','shutter':'快门','iso':'ISO','focal':'焦距','brand':'品牌文字'}
+PRESETS = {'gallery':(tr('画廊白'),(250,249,246),(39,43,39)),
+           'noir':(tr('暗夜黑'),(20,23,23),(231,234,225)),
+           'travel':(tr('旅行纸'),(238,231,214),(74,71,54)),
+           'sage':(tr('山野绿'),(220,228,214),(41,62,43))}
+LABELS = {'date':tr('拍摄时间'),'body':tr('机身'),'lens':tr('镜头'),'aperture':tr('光圈'),'shutter':tr('快门'),'iso':'ISO','focal':tr('焦距'),'brand':tr('品牌文字')}
 
 
 def defaults():
@@ -22,26 +23,26 @@ def defaults():
 def logo(data):
     raw = base64.b64decode(data,validate=True)
     with Image.open(io.BytesIO(raw)) as im:
-        if im.format!='PNG' or max(im.size)>2048: raise ValueError('标志需要不超过 2048px 的 PNG。')
+        if im.format!='PNG' or max(im.size)>2048: raise ValueError(tr('标志需要不超过 2048px 的 PNG。'))
         return im.convert('RGBA')
 
 
 def validate(data):
-    if not isinstance(data,dict): raise ValueError('水印设置无效。')
+    if not isinstance(data,dict): raise ValueError(tr('水印设置无效。'))
     result=defaults()
     result['enabled']=bool(data.get('enabled',False))
     result['preset']=data.get('preset','gallery')
-    if result['preset'] not in PRESETS: raise ValueError('未知水印预设。')
+    if result['preset'] not in PRESETS: raise ValueError(tr('未知水印预设。'))
     for key,allowed in [('sides',('top','bottom','left','right')),('fields',LABELS)]:
         value=data.get(key,result[key])
-        if not isinstance(value,list) or any(v not in allowed for v in value): raise ValueError('无效水印项目。')
+        if not isinstance(value,list) or any(v not in allowed for v in value): raise ValueError(tr('无效水印项目。'))
         result[key]=list(dict.fromkeys(value))
     value=data.get('size',14.)
-    if isinstance(value,bool) or not isinstance(value,(int,float)) or not 8<=value<=35: raise ValueError('边框宽度需为 8–35%。')
+    if isinstance(value,bool) or not isinstance(value,(int,float)) or not 8<=value<=35: raise ValueError(tr('边框宽度需为 8–35%。'))
     result['size']=float(value)
     for key in ('camera_logo','lens_logo'):
         value=data.get(key,'')
-        if not isinstance(value,str) or len(value)>3_000_000: raise ValueError('标志文件过大。')
+        if not isinstance(value,str) or len(value)>3_000_000: raise ValueError(tr('标志文件过大。'))
         if value: logo(value)
         result[key]=value
     return result
@@ -49,7 +50,7 @@ def validate(data):
 
 def lines(settings,photo):
     fields=settings['fields']
-    def val(k): return photo.get(k) or f'{LABELS[k]}未记录'
+    def val(k): return photo.get(k) or tr('{v}未记录', v=LABELS[k])
     output=[]
     if 'brand' in fields:
         brands=list(dict.fromkeys(p.upper() for p in (photo.get('brand'),photo.get('lens_brand')) if p))
@@ -106,7 +107,7 @@ def apply(rgb,settings,photo):
     if not settings['enabled'] or not settings['sides']: return rgb
     h,w=rgb.shape[:2];width,height=dimensions(rgb.shape,settings)
     from . import large_image
-    if width*height>large_image.MAX_PIXELS: raise ValueError('加水印后超过 4 亿像素，请降低输出尺寸或边框宽度。')
+    if width*height>large_image.MAX_PIXELS: raise ValueError(tr('加水印后超过 4 亿像素，请降低输出尺寸或边框宽度。'))
     pad=max(1,round(min(w,h)*settings['size']/100))
     sides=settings['sides'];left=pad if 'left' in sides else 0;top=pad if 'top' in sides else 0
     out=large_image.allocate((height,width,3));out[:]=np.array(PRESETS[settings['preset']][1])/255

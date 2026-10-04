@@ -5,6 +5,7 @@ import shutil
 import subprocess
 from pathlib import Path
 import numpy as np
+from .i18n import tr
 
 
 def exiftool():
@@ -25,21 +26,24 @@ def exiftool():
 def metadata(path):
     command = exiftool()
     if command is None:
-        return {}, '未安装元数据读取器'
+        return {}, tr('未安装元数据读取器')
     try:
         env = dict(os.environ, LC_ALL='C', LANG='C', LC_CTYPE='C')
         # -config disables per-user Perl config execution. Absolute filename and --
         # keep filenames from being interpreted as options. This never writes tags.
         result = subprocess.run([*command, '-config', '', '-j', '-charset', 'filename=UTF8',
             '-ColorTemperature#', '-WhiteBalance#', '-Make', '-Model', '-LensMake', '-LensModel', '-Lens', '-LensID',
-            '-DateTimeOriginal', '-CreateDate', '-FNumber#', '-ExposureTime#', '-ISO#', '-FocalLength#', '--', str(Path(path).resolve())],
+            '-DateTimeOriginal', '-CreateDate', '-FNumber#', '-ExposureTime#', '-ISO#', '-FocalLength#',
+            # 1.5.1: lens profile matching (crop factor, focus distance).
+            '-FocalLengthIn35mmFormat#', '-ScaleFactor35efl#', '-FocusDistance#', '-FocusDistance2#',
+            '-ApproximateFocusDistance#', '-SubjectDistance#', '--', str(Path(path).resolve())],
             capture_output=True, timeout=15, env=env,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
-            return {}, '元数据读取失败；使用相机白平衡增益'
+            return {}, tr('元数据读取失败；使用相机白平衡增益')
         return json.loads(result.stdout.decode('utf-8'))[0], ''
     except (OSError, ValueError, subprocess.TimeoutExpired):
-        return {}, '元数据不可用；使用相机白平衡增益'
+        return {}, tr('元数据不可用；使用相机白平衡增益')
 
 
 def from_metadata(tags, estimated=None):

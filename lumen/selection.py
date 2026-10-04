@@ -4,30 +4,31 @@ from functools import lru_cache
 from pathlib import Path
 import cv2
 import numpy as np
+from .i18n import tr
 
 
 def encode(alpha):
     ok, data = cv2.imencode('.png', np.round(np.clip(alpha,0,1)*255).astype(np.uint8))
     if not ok:
-        raise ValueError('无法保存蒙版像素。')
+        raise ValueError(tr('无法保存蒙版像素。'))
     return base64.b64encode(data).decode('ascii')
 
 
 @lru_cache(maxsize=40)
 def decode(encoded):
     if not isinstance(encoded,str) or len(encoded) > 8_000_000:
-        raise ValueError('蒙版数据过大。')
+        raise ValueError(tr('蒙版数据过大。'))
     data = base64.b64decode(encoded,validate=True)
     # Validate dimensions before handing compressed bytes to the decoder.
     import struct
     if data[:8] != b'\x89PNG\r\n\x1a\n' or len(data) < 24:
-        raise ValueError('蒙版不是有效 PNG。')
+        raise ValueError(tr('蒙版不是有效 PNG。'))
     w,h = struct.unpack('>II',data[16:24])
     if not 1 <= w <= 2048 or not 1 <= h <= 2048:
-        raise ValueError('蒙版分辨率超出限制。')
+        raise ValueError(tr('蒙版分辨率超出限制。'))
     result = cv2.imdecode(np.frombuffer(data,np.uint8),cv2.IMREAD_GRAYSCALE)
     if result is None:
-        raise ValueError('蒙版像素损坏。')
+        raise ValueError(tr('蒙版像素损坏。'))
     result = result.astype(np.float32)/255
     result.setflags(write=False)
     return result
@@ -65,7 +66,7 @@ def automatic(rgb, kind, cuda=False):
     x = (x - np.array([.485,.456,.406],np.float32))/np.array([.229,.224,.225],np.float32)
     prediction = sess.run([sess.get_outputs()[0].name], {sess.get_inputs()[0].name:x.transpose(2,0,1)[None].copy()})[0].squeeze()
     if not np.isfinite(prediction).all():
-        raise ValueError('识别模型返回无效结果。')
+        raise ValueError(tr('识别模型返回无效结果。'))
     if kind=='foreground':
         # MiDaS predicts relative inverse depth: larger values are nearer.
         low,high=np.percentile(prediction,[10,95])

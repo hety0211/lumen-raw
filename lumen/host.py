@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from .i18n import tr
 
 MACOS = sys.platform == 'darwin'
 WINDOWS = os.name == 'nt'
@@ -19,11 +20,11 @@ BUNDLE_ID = 'io.github.hety0211.lumenraw'
 COMMAND = '⌘' if MACOS else 'Ctrl'
 OPTION = 'Option' if MACOS else 'Alt'
 #: Canvas navigation hint: trackpads pan with two fingers and zoom with a pinch.
-NAVIGATION = '双指滑动平移，捏合或滚轮缩放' if MACOS else '中键平移，滚轮放大'
+NAVIGATION = tr('双指滑动平移，捏合或滚轮缩放') if MACOS else tr('中键平移，滚轮放大')
 #: Acceleration choice in the right panel and the enhancement dialog note.
-ACCELERATION = '自动加速（Metal / Core ML）' if MACOS else '自动加速（DirectML / TensorRT for RTX）'
-GPU_NOTE = ('自动模式在 Apple 芯片的 GPU 上运行（Metal / Core ML），失败则使用 CPU。' if MACOS
-            else '自动模式会尝试 AMD DirectML 或 NVIDIA CUDA，失败则使用 CPU。')
+ACCELERATION = tr('自动加速（Metal / Core ML）') if MACOS else tr('自动加速（DirectML / TensorRT for RTX）')
+GPU_NOTE = (tr('自动模式在 Apple 芯片的 GPU 上运行（Metal / Core ML），失败则使用 CPU。') if MACOS
+            else tr('自动模式会尝试 AMD DirectML 或 NVIDIA CUDA，失败则使用 CPU。'))
 
 
 def keys(text):

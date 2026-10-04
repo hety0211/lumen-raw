@@ -15,27 +15,28 @@ import cv2
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout,
                                QLabel, QLineEdit, QPushButton, QSpinBox, QVBoxLayout)
 
-from . import engine, model, watermark
+from . import engine, lens, model, watermark
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
 FORMATS = (('JPEG · 8-bit sRGB', '.jpg'), ('PNG · 8-bit sRGB', '.png'), ('TIFF · 16-bit sRGB', '.tif'),
-           ('DNG · 16-bit 线性成片', '.dng'))
+           (tr('DNG · 16-bit 线性成片'), '.dng'))
 #: Output sizes: None keeps the full size, otherwise the long edge in pixels (never enlarged).
-SIZES = (('原始尺寸', None), ('长边 4000 像素', 4000), ('长边 2560 像素', 2560), ('长边 1600 像素', 1600))
+SIZES = ((tr('原始尺寸'), None), (tr('长边 4000 像素'), 4000), (tr('长边 2560 像素'), 2560), (tr('长边 1600 像素'), 1600))
 
 
 class BatchExportDialog(QDialog):
     def __init__(self, parent, count, folder):
         super().__init__(parent)
-        self.setWindowTitle('批量导出')
+        self.setWindowTitle(tr('批量导出'))
         self.setMinimumWidth(520)
         root = QVBoxLayout(self)
-        title = QLabel(f'批量导出  /  {count} 张照片')
+        title = QLabel(tr('批量导出  /  {count} 张照片', count=count))
         title.setObjectName('section')
         root.addWidget(title)
-        text = QLabel('每张照片使用各自的调色、裁切、蒙版、修复与水印，从全尺寸原片逐张生成；原片不会被修改。\n'
-                      '同名文件不会被覆盖，会自动加编号。AI 超分辨率请在单张导出中使用。')
+        text = QLabel(tr('每张照片使用各自的调色、裁切、蒙版、修复与水印，从全尺寸原片逐张生成；原片不会被修改。\n'
+                      '同名文件不会被覆盖，会自动加编号。AI 超分辨率请在单张导出中使用。'))
         text.setWordWrap(True)
         text.setObjectName('subtle')
         root.addWidget(text)
@@ -48,34 +49,34 @@ class BatchExportDialog(QDialog):
         self.quality.setRange(50, 100)
         self.quality.setValue(95)
         self.folder = QLineEdit(str(folder))
-        browse = QPushButton('选择…')
+        browse = QPushButton(tr('选择…'))
         browse.clicked.connect(self.choose_folder)
         row = QHBoxLayout()
         row.addWidget(self.folder, 1)
         row.addWidget(browse)
-        for name, widget in (('输出格式', self.format), ('输出尺寸', self.size), ('JPEG 质量', self.quality)):
+        for name, widget in ((tr('输出格式'), self.format), (tr('输出尺寸'), self.size), (tr('JPEG 质量'), self.quality)):
             form.addRow(name, widget)
-        form.addRow('保存到', row)
+        form.addRow(tr('保存到'), row)
         root.addLayout(form)
         self.status = QLabel('')
         self.status.setObjectName('subtle')
         root.addWidget(self.status)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(f'导出 {count} 张')
-        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('取消')
+        buttons.button(QDialogButtonBox.StandardButton.Ok).setText(tr('导出 {count} 张', count=count))
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText(tr('取消'))
         buttons.accepted.connect(self.confirm)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
         self.format.currentIndexChanged.connect(lambda i: self.quality.setEnabled(FORMATS[i][1] == '.jpg'))
 
     def choose_folder(self):
-        folder = QFileDialog.getExistingDirectory(self, '选择导出目录', self.folder.text())
+        folder = QFileDialog.getExistingDirectory(self, tr('选择导出目录'), self.folder.text())
         if folder:
             self.folder.setText(folder)
 
     def confirm(self):
         if not Path(self.folder.text()).is_dir():
-            self.status.setText('请选择已存在的导出目录。')
+            self.status.setText(tr('请选择已存在的导出目录。'))
             return
         self.accept()
 
@@ -112,7 +113,7 @@ def run(items, options, backend, progress, cancel):
         if cancel.is_set():
             break
         name = Path(path).name
-        progress(round(100 * index / total), f'正在导出 {index + 1} / {total} · {name}')
+        progress(round(100 * index / total), tr('正在导出 {v} / {total} · {name}', v=index + 1, total=total, name=name))
         try:
             source, info = engine.load_image(path, None, develop_reference=not initialized)
             edits = copy.deepcopy(edits)
@@ -121,6 +122,8 @@ def run(items, options, backend, progress, cancel):
                 edits['white_balance'] = copy.deepcopy(info.get('white_balance', edits['white_balance']))
                 edits['develop'] = copy.deepcopy(info.get('develop', edits['develop']))
             edits = model.validate(edits)
+            # 1.5.1: the lens profile of this photo (synchronised recipes carry another photo's).
+            edits['lens'] = lens.prepare(edits['lens'], info.get('lens_match'))[0]
             if cancel.is_set():
                 break
             result = engine.process(source, edits, backend)
@@ -134,5 +137,5 @@ def run(items, options, backend, progress, cancel):
         except Exception as exc:
             log.exception('batch export failed for %s', path)
             results.append((path, None, str(exc) or type(exc).__name__))
-    progress(100, '批量导出完成')
+    progress(100, tr('批量导出完成'))
     return results

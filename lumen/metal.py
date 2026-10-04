@@ -25,6 +25,7 @@ import threading
 import numpy as np
 
 from . import large_image
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -210,25 +211,25 @@ class Pipeline:
 
     def __init__(self):
         if sys.platform != 'darwin':
-            raise Unavailable('Metal 仅在 macOS 上可用')
+            raise Unavailable(tr('Metal 仅在 macOS 上可用'))
         try:
             import Metal
             import objc
         except ImportError as exc:
-            raise Unavailable('缺少 PyObjC Metal 组件（pyobjc-framework-Metal）') from exc
+            raise Unavailable(tr('缺少 PyObjC Metal 组件（pyobjc-framework-Metal）')) from exc
         self.Metal, self.objc = Metal, objc
         device = Metal.MTLCreateSystemDefaultDevice()
         if device is None:
-            raise Unavailable('系统没有可用的 Metal 设备')
+            raise Unavailable(tr('系统没有可用的 Metal 设备'))
         options = Metal.MTLCompileOptions.alloc().init()
         options.setFastMathEnabled_(False)
         library, error = device.newLibraryWithSource_options_error_(SOURCE, options, None)
         if library is None:
-            raise Unavailable(f'Metal 着色器编译失败：{error}')
+            raise Unavailable(tr('Metal 着色器编译失败：{error}', error=error))
         function = library.newFunctionWithName_('develop')
         state, error = device.newComputePipelineStateWithFunction_error_(function, None)
         if state is None:
-            raise Unavailable(f'Metal 管线创建失败：{error}')
+            raise Unavailable(tr('Metal 管线创建失败：{error}', error=error))
         self.device, self.state, self.queue = device, state, device.newCommandQueue()
         self.name = str(device.name())
         self.group = int(min(256, state.maxTotalThreadsPerThreadgroup()))
@@ -238,7 +239,7 @@ class Pipeline:
     def _shared(self, length):
         buffer = self.device.newBufferWithLength_options_(length, self.Metal.MTLResourceStorageModeShared)
         if buffer is None:
-            raise MemoryError(f'Metal 无法分配 {length / 2**20:.0f} MiB 共享内存')
+            raise MemoryError(tr('Metal 无法分配 {v:.0f} MiB 共享内存', v=length / 2**20))
         return buffer
 
     def _strip_buffers(self, length):
@@ -268,12 +269,12 @@ class Pipeline:
             command.commit()
             command.waitUntilCompleted()
             if command.status() != self.Metal.MTLCommandBufferStatusCompleted:
-                raise RuntimeError(f'Metal 运算失败：{command.error()}')
+                raise RuntimeError(tr('Metal 运算失败：{v}', v=command.error()))
 
     def run(self, kind, image, inputs):
         """Apply one stage to an (H, W, 3) image; large images run strip by strip."""
         if image.ndim != 3 or image.shape[2] != 3:
-            raise ValueError('Metal 显影需要 RGB 图像')
+            raise ValueError(tr('Metal 显影需要 RGB 图像'))
         values, table = parameters(kind, inputs)
         height, width = image.shape[:2]
         out = large_image.allocate(image.shape)
@@ -311,7 +312,7 @@ class Pipeline:
         actual = self.run('fused', image, inputs)
         error = float(np.max(np.abs(actual - expected))) if np.isfinite(actual).all() else float('inf')
         if error > 1e-4:
-            raise Unavailable(f'Metal 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）')
+            raise Unavailable(tr('Metal 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）', error=error))
         log.info('Metal pipeline on %s verified (max error %.2g)', self.name, error)
         return error
 

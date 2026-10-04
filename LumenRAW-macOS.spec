@@ -29,7 +29,7 @@ for item in sorted((root / 'assets').iterdir()):
 a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)],
     binaries=raw_binaries + ort_binaries,
-    datas=assets + raw_data + ort_data + collect_data_files('tifffile'),
+    datas=assets + [(str(root / 'lumen' / 'locales'), 'lumen/locales')] + raw_data + ort_data + collect_data_files('tifffile'),
     hiddenimports=raw_hidden + ort_hidden + ['PIL.ImageCms', 'objc', 'Foundation', 'Metal', 'PySide6.QtMultimedia'],
     excludes=['cupy', 'torch', 'torchvision', 'onnx', 'sympy', 'windowsml', 'tkinter'],
     noarchive=False,

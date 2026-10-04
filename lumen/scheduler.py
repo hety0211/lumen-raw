@@ -19,6 +19,7 @@ import time
 from collections import deque
 
 from PySide6.QtCore import QObject, QRunnable, Signal
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -46,9 +47,9 @@ BLOCKED_BY = {
     A.DETAIL: frozenset({A.LOADING, A.EXPORTING, A.AI, A.DETAIL}),
     A.THUMBNAILS: frozenset({A.AI, A.THUMBNAILS}),
 }
-LABELS = {A.LOADING: '正在读取', A.EXPORTING: '正在导出', A.AI: 'AI / 合成处理中',
-          A.SELECTION: '正在识别蒙版', A.RENDER: '正在更新预览', A.DETAIL: '正在读取原图细节',
-          A.THUMBNAILS: '正在生成缩略图'}
+LABELS = {A.LOADING: tr('正在读取'), A.EXPORTING: tr('正在导出'), A.AI: tr('AI / 合成处理中'),
+          A.SELECTION: tr('正在识别蒙版'), A.RENDER: tr('正在更新预览'), A.DETAIL: tr('正在读取原图细节'),
+          A.THUMBNAILS: tr('正在生成缩略图')}
 ORDER = (A.AI, A.EXPORTING, A.LOADING, A.SELECTION, A.DETAIL, A.RENDER, A.THUMBNAILS)
 
 
@@ -110,7 +111,7 @@ class WorkState(QObject):
 
     def describe(self):
         labels = [LABELS[a] for a in ORDER if a in self._active]
-        return ' · '.join(labels) if labels else '空闲'
+        return ' · '.join(labels) if labels else tr('空闲')
 
     def _record(self, event, activity):
         self.transitions.append((time.monotonic(), event, activity.value))

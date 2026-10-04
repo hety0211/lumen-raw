@@ -19,8 +19,9 @@ from typing import NamedTuple
 import numpy as np
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
-from . import develop, engine, viewport
+from . import develop, engine, lens, viewport
 from .scheduler import Activity as A
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -39,6 +40,7 @@ class ResolutionMixin:
         self.detail_request = None
         self.document_token = 0
         self._original = (None, None)
+        self._reference = (None, None)
         self.detail_timer = QTimer(self)
         self.detail_timer.setSingleShot(True)
         self.detail_timer.setInterval(220)
@@ -55,6 +57,7 @@ class ResolutionMixin:
         self.detail_source = None
         self.tiles.clear()
         self._original = (None, None)
+        self._reference = (None, None)
         self.detail_timer.stop()
         if hasattr(self, 'canvas'):
             self.canvas.set_detail(None)
@@ -66,6 +69,17 @@ class ResolutionMixin:
         if self._original[0] != key:
             self._original = (key, np.clip(engine.to_srgb(develop.apply(self.source, self.edits['develop'])), 0, 1))
         return self._original[1]
+
+    def preview_reference(self):
+        """Developed preview after lens corrections: what luminance masks select from (1.5.1)."""
+        lens_key = lens.key(self.edits.get('lens'))
+        if lens_key is None:
+            return self.preview_original()
+        key = (self.document_token, engine._key(self.edits.get('develop', {}), lens_key))
+        if self._reference[0] != key:
+            corrected = lens.apply(self.source, self.edits['lens'])
+            self._reference = (key, np.clip(engine.to_srgb(develop.apply(corrected, self.edits['develop'])), 0, 1))
+        return self._reference[1]
 
     def detail_keys(self):
         final = self.final_view.isChecked()
@@ -200,7 +214,7 @@ class ResolutionMixin:
         self.work.begin(A.DETAIL)
         self.detail_request = dict(cancel=cancel, level=view.level, blocks=request['blocks'])
         if holder.full is None:
-            self.statusBar().showMessage('正在读取原图细节… 完成后自动替换当前画面')
+            self.statusBar().showMessage(tr('正在读取原图细节… 完成后自动替换当前画面'))
         started = time.perf_counter()
 
         def finished():
@@ -217,8 +231,8 @@ class ResolutionMixin:
             self.refresh_detail()
             if self.detail_ready() and self.detail_view() is not None:
                 level = self.detail_view().level
-                self.statusBar().showMessage(('原图细节已就绪 · 100% 对应原片像素' if level == 0 else
-                                              f'细节已就绪 · 原图 1/{2 ** level} 分辨率') +
+                self.statusBar().showMessage((tr('原图细节已就绪 · 100% 对应原片像素') if level == 0 else
+                                              tr('细节已就绪 · 原图 1/{v} 分辨率', v=2 ** level)) +
                                              f' · {(time.perf_counter() - started) * 1000:.0f} ms')
             self.request_detail()
 
@@ -230,5 +244,5 @@ class ResolutionMixin:
                 self.refresh_detail()
             else:
                 log.warning('detail render failed: %s', text)
-                self.statusBar().showMessage('原图细节加载失败，可重试缩放：' + text)
+                self.statusBar().showMessage(tr('原图细节加载失败，可重试缩放：') + text)
         self.job(lambda: viewport.render(holder, request, cancel), success, fail, priority=-1)

@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 from . import performance
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -255,7 +256,7 @@ class ShapedSessions:
                 options.add_free_dimension_override_by_name(symbol, int(np.shape(feeds[name])[axis]))
             session = self.ort.InferenceSession(self.path, sess_options=options, providers=self.providers)
             if COREML not in session.get_providers():
-                raise RuntimeError('Core ML 未接管该尺寸的模型')
+                raise RuntimeError(tr('Core ML 未接管该尺寸的模型'))
             log.info('%s: Core ML session for %s', Path(self.path).name, dict(key))
         self.sessions[key] = session
         while len(self.sessions) > self.LIMIT:
@@ -315,13 +316,13 @@ class ComputeState:
         self.provider = 'CPUExecutionProvider'
         self.device = ''
         self.warning = ''
-        self.detail = f'{performance.THREADS} 线程 · NumPy / OpenCV'
+        self.detail = tr('{threads} 线程 · NumPy / OpenCV', threads=performance.THREADS)
         self.warning = ''
 
     def report(self, provider, device='', detail='', warning=''):
         with self.lock:
             self.provider, self.device = provider, device
-            self.detail = detail or (f'{performance.THREADS} 线程 · NumPy / OpenCV' if provider == 'CPUExecutionProvider' else provider)
+            self.detail = detail or (tr('{threads} 线程 · NumPy / OpenCV', threads=performance.THREADS) if provider == 'CPUExecutionProvider' else provider)
             self.warning = warning
 
     def snapshot(self):
@@ -401,7 +402,7 @@ class Session:
             self._session = ort.InferenceSession(self.path,
                 sess_options=performance.session_options(), providers=['CPUExecutionProvider'])
             if accelerated:
-                self.warning = ('GPU 初始化失败：' + last_error) if last_error else '当前 ONNX 环境没有可用的 GPU 执行设备。'
+                self.warning = (tr('GPU 初始化失败：') + last_error) if last_error else tr('当前 ONNX 环境没有可用的 GPU 执行设备。')
 
     def _cpu_fallback(self, warning):
         log.warning('ONNX CPU fallback for %s: %s', getattr(self, 'label', self.path), warning)
@@ -414,33 +415,33 @@ class Session:
             sess_options=performance.session_options(), providers=['CPUExecutionProvider'])
         self.provider, self.device, self._verified = 'CPUExecutionProvider', '', True
         self.warning = warning
-        state.report(self.provider, detail=f'{performance.THREADS} 线程 · ONNX CPU', warning=self.warning)
+        state.report(self.provider, detail=tr('{threads} 线程 · ONNX CPU', threads=performance.THREADS), warning=self.warning)
 
     def run(self, output_names, inputs):
         with self._lock:
             if self.provider == 'CPUExecutionProvider':
                 result = self._session.run(output_names, inputs)
-                state.report(self.provider, detail=f'{performance.THREADS} 线程 · ONNX CPU',warning=self.warning)
+                state.report(self.provider, detail=tr('{threads} 线程 · ONNX CPU', threads=performance.THREADS),warning=self.warning)
                 return result
             if not self._verified:
                 try:
                     result = self._session.run(output_names, inputs)
                     path = self._session.end_profiling()
                     if not _gpu_kernels_in_profile(path, self.provider):
-                        self._cpu_fallback('此模型没有在 GPU 上执行节点，已切换 CPU。')
+                        self._cpu_fallback(tr('此模型没有在 GPU 上执行节点，已切换 CPU。'))
                         return self._session.run(output_names, inputs)
                     self._verified = True
                 except Exception as exc:
-                    self._cpu_fallback(f'GPU 运算失败，已回退 CPU：{str(exc)[:120]}')
+                    self._cpu_fallback(tr('GPU 运算失败，已回退 CPU：{v}', v=str(exc)[:120]))
                     return self._session.run(output_names, inputs)
             else:
                 try:
                     result = self._session.run(output_names, inputs)
                 except Exception as exc:
-                    self._cpu_fallback(f'GPU 运算失败，已回退 CPU：{str(exc)[:120]}')
+                    self._cpu_fallback(tr('GPU 运算失败，已回退 CPU：{v}', v=str(exc)[:120]))
                     return self._session.run(output_names, inputs)
             if self.provider not in self._session.get_providers():
-                self._cpu_fallback('运行库已将模型切换到 CPU。')
+                self._cpu_fallback(tr('运行库已将模型切换到 CPU。'))
                 return result
             state.report(self.provider, self.device, f'{self.provider} · {self.device}')
             return result

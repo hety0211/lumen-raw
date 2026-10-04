@@ -6,8 +6,9 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QTabWidget, QComboBox, QCheckBox, QFileDialog, QInputDialog)
-from . import model, engine
-from .widgets import AdjustSlider, ColorWheel, qimage
+from . import model, engine, lens
+from .widgets import AdjustSlider, ColorWheel, TabStrip, qimage
+from .i18n import tr
 
 
 def label(text, style='subtle'):
@@ -36,23 +37,25 @@ class StudioMixin:
         layout = QVBoxLayout(side)
         layout.setContentsMargins(14, 17, 14, 14)
         layout.setSpacing(11)
-        layout.addWidget(label('导航器', 'section'))
+        layout.addWidget(label(tr('导航器'), 'section'))
         self.navigator = QLabel('LUMEN  /  RAW')
         self.navigator.setObjectName('navigator')
         self.navigator.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.navigator.setFixedHeight(116)
-        self.navigator.setToolTip('点击适应窗口')
+        self.navigator.setToolTip(tr('点击适应窗口'))
         self.navigator.mousePressEvent = lambda _: self.canvas.fit()
         layout.addWidget(self.navigator)
-        self.library_info = label('风光与旅行\n从一张原片开始')
+        self.library_info = label(tr('风光与旅行\n从一张原片开始'))
         layout.addWidget(self.library_info)
         library_tabs = QTabWidget()
         self.library_tabs = library_tabs
+        self.library_strip = TabStrip(library_tabs)
+        layout.addWidget(self.library_strip)
         layout.addWidget(library_tabs, 1)
         preset_page = QWidget()
         p = QVBoxLayout(preset_page)
         p.setContentsMargins(0, 12, 0, 0)
-        p.addWidget(label('旅行精选  /  TRAVEL COLLECTION'))
+        p.addWidget(label(tr('旅行精选  /  TRAVEL COLLECTION')))
         self.preset_list = QListWidget()
         self.preset_list.setObjectName('presetList')
         self.preset_list.setIconSize(QSize(76, 52))
@@ -65,7 +68,7 @@ class StudioMixin:
             self.preset_list.addItem(item)
         self.preset_list.itemClicked.connect(lambda item: self.choose_preset(self.preset_list.row(item)))
         p.addWidget(self.preset_list, 1)
-        self.preset_amount = AdjustSlider('预设强度', 0, 100)
+        self.preset_amount = AdjustSlider(tr('预设强度'), 0, 100)
         self.preset_amount.setValue(100)
         self.preset_amount.default_value = 100
         self.preset_amount.changed.connect(self.change_preset_amount)
@@ -73,25 +76,26 @@ class StudioMixin:
         self.preset_amount.setEnabled(False)
         p.addWidget(self.preset_amount)
         row = QHBoxLayout()
-        row.addWidget(self.button('导入', self.import_preset))
-        row.addWidget(self.button('保存预设', self.export_preset))
+        row.addWidget(self.button(tr('导入'), self.import_preset))
+        row.addWidget(self.button(tr('保存预设'), self.export_preset))
         p.addLayout(row)
-        library_tabs.addTab(preset_page, '预设')
-        library_tabs.addTab(self.build_natural_language(), '自然语言输入')
+        library_tabs.addTab(preset_page, tr('预设'))
+        library_tabs.addTab(self.build_natural_language(), tr('自然语言输入'))
         versions = QWidget()
         v = QVBoxLayout(versions)
         v.setContentsMargins(0, 12, 0, 0)
-        v.addWidget(label('保留不同处理版本，随时切换比较。快照随工程保存。'))
+        v.addWidget(label(tr('保留不同处理版本，随时切换比较。快照随工程保存。')))
         self.snapshot_list = QListWidget()
         self.snapshot_list.itemDoubleClicked.connect(lambda _: self.restore_snapshot())
         v.addWidget(self.snapshot_list, 1)
-        v.addWidget(self.button('＋ 创建快照', lambda: self.add_snapshot()))
+        v.addWidget(self.button(tr('＋ 创建快照'), lambda: self.add_snapshot()))
         row = QHBoxLayout()
-        row.addWidget(self.button('恢复', self.restore_snapshot))
-        row.addWidget(self.button('删除', self.delete_snapshot))
+        row.addWidget(self.button(tr('恢复'), self.restore_snapshot))
+        row.addWidget(self.button(tr('删除'), self.delete_snapshot))
         v.addLayout(row)
-        v.addWidget(label('双击快照恢复 · 最多 20 个'))
-        library_tabs.addTab(versions, '快照')
+        v.addWidget(label(tr('双击快照恢复 · 最多 20 个')))
+        library_tabs.addTab(versions, tr('快照'))
+        self.library_strip.rebuild()
         return side
 
     def update_thumbnails(self):
@@ -109,7 +113,7 @@ class StudioMixin:
                 return
             for index, image in enumerate(images):
                 self.preset_list.item(index).setIcon(QIcon(QPixmap.fromImage(qimage(image))))
-        self.job(work, ready, lambda text: self.statusBar().showMessage('预设缩略图暂时不可用：' + text))
+        self.job(work, ready, lambda text: self.statusBar().showMessage(tr('预设缩略图暂时不可用：') + text))
 
     def update_navigator(self):
         if self.rendered is None:
@@ -118,7 +122,7 @@ class StudioMixin:
         self.navigator.setPixmap(pix.scaled(max(150, self.navigator.width()), 116,
             Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         if self.info:
-            self.library_info.setText(f'{self.info["format"]}  ·  {self.info["width"]} × {self.info["height"]}\n相机白平衡  /  无损编辑')
+            self.library_info.setText(tr('{format}  ·  {width} × {height}\n相机白平衡  /  无损编辑', format=self.info["format"], width=self.info["width"], height=self.info["height"]))
 
     def clear_preset_selection(self):
         self.active_preset = None
@@ -136,7 +140,7 @@ class StudioMixin:
         self.refresh()
         self.changed()
         self.commit()
-        self.statusBar().showMessage('已应用：' + self.presets[index]['name'] + ' · 保留蒙版、取样白平衡与构图')
+        self.statusBar().showMessage(tr('已应用：') + self.presets[index]['name'] + tr(' · 保留蒙版、取样白平衡与构图'))
 
     def change_preset_amount(self, value):
         if self.active_preset is not None and not self.refreshing:
@@ -145,7 +149,7 @@ class StudioMixin:
             self.changed()
 
     def import_preset(self):
-        path, _ = QFileDialog.getOpenFileName(self, '导入 Lumen 预设', '', 'Lumen 预设 (*.lumenpreset)')
+        path, _ = QFileDialog.getOpenFileName(self, tr('导入 Lumen 预设'), '', tr('Lumen 预设 (*.lumenpreset)'))
         if not path:
             return
         try:
@@ -162,14 +166,14 @@ class StudioMixin:
     def export_preset(self):
         if self.source is None:
             return
-        name, ok = QInputDialog.getText(self, '保存预设', '为这个风格命名：', text='我的旅行风格')
+        name, ok = QInputDialog.getText(self, tr('保存预设'), tr('为这个风格命名：'), text=tr('我的旅行风格'))
         if not ok or not name.strip():
             return
-        path, _ = QFileDialog.getSaveFileName(self, '保存风格预设', name + '.lumenpreset', 'Lumen 预设 (*.lumenpreset)')
+        path, _ = QFileDialog.getSaveFileName(self, tr('保存风格预设'), name + '.lumenpreset', tr('Lumen 预设 (*.lumenpreset)'))
         if path:
             try:
                 model.save_preset(path, name.strip(), self.edits)
-                self.statusBar().showMessage('预设已保存，之后可导入复用。')
+                self.statusBar().showMessage(tr('预设已保存，之后可导入复用。'))
             except Exception as exc:
                 self.error(str(exc))
 
@@ -177,15 +181,15 @@ class StudioMixin:
         if self.source is None:
             return
         if len(self.snapshots) >= 20:
-            return self.error('最多保留 20 个快照，请先删除不需要的版本。')
+            return self.error(tr('最多保留 20 个快照，请先删除不需要的版本。'))
         if name is None:
-            name, ok = QInputDialog.getText(self, '创建快照', '版本名称：', text=f'旅行版本 {len(self.snapshots) + 1:02d}')
+            name, ok = QInputDialog.getText(self, tr('创建快照'), tr('版本名称：'), text=tr('旅行版本 {v:02d}', v=len(self.snapshots) + 1))
             if not ok or not name.strip():
                 return
         self.snapshots.append(dict(name=name[:80], edits=copy.deepcopy(self.edits)))
         self.refresh_snapshots()
         self.snapshot_list.setCurrentRow(len(self.snapshots) - 1)
-        self.state_label.setText('快照尚未保存')
+        self.state_label.setText(tr('快照尚未保存'))
 
     def restore_snapshot(self):
         index = self.snapshot_list.currentRow()
@@ -203,7 +207,7 @@ class StudioMixin:
         if 0 <= index < len(self.snapshots):
             self.snapshots.pop(index)
             self.refresh_snapshots()
-            self.state_label.setText('快照尚未保存')
+            self.state_label.setText(tr('快照尚未保存'))
 
     def refresh_snapshots(self):
         selected = self.snapshot_list.currentRow()
@@ -213,13 +217,13 @@ class StudioMixin:
         self.snapshot_list.setCurrentRow(min(selected, len(self.snapshots) - 1))
 
     def build_grading(self):
-        l = self.panel('调色')
-        l.addWidget(label('色彩分级', 'section'))
-        l.addWidget(label('为暗部、中间调与高光分别赋予色彩。'))
+        l = self.panel(tr('调色'))
+        l.addWidget(label(tr('色彩分级'), 'section'))
+        l.addWidget(label(tr('为暗部、中间调与高光分别赋予色彩。')))
         row = QHBoxLayout()
         row.setSpacing(0)
         self.wheels = {}
-        for key, title in [('shadows', '暗部'), ('midtones', '中间调'), ('highlights', '高光')]:
+        for key, title in [('shadows', tr('暗部')), ('midtones', tr('中间调')), ('highlights', tr('高光'))]:
             wheel = ColorWheel(title)
             wheel.activated.connect(lambda k=key: self.select_grading_zone(k))
             wheel.changed.connect(lambda h, s, k=key: self.set_wheel(k, h, s))
@@ -228,21 +232,21 @@ class StudioMixin:
             row.addWidget(wheel)
         l.addLayout(row)
         self.grade_zone = QComboBox()
-        self.grade_zone.addItems(['暗部', '中间调', '高光'])
+        self.grade_zone.addItems([tr('暗部'), tr('中间调'), tr('高光')])
         self.grade_zone.currentIndexChanged.connect(self.refresh_grading)
         l.addWidget(self.grade_zone)
-        for index, title, maximum in [(0, '色相', 360), (1, '饱和度', 100)]:
+        for index, title, maximum in [(0, tr('色相'), 360), (1, tr('饱和度'), 100)]:
             c = AdjustSlider(title, 0, maximum)
             c.changed.connect(lambda value, i=index: self.grading_value(i, value))
             c.committed.connect(self.commit)
             l.addWidget(c)
             self.grading_controls[index] = c
-        self.grade_balance = AdjustSlider('平衡 · 暗部 / 高光')
+        self.grade_balance = AdjustSlider(tr('平衡 · 暗部 / 高光'))
         self.grade_balance.changed.connect(self.change_balance)
         self.grade_balance.committed.connect(self.commit)
         l.addWidget(self.grade_balance)
-        l.addWidget(self.button('重置色彩分级', self.reset_grading))
-        l.addWidget(label('提示：给阴影加入轻微青蓝色、给高光加入暖金色，适合海岸和日落场景。双击色轮清除该区域颜色。'))
+        l.addWidget(self.button(tr('重置色彩分级'), self.reset_grading))
+        l.addWidget(label(tr('提示：给阴影加入轻微青蓝色、给高光加入暖金色，适合海岸和日落场景。双击色轮清除该区域颜色。')))
         l.addStretch()
 
     def select_grading_zone(self, zone):
@@ -291,25 +295,25 @@ class StudioMixin:
         self.commit()
 
     def build_effects(self):
-        l = self.panel('效果')
-        l.addWidget(label('镜头氛围', 'section'))
-        l.addWidget(label('暗角以当前裁切框为中心，支持压暗或提亮边缘。'))
-        for key, title, low in [('vignette', '暗角 · 暗 / 亮', -100), ('midpoint', '中点', 0), ('feather', '羽化', 0)]:
+        l = self.panel(tr('效果'))
+        l.addWidget(label(tr('镜头氛围'), 'section'))
+        l.addWidget(label(tr('暗角以当前裁切框为中心，支持压暗或提亮边缘。')))
+        for key, title, low in [('vignette', tr('暗角 · 暗 / 亮'), -100), ('midpoint', tr('中点'), 0), ('feather', tr('羽化'), 0)]:
             c = AdjustSlider(title, low, 100)
             c.changed.connect(lambda value, k=key: self.effect_value(k, value))
             c.committed.connect(self.commit)
             l.addWidget(c)
             self.effect_controls[key] = c
             c.default_value = model.effects()[key]
-        l.addWidget(label('胶片颗粒', 'section'))
-        for key, title in [('grain', '数量'), ('grain_size', '大小')]:
+        l.addWidget(label(tr('胶片颗粒'), 'section'))
+        for key, title in [('grain', tr('数量')), ('grain_size', tr('大小'))]:
             c = AdjustSlider(title, 0, 100)
             c.changed.connect(lambda value, k=key: self.effect_value(k, value))
             c.committed.connect(self.commit)
             l.addWidget(c)
             self.effect_controls[key] = c
             c.default_value = model.effects()[key]
-        l.addWidget(label('颗粒使用固定随机场，相同参数重复预览与导出不会产生随机跳变。'))
+        l.addWidget(label(tr('颗粒使用固定随机场，相同参数重复预览与导出不会产生随机跳变。')))
         l.addStretch()
 
     def effect_value(self, key, value):
@@ -332,14 +336,14 @@ class StudioMixin:
         self.wb_sampling = checked
         if checked:
             self.split_check.setChecked(False)
-            self.statusBar().showMessage('白平衡吸管：点击画面中有细节的中性灰／白色区域，Esc 取消。')
+            self.statusBar().showMessage(tr('白平衡吸管：点击画面中有细节的中性灰／白色区域，Esc 取消。'))
         self.update_tool()
 
     def pick_wb(self, point):
         if self.source is None:
             return
         try:
-            gains = engine.sample_white_balance(self.source, point)
+            gains = engine.sample_white_balance(lens.correct(self.source, self.edits), point)
             self.commit()
             self.edits['white_balance']['kelvin'] = self.edits['white_balance']['camera_kelvin']
             self.edits['wb_gain'] = gains
@@ -349,7 +353,7 @@ class StudioMixin:
             self.changed()
             self.commit()
             self.wb_button.setChecked(False)
-            self.statusBar().showMessage('已取样白平衡，可继续微调色温。')
+            self.statusBar().showMessage(tr('已取样白平衡，可继续微调色温。'))
         except ValueError as exc:
             self.statusBar().showMessage(str(exc))
 

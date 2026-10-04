@@ -13,7 +13,7 @@ except Exception:
 a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)],
     binaries=raw_binaries + ort_binaries + winml_binaries,
-    datas=[(str(root / 'assets'), 'assets')] + raw_data + ort_data + winml_data + collect_data_files('tifffile'),
+    datas=[(str(root / 'assets'), 'assets'), (str(root / 'lumen' / 'locales'), 'lumen/locales')] + raw_data + ort_data + winml_data + collect_data_files('tifffile'),
     hiddenimports=raw_hidden + ort_hidden + winml_hidden + ['PIL.ImageCms', 'PySide6.QtMultimedia'],
     excludes=['cupy', 'torch', 'torchvision', 'onnx', 'sympy'], noarchive=False,
 )

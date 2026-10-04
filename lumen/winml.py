@@ -16,6 +16,7 @@ import logging
 import os
 import sys
 import threading
+from .i18n import tr
 
 log = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ def ensure(ep_name=TENSORRT_RTX, vendor=NVIDIA, allow_download=True, status=None
                     if not allow_download:
                         raise RuntimeError(f'{ep_name} is not installed')
                     if status:
-                        status('首次使用：正在通过 Windows 下载 NVIDIA TensorRT for RTX 加速组件…')
+                        status(tr('首次使用：正在通过 Windows 下载 NVIDIA TensorRT for RTX 加速组件…'))
                     log.info('Downloading %s %s through Windows ML', match.name, match.version)
                     match.ensure_ready()
                 ort.register_execution_provider_library(match.name, match.library_path)

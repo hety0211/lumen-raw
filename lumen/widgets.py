@@ -3,9 +3,11 @@ import copy
 import sys
 import numpy as np
 from .curves import evaluate
-from PySide6.QtCore import Qt, Signal, QEvent, QPointF, QRectF
+from PySide6.QtCore import Qt, Signal, QEvent, QPointF, QRectF, QPoint, QRect, QSize
 from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPainterPath, QConicalGradient, QRadialGradient
-from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSlider, QDoubleSpinBox
+from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSlider, QDoubleSpinBox, QLayout,
+                               QToolButton, QButtonGroup)
+from .i18n import tr
 
 
 def qimage(rgb):
@@ -13,6 +15,101 @@ def qimage(rgb):
     data=large_image.allocate(rgb.shape,np.uint8)
     for y,block in large_image.strips(rgb):data[y:y+len(block)]=np.clip(block*255,0,255).astype(np.uint8)
     return QImage(data.data, data.shape[1], data.shape[0], data.strides[0], QImage.Format.Format_RGB888).copy()
+
+
+class FlowLayout(QLayout):
+    """Left-to-right items that wrap onto further rows."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.items = []
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item):
+        self.items.append(item)
+
+    def count(self):
+        return len(self.items)
+
+    def itemAt(self, index):
+        return self.items[index] if 0 <= index < len(self.items) else None
+
+    def takeAt(self, index):
+        return self.items.pop(index) if 0 <= index < len(self.items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        return self._arrange(QRect(0, 0, width, 0), False)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._arrange(rect, True)
+
+    def sizeHint(self):
+        return self.minimumSize()
+
+    def minimumSize(self):
+        size = QSize()
+        for item in self.items:
+            size = size.expandedTo(item.minimumSize())
+        return size
+
+    def _arrange(self, rect, apply):
+        x, y, line = rect.x(), rect.y(), 0
+        for item in self.items:
+            hint = item.sizeHint()
+            if x + hint.width() > rect.right() + 1 and line:
+                x, y, line = rect.x(), y + line, 0
+            if apply:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width()
+            line = max(line, hint.height())
+        return y + line - rect.y()
+
+
+class TabStrip(QWidget):
+    """Tab buttons for a QTabWidget that wrap onto a second row instead of scrolling (1.5.1:
+    tab names in longer languages no longer hide behind scroll arrows)."""
+
+    def __init__(self, tabs):
+        super().__init__()
+        self.tabs = tabs
+        self.setObjectName('tabStrip')
+        tabs.tabBar().hide()
+        self.flow = FlowLayout(self)
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.buttons = []
+        tabs.currentChanged.connect(self.sync)
+
+    def rebuild(self):
+        for button in self.buttons:
+            self.group.removeButton(button)
+            button.deleteLater()
+        while self.flow.takeAt(0) is not None:
+            pass
+        self.buttons = []
+        for index in range(self.tabs.count()):
+            button = QToolButton()
+            button.setObjectName('tabButton')
+            button.setText(self.tabs.tabText(index))
+            button.setCheckable(True)
+            button.setAutoRaise(True)
+            button.clicked.connect(lambda checked=False, i=index: self.tabs.setCurrentIndex(i))
+            self.group.addButton(button)
+            self.flow.addWidget(button)
+            self.buttons.append(button)
+        self.sync(self.tabs.currentIndex())
+        self.updateGeometry()
+
+    def sync(self, index):
+        if 0 <= index < len(self.buttons):
+            self.buttons[index].setChecked(True)
 
 
 class AdjustSlider(QWidget):
@@ -47,7 +144,7 @@ class AdjustSlider(QWidget):
         self.spin.valueChanged.connect(self._spin)
         self.slider.sliderReleased.connect(self.committed)
         self.spin.editingFinished.connect(self.committed)
-        self.slider.setToolTip('拖动调整；双击数值可直接输入')
+        self.slider.setToolTip(tr('拖动调整；双击数值可直接输入'))
         self.slider.mouseDoubleClickEvent = self.reset_value
 
     def reset_value(self, _):
@@ -92,7 +189,7 @@ class Histogram(QWidget):
         p.fillRect(self.rect(), QColor('#171b21'))
         if self.hist is None:
             p.setPen(QColor('#6d7684'))
-            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, 'RGB 直方图')
+            p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, tr('RGB 直方图'))
             return
         peak = max(max(np.percentile(h, 99), 1) for h in self.hist)
         for h, color in zip(self.hist, ['#ea7d88', '#8ed7ac', '#86adf3']):
@@ -121,7 +218,7 @@ class CurveEditor(QWidget):
         self.current_x = 128
         self.drag = None
         self.setMinimumHeight(215)
-        self.setToolTip('在任意亮度位置按下并拖动 · 右键删除节点 · 输入/输出支持 0–255 精确调整')
+        self.setToolTip(tr('在任意亮度位置按下并拖动 · 右键删除节点 · 输入/输出支持 0–255 精确调整'))
 
     def area(self):
         return QRectF(18, 12, self.width() - 36, self.height() - 30)
@@ -343,7 +440,7 @@ class Canvas(QWidget):
 
     def fit(self):
         self.zoom, self.offset = 1., QPointF()
-        self.zoom_changed.emit('适应窗口')
+        self.zoom_changed.emit(tr('适应窗口'))
         self.viewport_changed.emit()
         self.update()
 
@@ -353,7 +450,7 @@ class Canvas(QWidget):
             fit = min((self.width() - 64) / iw, (self.height() - 64) / ih)
             self.zoom = 1 / (fit * self.devicePixelRatioF())
             self.offset = QPointF()
-            self.zoom_changed.emit('原图 100%')
+            self.zoom_changed.emit(tr('原图 100%'))
             self.viewport_changed.emit()
             self.update()
 
@@ -381,8 +478,8 @@ class Canvas(QWidget):
         center = QPointF(self.width() / 2, self.height() / 2)
         relative = position - center
         self.offset = relative - (relative - self.offset) * (self.zoom / old_zoom)
-        hint = '双指平移' if sys.platform == 'darwin' else '中键平移'
-        self.zoom_changed.emit(f'原图 {fit*self.zoom*self.devicePixelRatioF()*100:.0f}% · {hint}')
+        hint = tr('双指平移') if sys.platform == 'darwin' else tr('中键平移')
+        self.zoom_changed.emit(tr('原图 {v:.0f}% · {hint}', v=fit*self.zoom*self.devicePixelRatioF()*100, hint=hint))
         self.viewport_changed.emit()
         self.update()
 
@@ -531,11 +628,11 @@ class Canvas(QWidget):
             font = p.font()
             font.setPixelSize(25)
             p.setFont(font)
-            p.drawText(box.adjusted(0, 26, 0, -95), Qt.AlignmentFlag.AlignCenter, '每一束光，都有余地')
+            p.drawText(box.adjusted(0, 26, 0, -95), Qt.AlignmentFlag.AlignCenter, tr('每一束光，都有余地'))
             font.setPixelSize(14)
             p.setFont(font)
             p.setPen(QColor('#c1c8d4'))
-            p.drawText(box.adjusted(0, 82, 0, -45), Qt.AlignmentFlag.AlignCenter, '点击打开，或将原片拖到这里')
+            p.drawText(box.adjusted(0, 82, 0, -45), Qt.AlignmentFlag.AlignCenter, tr('点击打开，或将原片拖到这里'))
             p.setPen(QColor('#778292'))
             p.drawText(box.adjusted(0, 132, 0, -16), Qt.AlignmentFlag.AlignCenter, 'SONY / CANON / NIKON / FUJIFILM / PANASONIC')
             return
@@ -559,7 +656,7 @@ class Canvas(QWidget):
             p.setBrush(QColor('#242827'))
             p.drawEllipse(QPointF(split_x, r.center().y()), 13, 13)
             p.drawText(QRectF(split_x - 12, r.center().y() - 10, 24, 20), Qt.AlignmentFlag.AlignCenter, '↔')
-            for text, at in [('原片', r.left() + 12), ('调整后', r.right() - 70)]:
+            for text, at in [(tr('原片'), r.left() + 12), (tr('调整后'), r.right() - 70)]:
                 rect = QRectF(at, r.top() + 12, 58, 24)
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(QColor(18, 21, 24, 200))
@@ -631,7 +728,7 @@ class ColorWheel(QWidget):
         self.dragging = False
         self.setMinimumSize(95, 140)
         self.setMaximumHeight(155)
-        self.setToolTip('拖动色轮：方向控制色相，离中心越远饱和度越高；双击归零。')
+        self.setToolTip(tr('拖动色轮：方向控制色相，离中心越远饱和度越高；双击归零。'))
 
     def center_radius(self):
         return QPointF(self.width() / 2, (self.height() - 32) / 2), min(self.width() - 20, self.height() - 48) / 2

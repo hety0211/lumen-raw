@@ -12,9 +12,9 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QLabel, QPushButton, QTabWidget, QScrollArea, QComboBox, QCheckBox, QListWidget,
     QFileDialog, QMessageBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox,
     QFrame, QSplitter, QProgressDialog, QStatusBar, QSizePolicy)
-from . import engine, model, compute, host, __version__
+from . import engine, model, compute, host, i18n, __version__
 from .scheduler import Activity as A, Job, JobScheduler, JobSignals, WorkState, WorkStateAccess
-from .widgets import AdjustSlider, Canvas, CurveEditor, Histogram
+from .widgets import AdjustSlider, Canvas, CurveEditor, Histogram, TabStrip
 from .studio import StudioMixin
 from .revision import RevisionMixin
 from .resolution import ResolutionMixin
@@ -22,13 +22,15 @@ from .library import LibraryMixin
 from .auto_masks import AutoMaskMixin
 from .workflow import WorkflowMixin
 from .nl_panel import NaturalLanguageMixin
+from .lens_panel import LensMixin
 from . import geometry, develop, watermark
 from . import performance
 from .exposure_curve import ExposureCurve
 from .watermark_dialog import WatermarkEditor
+from .i18n import tr
 
 STYLE = '''
-QWidget { background: #1b2028; color: #dbe0e9; font-family: "Noto Sans SC", "Microsoft YaHei UI", "Segoe UI"; font-size: 12px; }
+QWidget { background: #1b2028; color: #dbe0e9; font-family: FAMILIES; font-size: 12px; }
 QMainWindow { background: #101318; }
 QLabel#brand { color: #e9eaff; font-size: 23px; font-weight: 700; letter-spacing: 3px; }
 QLabel#subtle { color: #8390a2; font-size: 11px; }
@@ -65,6 +67,9 @@ QStatusBar { background: #151a22; color: #8794a7; }
 QStatusBar QLabel { background: transparent; }
 QSplitter::handle { background: #11161d; width: 2px; }
 '''
+
+# 1.5.1: Japanese, Korean and Traditional Chinese put a native font first.
+STYLE = STYLE.replace('FAMILIES', ', '.join(f'"{f}"' for f in i18n.fonts()))
 
 # Quiet neutral surfaces keep the photograph dominant; sage accents mark active tools.
 STYLE += '''
@@ -106,6 +111,10 @@ QStatusBar QLabel { background: transparent; }
 QSplitter::handle { background: #101610; }
 QToolTip { color: #e0e9d7; background: #333e2e; border-color: #60704f; }
 QPushButton#primary:disabled { background: #394233; color: #788570; border: 1px solid #4e5b44; }
+QWidget#tabStrip { background: transparent; }
+QToolButton#tabButton { color: #8e9b8c; background: transparent; padding: 10px 6px; font-size: 11px; border: 0; border-bottom: 2px solid transparent; }
+QToolButton#tabButton:hover { color: #c3cfba; }
+QToolButton#tabButton:checked { color: #d7e3ca; border-bottom: 2px solid #b9cea0; }
 '''
 
 
@@ -161,7 +170,7 @@ class ComputeStatusBar(QStatusBar):
         row.addWidget(self.mode_label)
         row.addWidget(self.state_label, 1)
         self.addPermanentWidget(panel, 1)
-        self.mode_label.setText(f'CPU⚡（{performance.THREADS} 线程）')
+        self.mode_label.setText(tr('CPU⚡（{threads} 线程）', threads=performance.THREADS))
 
     def showMessage(self, message, timeout=0):
         self._message = str(message)
@@ -188,8 +197,8 @@ class ComputeStatusBar(QStatusBar):
         provider, device, detail, warning = compute.state.snapshot()
         gpu = provider != 'CPUExecutionProvider'
         self.mode_label.is_gpu = gpu
-        self.mode_label.setText('GPU⚡' if gpu else f'CPU⚡（{performance.THREADS} 线程）')
-        self.mode_label.setToolTip(('当前设备：' + device + '\n' if gpu else '') + detail +
+        self.mode_label.setText('GPU⚡' if gpu else tr('CPU⚡（{threads} 线程）', threads=performance.THREADS))
+        self.mode_label.setToolTip((tr('当前设备：') + device + '\n' if gpu else '') + detail +
                                     ('\n' + warning if warning else ''))
         self.mode_label.update()
 
@@ -210,7 +219,7 @@ def heading(text):
 from .enhance_dialog import ExportDialog
 
 
-class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
+class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LensMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
     export_progress = Signal(int, str)
 
     def __init__(self):
@@ -225,7 +234,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         font =Path(__file__).resolve().parents[1] / 'assets' / 'NotoSansSC.ttf'
         if font.exists():
             QFontDatabase.addApplicationFont(str(font))
-        self.setWindowTitle(f'LUMEN RAW {__version__} · 多品牌 RAW 工作室')
+        self.setWindowTitle(tr('LUMEN RAW {version} · 多品牌 RAW 工作室', version=__version__))
         self.setWindowIcon(QIcon(str(Path(__file__).resolve().parents[1]/'assets/lumen.ico')))
         self.resize(1600, 1040)
         self.setMinimumSize(1180, 780)
@@ -286,18 +295,18 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         brand = QLabel('LUMEN')
         brand.setObjectName('brand')
         bar.addWidget(brand)
-        bar.addWidget(note('  风光与旅行工作室\n  LANDSCAPE & TRAVEL'))
+        bar.addWidget(note(tr('  风光与旅行工作室\n  LANDSCAPE & TRAVEL')))
         badge = QLabel(f'STUDIO {__version__}')
         badge.setObjectName('badge')
         badge.setFixedHeight(25)
         bar.addSpacing(18)
         bar.addWidget(badge)
         bar.addStretch()
-        self.open_button = self.button('打开原片', self.open_file)
+        self.open_button = self.button(tr('打开原片'), self.open_file)
         bar.addWidget(self.open_button)
-        self.save_button = self.button('保存工程', self.save)
+        self.save_button = self.button(tr('保存工程'), self.save)
         bar.addWidget(self.save_button)
-        self.export_button = self.button('导出成片  ↗', self.export, True)
+        self.export_button = self.button(tr('导出成片  ↗'), self.export, True)
         bar.addWidget(self.export_button)
         outer.addWidget(top)
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -309,17 +318,17 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         l.setSpacing(0)
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(16, 10, 16, 10)
-        toolbar.addWidget(self.button('撤销', lambda: self.undo(-1)))
-        toolbar.addWidget(self.button('重做', lambda: self.undo(1)))
+        toolbar.addWidget(self.button(tr('撤销'), lambda: self.undo(-1)))
+        toolbar.addWidget(self.button(tr('重做'), lambda: self.undo(1)))
         toolbar.addStretch()
-        self.split_check = QCheckBox('前后对比')
+        self.split_check = QCheckBox(tr('前后对比'))
         self.split_check.toggled.connect(self.update_display)
         toolbar.addWidget(self.split_check)
-        self.compare = QPushButton('按住看原片')
+        self.compare = QPushButton(tr('按住看原片'))
         self.compare.pressed.connect(lambda: self.show_original(True))
         self.compare.released.connect(lambda: self.show_original(False))
         toolbar.addWidget(self.compare)
-        self.final_view = QCheckBox('成片预览')
+        self.final_view = QCheckBox(tr('成片预览'))
         self.final_view.toggled.connect(self.update_display)
         toolbar.addWidget(self.final_view)
         l.addLayout(toolbar)
@@ -334,11 +343,11 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         l.addWidget(self.canvas, 1)
         footer = QHBoxLayout()
         footer.setContentsMargins(18, 12, 18, 12)
-        self.file_label = note('尚未打开原片')
+        self.file_label = note(tr('尚未打开原片'))
         footer.addWidget(self.file_label, 1)
-        self.zoom_label = note('适应窗口')
+        self.zoom_label = note(tr('适应窗口'))
         footer.addWidget(self.zoom_label)
-        footer.addWidget(self.button('适应', self.canvas.fit))
+        footer.addWidget(self.button(tr('适应'), self.canvas.fit))
         footer.addWidget(self.button('100%', self.canvas.actual_size))
         self.canvas.zoom_changed.connect(self.zoom_label.setText)
         l.addLayout(footer)
@@ -350,16 +359,16 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         r.setContentsMargins(12, 10, 12, 10)
         r.setSpacing(5)
         heading_row = QHBoxLayout()
-        heading_row.addWidget(heading('显影  /  DEVELOP'), 1)
-        self.auto_button = self.button('自动', self.automatic)
-        self.auto_button.setToolTip('根据原片亮度分布设置曝光、暗部、亮部与对比度')
+        heading_row.addWidget(heading(tr('显影  /  DEVELOP')), 1)
+        self.auto_button = self.button(tr('自动'), self.automatic)
+        self.auto_button.setToolTip(tr('根据原片亮度分布设置曝光、暗部、亮部与对比度'))
         heading_row.addWidget(self.auto_button)
         r.addLayout(heading_row)
         self.histogram = Histogram()
         r.addWidget(self.histogram)
         warning_row = QHBoxLayout()
-        self.shadow_warning = QCheckBox('暗部溢出')
-        self.highlight_warning = QCheckBox('高光溢出')
+        self.shadow_warning = QCheckBox(tr('暗部溢出'))
+        self.highlight_warning = QCheckBox(tr('高光溢出'))
         self.shadow_warning.toggled.connect(self.update_display)
         self.highlight_warning.toggled.connect(self.update_display)
         warning_row.addWidget(self.shadow_warning)
@@ -368,6 +377,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         r.addLayout(warning_row)
         self.tabs = QTabWidget()
         self.tabs.currentChanged.connect(self.tab_changed)
+        self.tab_strip = TabStrip(self.tabs)
+        r.addWidget(self.tab_strip)
         r.addWidget(self.tabs, 1)
         self.build_basic()
         self.build_color()
@@ -378,22 +389,23 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.build_grading()
         self.build_effects()
         self.build_retouch()
+        self.tab_strip.rebuild()
         backend_row = QHBoxLayout()
         self.backend_combo = QComboBox()
-        self.backend_combo.addItems([host.ACCELERATION, 'CPU 模式'])
+        self.backend_combo.addItems([host.ACCELERATION, tr('CPU 模式')])
         self.backend_combo.currentIndexChanged.connect(self.backend_changed)
         backend_row.addWidget(self.backend_combo, 1)
-        backend_row.addWidget(self.button('重置', self.reset_edits))
+        backend_row.addWidget(self.button(tr('重置'), self.reset_edits))
         r.addLayout(backend_row)
         self.backend_label = note(self.backend.name)
         r.addWidget(self.backend_label)
-        r.addWidget(note(f'运算线程上限 32 · 本机使用 {performance.THREADS} · 最大 4 亿像素'))
+        r.addWidget(note(tr('运算线程上限 32 · 本机使用 {threads} · 最大 4 亿像素', threads=performance.THREADS)))
         splitter.addWidget(right)
         splitter.setSizes([225, 870, 405])
         outer.addWidget(splitter, 1)
         outer.addWidget(self.build_filmstrip())
         self.setCentralWidget(central)
-        self.statusBar().showMessage(f'准备就绪 · 原片始终保留 · {host.keys("Ctrl+O")} 打开')
+        self.statusBar().showMessage(tr('准备就绪 · 原片始终保留 · {shortcut} 打开', shortcut=host.keys("Ctrl+O")))
         self.state_label = self.statusBar().state_label
         self.state_label.setText('16-bit RAW  /  sRGB')
         self.statusBar().refresh_mode()
@@ -402,6 +414,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
     def panel(self, title):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(5, 12, 9, 12)
@@ -418,14 +431,14 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         layout.addWidget(control)
 
     def build_basic(self):
-        l = self.panel('光影')
-        l.addWidget(heading('曝光与动态范围'))
+        l = self.panel(tr('光影'))
+        l.addWidget(heading(tr('曝光与动态范围')))
         self.exposure_curve=ExposureCurve()
         self.exposure_curve.changed.connect(self.exposure_curve_changed)
         self.exposure_curve.committed.connect(self.commit)
         l.addWidget(self.exposure_curve)
-        l.addWidget(note('曲线任意位置拖动，局部平滑调整并联动黑色／暗部／亮部／白色 · Shift 拖动整体曝光 · 双击还原'))
-        for pair in ((('exposure','曝光 EV'),('contrast','对比度')),(('shadows','暗部'),('highlights','亮部')),(('blacks','黑色'),('whites','白色'))):
+        l.addWidget(note(tr('曲线任意位置拖动，局部平滑调整并联动黑色／暗部／亮部／白色 · Shift 拖动整体曝光 · 双击还原')))
+        for pair in ((('exposure',tr('曝光 EV')),('contrast',tr('对比度'))),(('shadows',tr('暗部')),('highlights',tr('亮部'))),(('blacks',tr('黑色')),('whites',tr('白色')))):
             row=QHBoxLayout()
             for key,title in pair:
                 column=QVBoxLayout()
@@ -433,29 +446,29 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
                 row.addLayout(column,1)
             l.addLayout(row)
         self.build_develop_profile(l)
-        l.addWidget(heading('白平衡'))
+        l.addWidget(heading(tr('白平衡')))
         row = QHBoxLayout()
-        self.wb_button = QPushButton('吸管取样')
+        self.wb_button = QPushButton(tr('吸管取样'))
         self.wb_button.setCheckable(True)
         self.wb_button.toggled.connect(self.toggle_wb)
         row.addWidget(self.wb_button)
-        row.addWidget(self.button('还原相机白平衡', self.reset_wb))
+        row.addWidget(self.button(tr('还原相机白平衡'), self.reset_wb))
         l.addLayout(row)
         self.build_camera_wb(l)
-        self.add_adjustment(l, '冷暖微调', 'temperature')
-        self.add_adjustment(l, '色调 · 绿 / 洋红', 'tint')
-        l.addWidget(note('以相机白平衡为起点，相对调整色温与色调。亮部滑块可压低已记录的高光，无法重建完全过曝的信息。'))
+        self.add_adjustment(l, tr('冷暖微调'), 'temperature')
+        self.add_adjustment(l, tr('色调 · 绿 / 洋红'), 'tint')
+        l.addWidget(note(tr('以相机白平衡为起点，相对调整色温与色调。亮部滑块可压低已记录的高光，无法重建完全过曝的信息。')))
         l.addStretch()
 
     def build_color(self):
-        l = self.panel('色彩')
-        l.addWidget(heading('全局色彩'))
-        self.mono_check = QCheckBox('黑白处理')
+        l = self.panel(tr('色彩'))
+        l.addWidget(heading(tr('全局色彩')))
+        self.mono_check = QCheckBox(tr('黑白处理'))
         self.mono_check.toggled.connect(self.monochrome_changed)
         l.addWidget(self.mono_check)
-        self.add_adjustment(l, '饱和度', 'saturation')
-        self.add_adjustment(l, '自然饱和度', 'vibrance')
-        l.addWidget(heading('色彩混合器'))
+        self.add_adjustment(l, tr('饱和度'), 'saturation')
+        self.add_adjustment(l, tr('自然饱和度'), 'vibrance')
+        l.addWidget(heading(tr('色彩混合器')))
         swatches = QHBoxLayout()
         self.swatch_buttons = []
         for index, (title, _, color) in enumerate(model.COLORS):
@@ -473,18 +486,18 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.color_select.currentIndexChanged.connect(self.refresh_hsl)
         l.addWidget(self.color_select)
         self.hsl_controls = []
-        for index, title in enumerate(['色相', '饱和度', '明度']):
+        for index, title in enumerate([tr('色相'), tr('饱和度'), tr('明度')]):
             c = AdjustSlider(title)
             c.changed.connect(lambda value, i=index: self.change_hsl(i, value))
             c.committed.connect(self.commit)
             l.addWidget(c)
             self.hsl_controls.append(c)
-        l.addWidget(note('8 个相互平滑过渡的色彩区间，可独立调整色相、饱和度与明度。'))
+        l.addWidget(note(tr('8 个相互平滑过渡的色彩区间，可独立调整色相、饱和度与明度。')))
         self.build_curves(l)
         l.addStretch()
 
     def build_curves(self,l):
-        l.addWidget(heading('RGB 与通道曲线'))
+        l.addWidget(heading(tr('RGB 与通道曲线')))
         self.channel = QComboBox()
         self.channel.addItems(['RGB', 'R', 'G', 'B'])
         self.channel.currentTextChanged.connect(self.refresh_curve)
@@ -496,7 +509,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         values = QHBoxLayout()
         self.curve_input = QSpinBox()
         self.curve_output = QSpinBox()
-        for title, control in [('输入', self.curve_input), ('输出', self.curve_output)]:
+        for title, control in [(tr('输入'), self.curve_input), (tr('输出'), self.curve_output)]:
             control.setRange(0, 255)
             control.setKeyboardTracking(False)
             values.addWidget(QLabel(title))
@@ -506,19 +519,19 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.curve_output.valueChanged.connect(lambda v: self.curve.set_output(self.curve_input.value(), v))
         l.addLayout(values)
         self.curve_mode = QComboBox()
-        self.curve_mode.addItems(['平滑曲线', '分段直线（兼容旧工程）'])
+        self.curve_mode.addItems([tr('平滑曲线'), tr('分段直线（兼容旧工程）')])
         self.curve_mode.currentIndexChanged.connect(self.curve_mode_changed)
         l.addWidget(self.curve_mode)
-        l.addWidget(note('在任意亮度位置按下，向上或向下拖动。\n输入锁定当前亮度，输出决定调整后的亮度。\n支持 0–255 全部亮度值；右键删除中间节点。'))
-        l.addWidget(self.button('重置当前通道', self.reset_curve))
+        l.addWidget(note(tr('在任意亮度位置按下，向上或向下拖动。\n输入锁定当前亮度，输出决定调整后的亮度。\n支持 0–255 全部亮度值；右键删除中间节点。')))
+        l.addWidget(self.button(tr('重置当前通道'), self.reset_curve))
 
     def build_watermark(self):
-        l=self.panel('水印')
-        l.addWidget(heading('水印与边框'))
+        l=self.panel(tr('水印'))
+        l.addWidget(heading(tr('水印与边框')))
         self.watermark_editor=WatermarkEditor(self,compact=True)
         self.watermark_editor.changed.connect(self.watermark_changed)
         l.addWidget(self.watermark_editor)
-        l.addWidget(self.button('打开大图水印预览…',self.configure_watermark))
+        l.addWidget(self.button(tr('打开大图水印预览…'),self.configure_watermark))
         l.addStretch()
 
     def watermark_changed(self,settings):
@@ -535,25 +548,25 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.clear_preset_selection();self.changed()
 
     def build_details(self):
-        l = self.panel('细节')
-        l.addWidget(heading('质感'))
-        self.add_adjustment(l, '去薄雾', 'dehaze')
-        self.add_adjustment(l, '清晰度', 'clarity')
-        self.add_adjustment(l, '纹理', 'texture')
-        self.add_adjustment(l, '锐化', 'sharpness', 0, 100)
-        l.addWidget(self.button('AI 超分辨率…', lambda: self.open_ai('super'), True))
-        l.addWidget(self.button('AI 去杂色…', lambda: self.open_ai('denoise')))
-        l.addWidget(heading('降噪'))
-        self.add_adjustment(l, '明度降噪', 'denoise', 0, 100)
-        self.add_adjustment(l, '彩色杂点', 'color_noise', 0, 100)
-        l.addWidget(note('滑块使用传统降噪；AI 去杂色在独立窗口中处理并生成副本。\n点击 100% 检查原图锐化与降噪效果。'))
+        l = self.panel(tr('细节'))
+        l.addWidget(heading(tr('质感')))
+        self.add_adjustment(l, tr('去薄雾'), 'dehaze')
+        self.add_adjustment(l, tr('清晰度'), 'clarity')
+        self.add_adjustment(l, tr('纹理'), 'texture')
+        self.add_adjustment(l, tr('锐化'), 'sharpness', 0, 100)
+        l.addWidget(self.button(tr('AI 超分辨率…'), lambda: self.open_ai('super'), True))
+        l.addWidget(self.button(tr('AI 去杂色…'), lambda: self.open_ai('denoise')))
+        l.addWidget(heading(tr('降噪')))
+        self.add_adjustment(l, tr('明度降噪'), 'denoise', 0, 100)
+        self.add_adjustment(l, tr('彩色杂点'), 'color_noise', 0, 100)
+        l.addWidget(note(tr('滑块使用传统降噪；AI 去杂色在独立窗口中处理并生成副本。\n点击 100% 检查原图锐化与降噪效果。')))
         l.addStretch()
 
     def build_masks(self):
-        l = self.panel('蒙版')
-        l.addWidget(heading('局部调整'))
+        l = self.panel(tr('蒙版'))
+        l.addWidget(heading(tr('局部调整')))
         row = QHBoxLayout()
-        for title, kind in [('画笔', 'brush'), ('渐变', 'linear'), ('径向', 'radial'), ('亮度', 'luminance')]:
+        for title, kind in [(tr('画笔'), 'brush'), (tr('渐变'), 'linear'), (tr('径向'), 'radial'), (tr('亮度'), 'luminance')]:
             row.addWidget(self.button(title, lambda checked=False, k=kind: self.add_mask(k)))
         l.addLayout(row)
         self.build_auto_masks(l)
@@ -562,35 +575,35 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.mask_list.currentRowChanged.connect(self.select_mask)
         l.addWidget(self.mask_list)
         row = QHBoxLayout()
-        self.overlay_check = QCheckBox('显示范围')
+        self.overlay_check = QCheckBox(tr('显示范围'))
         self.overlay_check.setChecked(True)
         self.overlay_check.toggled.connect(self.update_overlay)
-        self.enabled_check = QCheckBox('启用')
+        self.enabled_check = QCheckBox(tr('启用'))
         self.enabled_check.setChecked(True)
         self.enabled_check.toggled.connect(lambda v: self.mask_property('enabled', v))
-        self.invert_check = QCheckBox('反选')
+        self.invert_check = QCheckBox(tr('反选'))
         self.invert_check.toggled.connect(lambda v: self.mask_property('invert', v))
         row.addWidget(self.overlay_check)
         row.addWidget(self.enabled_check)
         row.addWidget(self.invert_check)
         l.addLayout(row)
         row = QHBoxLayout()
-        self.erase_check = QCheckBox('橡皮擦')
+        self.erase_check = QCheckBox(tr('橡皮擦'))
         self.erase_check.toggled.connect(lambda v: setattr(self.canvas, 'erase', v))
         row.addWidget(self.erase_check)
         row.addStretch()
-        row.addWidget(self.button('删除蒙版', self.delete_mask))
+        row.addWidget(self.button(tr('删除蒙版'), self.delete_mask))
         l.addLayout(row)
-        self.brush_size = AdjustSlider('画笔大小', 1, 40)
+        self.brush_size = AdjustSlider(tr('画笔大小'), 1, 40)
         self.brush_size.setValue(9)
         self.brush_size.default_value = 9
         self.brush_size.changed.connect(lambda v: setattr(self.canvas, 'brush_radius', v / 200))
         l.addWidget(self.brush_size)
-        self.opacity = AdjustSlider('不透明度', 0, 100)
+        self.opacity = AdjustSlider(tr('不透明度'), 0, 100)
         self.opacity.default_value = 100
         self.opacity.changed.connect(lambda v: self.mask_property('opacity', v))
         l.addWidget(self.opacity)
-        self.feather = AdjustSlider('羽化', 0, 100)
+        self.feather = AdjustSlider(tr('羽化'), 0, 100)
         self.feather.default_value = 50
         self.feather.changed.connect(lambda v: self.mask_property('feather', v))
         l.addWidget(self.feather)
@@ -598,37 +611,38 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         range_layout = QVBoxLayout(self.range_box)
         range_layout.setContentsMargins(0, 0, 0, 0)
         self.range_controls = {}
-        for key, title in [('low', '亮度下限'), ('high', '亮度上限'), ('falloff', '过渡范围')]:
+        for key, title in [('low', tr('亮度下限')), ('high', tr('亮度上限')), ('falloff', tr('过渡范围'))]:
             c = AdjustSlider(title, 0, 100)
             c.changed.connect(lambda value, k=key: self.range_value(k, value))
             c.committed.connect(self.commit)
             self.range_controls[key] = c
             range_layout.addWidget(c)
-        range_layout.addWidget(note('按原片的显示亮度选择范围，适合天空、高光或阴影。'))
+        range_layout.addWidget(note(tr('按原片的显示亮度选择范围，适合天空、高光或阴影。')))
         l.addWidget(self.range_box)
-        for key, title in [('exposure', '局部曝光 EV'), ('shadows', '局部暗部'), ('highlights', '局部亮部'), ('temperature', '局部色温'), ('saturation', '局部饱和度'), ('clarity', '局部清晰度'), ('sharpness', '局部锐化')]:
+        for key, title in [('exposure', tr('局部曝光 EV')), ('shadows', tr('局部暗部')), ('highlights', tr('局部亮部')), ('temperature', tr('局部色温')), ('saturation', tr('局部饱和度')), ('clarity', tr('局部清晰度')), ('sharpness', tr('局部锐化'))]:
             self.add_adjustment(l, title, key, -5 if key == 'exposure' else (0 if key == 'sharpness' else -100), 5 if key == 'exposure' else 100, .05 if key == 'exposure' else 1, True)
-        l.addWidget(note('画笔：按住左键涂抹。渐变／径向：拖出范围，可重新拖动绘制。\n渐变从起点 0% 过渡至终点 100%；径向框内生效。蒙版按列表顺序叠加。'))
+        l.addWidget(note(tr('画笔：按住左键涂抹。渐变／径向：拖出范围，可重新拖动绘制。\n渐变从起点 0% 过渡至终点 100%；径向框内生效。蒙版按列表顺序叠加。')))
         l.addStretch()
 
     def build_crop(self):
-        l = self.panel('裁切')
-        l.addWidget(heading('重新构图'))
+        l = self.panel(tr('裁切·镜头'))
+        l.addWidget(heading(tr('重新构图')))
         self.crop_ratio = QComboBox()
-        self.crop_ratio.addItems(['自由比例', '原片比例', '1 : 1', '3 : 2', '4 : 3', '16 : 9', '2 : 3', '9 : 16'])
+        self.crop_ratio.addItems([tr('自由比例'), tr('原片比例'), '1 : 1', '3 : 2', '4 : 3', '16 : 9', '2 : 3', '9 : 16'])
         self.crop_ratio.currentIndexChanged.connect(self.ratio_changed)
         l.addWidget(self.crop_ratio)
-        l.addWidget(note('在画面上拖动绘制裁切框。切换比例后重新拖动。\n裁切与蒙版始终保存在原片坐标中。'))
-        l.addWidget(self.button('确认裁切（Enter）', self.confirm_crop, True))
-        l.addWidget(self.button('重新裁切', lambda: self.final_view.setChecked(False)))
-        l.addWidget(self.button('清除裁切', self.clear_crop))
-        l.addWidget(self.button('顺时针旋转 90°', self.rotate))
-        self.straighten = AdjustSlider('水平校正  °', -15, 15, .1)
+        l.addWidget(note(tr('在画面上拖动绘制裁切框。切换比例后重新拖动。\n裁切与蒙版始终保存在原片坐标中。')))
+        l.addWidget(self.button(tr('确认裁切（Enter）'), self.confirm_crop, True))
+        l.addWidget(self.button(tr('重新裁切'), lambda: self.final_view.setChecked(False)))
+        l.addWidget(self.button(tr('清除裁切'), self.clear_crop))
+        l.addWidget(self.button(tr('顺时针旋转 90°'), self.rotate))
+        self.straighten = AdjustSlider(tr('水平校正  °'), -15, 15, .1)
         self.straighten.changed.connect(self.straighten_changed)
         self.straighten.committed.connect(self.commit)
         l.addWidget(self.straighten)
-        l.addWidget(note('校正时自动放大填满裁切框，保留当前输出比例。'))
-        l.addWidget(note('按 Enter 确认，只显示保留部分；重新裁切可调整范围。\n原片数据始终保留，蒙版和修复可在裁切后继续绘制。'))
+        l.addWidget(note(tr('校正时自动放大填满裁切框，保留当前输出比例。')))
+        l.addWidget(note(tr('按 Enter 确认，只显示保留部分；重新裁切可调整范围。\n原片数据始终保留，蒙版和修复可在裁切后继续绘制。')))
+        self.build_lens(l)
         l.addStretch()
 
     def shortcuts(self):
@@ -648,13 +662,13 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         return self.scheduler.submit(fn, success, fail or self.error, priority)
 
     def error(self, text):
-        self.statusBar().showMessage('操作未完成')
+        self.statusBar().showMessage(tr('操作未完成'))
         QMessageBox.warning(self, 'LUMEN RAW', text)
 
     def may_discard(self):
         if self.source is None or (self.edits == self.saved_edits and self.snapshots == self.saved_snapshots):
             return True
-        answer = QMessageBox.question(self, '保存编辑', '当前编辑尚未保存为工程。是否保存？',
+        answer = QMessageBox.question(self, tr('保存编辑'), tr('当前编辑尚未保存为工程。是否保存？'),
             QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel)
         if answer == QMessageBox.StandardButton.Save:
             return self.save()
@@ -662,14 +676,14 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
 
     def open_file(self):
         if self.work.busy(A.AI):return
-        paths, _ = QFileDialog.getOpenFileNames(self, '导入照片、工程或选片集', '',
+        paths, _ = QFileDialog.getOpenFileNames(self, tr('导入照片、工程或选片集'), '',
             engine.PHOTO_FILTER)
         if paths:
             self.import_paths(paths)
 
     def import_paths(self, paths):
         if not self.work.can_start(A.LOADING):
-            self.statusBar().showMessage('请等待当前读取或导出完成。')
+            self.statusBar().showMessage(tr('请等待当前读取或导出完成。'))
             return
         paths = [str(Path(p).resolve()) for p in paths if Path(p).is_file()]
         if not paths:return
@@ -684,7 +698,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         if Path(path).suffix.lower()=='.lumenalbum':
             return self.open_album(path)
         if not self.work.can_start(A.LOADING):
-            self.statusBar().showMessage('请等待当前读取／导出完成。')
+            self.statusBar().showMessage(tr('请等待当前读取／导出完成。'))
             return
         self.stash_document()
         explicit_project = Path(path).suffix.lower()=='.lumen'
@@ -697,8 +711,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
                 project = path
                 path, edits, snapshots = model.load_project(path, include_snapshots=True)
                 if not Path(path).exists():
-                    QMessageBox.information(self, '重新定位原片', '工程引用的原片已移动，请选择对应的原片。')
-                    path, _ = QFileDialog.getOpenFileName(self, '定位工程原片')
+                    QMessageBox.information(self, tr('重新定位原片'), tr('工程引用的原片已移动，请选择对应的原片。'))
+                    path, _ = QFileDialog.getOpenFileName(self, tr('定位工程原片'))
                     if not path:
                         return
         except Exception as exc:
@@ -712,7 +726,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.timer.stop()
         self.history_timer.stop()
         self.generation += 1
-        self.statusBar().showMessage('正在解码原片…')
+        self.statusBar().showMessage(tr('正在解码原片…'))
         def loaded(result):
             self.source, self.info = result
             self.source_path = str(Path(path).resolve())
@@ -724,6 +738,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
                     for state in document['history'].items:
                         state['white_balance'] = copy.deepcopy(edits['white_balance'])
                         state['develop'] = copy.deepcopy(edits['develop'])
+            # 1.5.1: solve the lens profile for this photo in every state it may return to.
+            self.init_lens_states([edits] + (self.lens_states_for_document(document) if document else []),
+                                  not explicit_project and (not document or not document['initialized']))
             self.reset_resolution()
             self.canvas.image = None
             self.edits = edits
@@ -755,7 +772,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
             self.work.end(A.LOADING)
             self.open_button.setEnabled(True)
             self.refresh()
-            self.error('无法打开文件：\n' + text)
+            self.error(tr('无法打开文件：\n') + text)
         self.job(lambda: engine.load_image(path), loaded, failed)
 
     def changed(self):
@@ -767,7 +784,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.history_timer.start()
         self.detail_timer.start(220)
         dirty =self.edits != self.saved_edits or self.snapshots != self.saved_snapshots
-        self.state_label.setText('未保存编辑' if dirty else '编辑已保存')
+        self.state_label.setText(tr('未保存编辑') if dirty else tr('编辑已保存'))
 
     def commit(self):
         self.history_timer.stop()
@@ -786,7 +803,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         # The comparison original is developed here once per photo / develop setting, not on the GUI thread.
         original_key = (self.document_token, engine._key(edits.get('develop', {})))
         original = self._original[0] != original_key
-        self.statusBar().showMessage('正在更新预览…')
+        self.statusBar().showMessage(tr('正在更新预览…'))
         started = time.perf_counter()
         def work():
             result = engine.process(source, edits, backend, apply_crop=False, detail_scale=detail_scale, cache=cache)
@@ -804,13 +821,13 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
                 self.update_navigator()
                 self.backend_label.setText(self.backend.name)
                 self.backend_label.setToolTip(self.backend.warning)
-                self.statusBar().showMessage(f'预览已更新 · {(time.perf_counter() - started) * 1000:.0f} ms · 放大时自动读取原图细节')
+                self.statusBar().showMessage(tr('预览已更新 · {ms:.0f} ms · 放大时自动读取原图细节', ms=(time.perf_counter() - started) * 1000))
             if self.work.pending_render or token != self.generation:
                 self.timer.start()
         def failed(text):
             self.work.end(A.RENDER)
             if token == self.generation:
-                self.error('预览处理失败：\n' + text)
+                self.error(tr('预览处理失败：\n') + text)
             elif self.work.pending_render:
                 self.timer.start()
         detail_scale=max(.1,source.shape[1]/self.info.get('width',source.shape[1]))
@@ -918,7 +935,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         if self.source is None:
             return
         if len(self.edits['masks']) >= 32:
-            return self.error('最多支持 32 个蒙版。')
+            return self.error(tr('最多支持 32 个蒙版。'))
         self.edits['masks'].append(model.new_mask(kind, len(self.edits['masks']) + 1))
         self.current_mask = len(self.edits['masks']) - 1
         self.split_check.setChecked(False)
@@ -976,7 +993,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
     def update_overlay(self, *_):
         mask = self.selected_mask()
         if self.source is not None and mask and self.tabs.currentIndex() == 4 and self.overlay_check.isChecked() and not self.comparing and not self.split_check.isChecked():
-            reference = self.preview_original() if mask['kind'] == 'luminance' else None
+            reference = self.preview_reference() if mask['kind'] == 'luminance' else None
             alpha = engine.mask_alpha(mask,self.source.shape,reference)
             self.canvas.set_overlay(engine.crop_rotate(alpha,self.edits) if self.final_view.isChecked() else alpha)
         else:
@@ -1050,7 +1067,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.final_view.setChecked(True)
         self.canvas.fit()
         self.commit()
-        self.statusBar().showMessage('裁切已确认 · 仅显示保留部分，可继续调色或绘制蒙版')
+        self.statusBar().showMessage(tr('裁切已确认 · 仅显示保留部分，可继续调色或绘制蒙版'))
 
     def clear_crop(self):
         self.edits['crop'] = None
@@ -1070,7 +1087,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
     def backend_changed(self, index):
         self.backend = engine.Backend('cpu' if index else 'auto')
         if index:
-            compute.state.report('CPUExecutionProvider', detail=f'{performance.THREADS} 线程 · 手动 CPU 模式')
+            compute.state.report('CPUExecutionProvider', detail=tr('{threads} 线程 · 手动 CPU 模式', threads=performance.THREADS))
         self.statusBar().refresh_mode()
         self.backend_label.setText(self.backend.name)
         self.backend_label.setToolTip(self.backend.warning)
@@ -1082,6 +1099,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
             self.edits = model.recipe()
             self.edits['white_balance'] = copy.deepcopy(self.info.get('white_balance', self.edits['white_balance']))
             self.edits['develop'] = copy.deepcopy(self.info.get('develop',self.edits['develop']))
+            self.init_lens_states([self.edits], True)
             self.clear_clone_source()
             self.clear_preset_selection()
             self.current_mask = -1
@@ -1114,11 +1132,12 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.mask_list.setCurrentRow(self.current_mask)
         self.refresh_mask_controls()
         self.refresh_studio()
+        self.refresh_lens()
         self.refresh_camera_wb()
         self.develop_combo.blockSignals(True)
         self.develop_combo.setCurrentIndex(0 if self.edits['develop']['mode']=='camera' else 1)
         self.develop_combo.blockSignals(False)
-        self.develop_hint.setText(self.edits['develop']['source'])
+        self.develop_hint.setText(tr(self.edits['develop']['source']))  # stored in the recipe as source text
         self.update_library_status()
         self.refresh_retouch()
         self.save_button.setEnabled(self.source is not None and not self.work.busy(A.LOADING))
@@ -1134,7 +1153,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
             return False
         path = self.project_path
         if not path:
-            path, _ = QFileDialog.getSaveFileName(self, '保存无损编辑工程', str(Path(self.source_path).with_suffix('.lumen')), 'Lumen 工程 (*.lumen)')
+            path, _ = QFileDialog.getSaveFileName(self, tr('保存无损编辑工程'), str(Path(self.source_path).with_suffix('.lumen')), tr('Lumen 工程 (*.lumen)'))
         if not path:
             return False
         if Path(path).suffix.lower() != '.lumen':
@@ -1144,8 +1163,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
             self.project_path = path
             self.saved_edits = copy.deepcopy(self.edits)
             self.saved_snapshots = copy.deepcopy(self.snapshots)
-            self.state_label.setText('编辑已保存')
-            self.statusBar().showMessage('工程已保存 · 原片未修改')
+            self.state_label.setText(tr('编辑已保存'))
+            self.statusBar().showMessage(tr('工程已保存 · 原片未修改'))
             return True
         except Exception as exc:
             self.error(str(exc))
@@ -1155,7 +1174,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         if enhance:return self.open_ai('super')
         if self.work.busy(A.AI):return
         if self.work.busy(A.SELECTION):
-            self.statusBar().showMessage('正在生成蒙版，请完成后再导出。')
+            self.statusBar().showMessage(tr('正在生成蒙版，请完成后再导出。'))
             return
         if self.source is None or not self.work.can_start(A.EXPORTING):
             return
@@ -1163,28 +1182,28 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         ext = ['.jpg', '.png', '.tif', '.dng'][dialog.format.currentIndex()]
-        path, _ = QFileDialog.getSaveFileName(self, '导出成片', str(Path(self.source_path).with_name(Path(self.source_path).stem + '-Lumen' + ext)), f'图片 (*{ext})')
+        path, _ = QFileDialog.getSaveFileName(self, tr('导出成片'), str(Path(self.source_path).with_name(Path(self.source_path).stem + '-Lumen' + ext)), tr('图片 (*{ext})', ext=ext))
         if not path:
             return
         if Path(path).suffix.lower() != ext:
             path += ext
         if Path(path).resolve() == Path(self.source_path).resolve():
-            return self.error('请选择不同的文件名，以保留原片。')
+            return self.error(tr('请选择不同的文件名，以保留原片。'))
         self.start_export(path, [1, 2, 4][dialog.scale.currentIndex()], dialog.model_choice(), dialog.quality.value())
 
     def start_export(self, path, scale=1, model_path='', quality=95):
         if self.work.busy(A.AI):return
         if self.work.busy(A.SELECTION):
-            self.statusBar().showMessage('正在生成蒙版，请完成后再导出。')
+            self.statusBar().showMessage(tr('正在生成蒙版，请完成后再导出。'))
             return
         if not self.work.can_start(A.EXPORTING):
             return
         if Path(path).resolve() == Path(self.source_path).resolve():
-            return self.error('请选择不同的文件名，以保留原片。')
+            return self.error(tr('请选择不同的文件名，以保留原片。'))
         self.work.begin(A.EXPORTING)
         self.export_cancel = threading.Event()
-        self.export_dialog = QProgressDialog('正在全尺寸解码…', '取消导出', 0, 100, self)
-        self.export_dialog.setWindowTitle('增强与导出')
+        self.export_dialog = QProgressDialog(tr('正在全尺寸解码…'), tr('取消导出'), 0, 100, self)
+        self.export_dialog.setWindowTitle(tr('增强与导出'))
         self.export_dialog.setAutoClose(False)
         self.export_dialog.setAutoReset(False)
         self.export_dialog.setMinimumDuration(0)
@@ -1193,30 +1212,30 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.export_dialog.show()
         self.export_button.setEnabled(False)
         self.open_button.setEnabled(False)
-        self.statusBar().showMessage('正在全尺寸导出… 大图或超分可能需要较长时间。')
+        self.statusBar().showMessage(tr('正在全尺寸导出… 大图或超分可能需要较长时间。'))
         edits, source_path = copy.deepcopy(self.edits), self.source_path
         photo = copy.deepcopy(self.info.get('photo', {}))
         use_cuda = self.backend_combo.currentIndex() == 0
         def work():
-            self.export_progress.emit(2, '正在全尺寸解码…')
+            self.export_progress.emit(2, tr('正在全尺寸解码…'))
             source, _ = engine.load_image(source_path, preview_limit=None)
             if self.export_cancel.is_set():
-                raise InterruptedError('已取消导出')
-            self.export_progress.emit(15, '正在应用调色、修复与蒙版…')
+                raise InterruptedError(tr('已取消导出'))
+            self.export_progress.emit(15, tr('正在应用调色、修复与蒙版…'))
             h, w = source.shape[:2]
             crop = edits['crop'] or [0, 0, 1, 1]
             pixels = h * w * (crop[2] - crop[0]) * (crop[3] - crop[1]) * scale * scale
             if pixels > engine.MAX_EXPORT_PIXELS:
-                raise ValueError('输出超过 4 亿像素，请先裁切或降低超分倍数。')
+                raise ValueError(tr('输出超过 4 亿像素，请先裁切或降低超分倍数。'))
             result = engine.process(source, edits, engine.Backend('auto' if use_cuda else 'cpu'))
             del source
-            self.export_progress.emit(30, '正在增强…')
+            self.export_progress.emit(30, tr('正在增强…'))
             def progress(done, total):
-                self.export_progress.emit(30 + round(65 * done / total), f'正在增强 · 分块 {done} / {total}')
+                self.export_progress.emit(30 + round(65 * done / total), tr('正在增强 · 分块 {done} / {total}', done=done, total=total))
             result, backend = engine.super_resolve(result, scale, model_path or None, use_cuda, progress, self.export_cancel)
             if self.export_cancel.is_set():
-                raise InterruptedError('已取消导出')
-            self.export_progress.emit(98, '正在写入成片…')
+                raise InterruptedError(tr('已取消导出'))
+            self.export_progress.emit(98, tr('正在写入成片…'))
             result = watermark.apply(result, edits['watermark'], photo)
             engine.export_image(path, result, quality, photo=photo)
             return result.shape, backend
@@ -1226,17 +1245,17 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
             self.open_button.setEnabled(True)
             self.export_button.setEnabled(True)
             shape, backend = result
-            self.statusBar().showMessage(f'导出完成 · {shape[1]} × {shape[0]} · {backend} · {path}')
-            QMessageBox.information(self, '导出完成', f'已保存：\n{path}\n\n{shape[1]} × {shape[0]} 像素\n{backend}')
+            self.statusBar().showMessage(tr('导出完成 · {width} × {height} · {backend} · {path}', width=shape[1], height=shape[0], backend=backend, path=path))
+            QMessageBox.information(self, tr('导出完成'), tr('已保存：\n{path}\n\n{width} × {height} 像素\n{backend}', path=path, width=shape[1], height=shape[0], backend=backend))
         def failed(text):
             self.export_dialog.reset()
             self.work.end(A.EXPORTING)
             self.open_button.setEnabled(True)
             self.export_button.setEnabled(True)
             if self.export_cancel.is_set():
-                self.statusBar().showMessage('导出已取消，未写入成片。')
+                self.statusBar().showMessage(tr('导出已取消，未写入成片。'))
             else:
-                self.error('导出失败：\n' + text)
+                self.error(tr('导出失败：\n') + text)
         self.job(work, success, failed)
 
     def update_export_progress(self, value, text):
@@ -1250,7 +1269,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
             else:event.ignore()
             return
         if self.work.busy():
-            self.statusBar().showMessage('正在处理图像，请等待完成，或在 AI 窗口取消后关闭。')
+            self.statusBar().showMessage(tr('正在处理图像，请等待完成，或在 AI 窗口取消后关闭。'))
             event.ignore()
             return
         if not self.confirm_close_library():
@@ -1265,7 +1284,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LibraryMi
         self.nl_request+=1
         self.closing=True
         if not self.scheduler.shutdown():
-            self.statusBar().showMessage('正在完成当前预览任务后关闭…')
+            self.statusBar().showMessage(tr('正在完成当前预览任务后关闭…'))
             event.ignore()
         else:event.accept()
 
@@ -1305,11 +1324,19 @@ def main():
     app.setApplicationName('LUMEN RAW')
     app.setStyle('Fusion')
     app.setStyleSheet(STYLE)
-    app.setFont(QFont('Noto Sans SC', 9))
+    font = QFont(i18n.fonts()[0], 9)
+    font.setFamilies(i18n.fonts())
+    app.setFont(font)
     window = MainWindow()
     if sys.platform == 'darwin':
         app.installEventFilter(FileOpenEvents(window))
     window.show()
     if len(sys.argv) > 1 and Path(sys.argv[1]).is_file():
         QTimer.singleShot(100, lambda: window.open_path(sys.argv[1]))
-    return app.exec()
+    code = app.exec()
+    if getattr(window, 'restart_requested', False):
+        # 1.5.1: the language menu restarts the editor in the chosen language.
+        from PySide6.QtCore import QProcess
+        arguments = [] if getattr(sys, 'frozen', False) else [str(Path(sys.argv[0]).resolve())]
+        QProcess.startDetached(sys.executable, arguments)
+    return code

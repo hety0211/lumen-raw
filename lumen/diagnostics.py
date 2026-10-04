@@ -82,6 +82,8 @@ def run(source, output):
         app.processEvents()
         w.grab().save(str(destination / 'white-balance.png'))
         report['natural_language'] = natural_language(w, app, settle, destination)
+        report['lens'] = lens_corrections(w, app, settle, destination)
+        report['languages'] = languages()
         model.save_project(destination / 'smoke.lumen', source, w.edits, w.snapshots)
         engine.export_image(destination / 'smoke.tif', w.rendered)
         report.update(ok=True, info=w.info, preview_shape=w.rendered.shape, backend=w.backend.name,
@@ -96,6 +98,46 @@ def run(source, output):
         report.update(ok=False, error=traceback.format_exc())
     (destination / 'report.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     return 0 if report.get('ok') else 1
+
+
+def lens_corrections(w, app, settle, destination):
+    """1.5.1: bundled lensfun database, the photo's profile (or a fixed one) and a corrected render."""
+    import numpy as np
+    from . import lens
+    db = lens.database()
+    if not db.lenses:
+        raise RuntimeError('lens database missing')
+    w.commit()
+    match = w.lens_match()
+    if not match or not match.get('lens'):
+        # Synthetic or unknown samples: exercise the renderer with a fixed profile.
+        w.edits['lens']['manual'] = dict(maker='Nikon', model='Nikkor Z 14-24mm f/2.8 S')
+        w.info['lens_match'] = dict(match or {}, focal=14, aperture=4, crop=1.)
+    before = w.rendered.copy()
+    w.tabs.setCurrentIndex(5)
+    w.lens_enable.setChecked(True)
+    settle()
+    if w.edits['lens']['profile'] is None or np.array_equal(before, w.rendered):
+        raise RuntimeError('lens correction not applied: ' + w.lens_status.text())
+    w.tabs.widget(5).ensureWidgetVisible(w.lens_enable)
+    app.processEvents()
+    w.grab().save(str(destination / 'lens.png'))
+    profile = w.edits['lens']['profile']
+    result = dict(lenses=len(db.lenses), cameras=len(db.cameras), match=match, profile=profile.get('label'),
+                  focal=profile.get('focal'), crop=profile.get('crop'),
+                  has=[k for k in ('distortion', 'tca', 'vignetting') if profile.get(k)])
+    w.undo(-1)
+    settle()
+    return result
+
+
+def languages():
+    """1.5.1: every interface catalog is bundled and complete."""
+    from . import i18n
+    counts = {code: len(i18n._load(code)) for code in i18n.CODES if code != i18n.SOURCE}
+    if min(counts.values()) < 800:
+        raise RuntimeError(f'interface catalogs incomplete: {counts}')
+    return dict(current=i18n.language(), catalogs=counts, restart=i18n.tr_in('en', '立即重新启动'))
 
 
 def natural_language(w, app, settle, destination):
