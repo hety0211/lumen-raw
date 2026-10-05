@@ -1,5 +1,15 @@
 # LUMEN RAW 验证记录
 
+## 1.5.2 验证 · 2026-10-05
+
+同一台 Windows 主机与环境（rawpy 0.27.1 / LibRaw 0.22.1）。样片来自 raw.pixls.us（CC0）：尼康 Z50 II 九个 NEF（DX、1:1、16:9 三种画幅 × 无损、高效率、高效率★），Z5 II 无损与高效率★ 各一个。
+
+- **问题复现：** 修复前，Z50 II 与 Z5 II 的高效率／高效率★ NEF 在 LibRaw 解包时报 `LibRawDataError`（“data corrupted”），而不是 Z8 高效率 NEF 的 `LibRawFileUnsupportedError`，内嵌 JPEG 回退没有执行，界面提示“无法打开文件：Data error or unsupported file format”。无损 NEF 能打开，但 `rgb_xyz_matrix` 全为 0，输出未经转换的相机 RGB（与相机内嵌 JPEG 相比明显偏淡），色温估算为空。LibRaw 当前主干的色彩表同样没有这两台机身；rawspeed 的机型表中尼康机身缺少 LibRaw 矩阵的还有 ZR（没有样片，未处理）。
+- **修复后：** 九个 Z50 II 样片与两个 Z5 II 样片全部可以打开：高效率类按 EXIF NEFCompression（13／14）识别后以内嵌 JPEG 打开（Z50 II 5568 × 3712、1:1 3712 × 3712，Z5 II 6048 × 4032）；无损类按 RAW 解码，补上的矩阵使色度与相机 JPEG 的差距缩小到不足原来的一半（测试断言），色温估算 Z50 II 样片 6320 K、Z5 II 样片 4970 K。矩阵换算在 LibRaw 本来支持的 Z8 无损 NEF 与 A7R V ARW 上与 LibRaw 自己的 sRGB 输出比较，最大差 2.5×10⁻⁵（16 位量化级别）。
+- **自动检查：** 完整回归 **327 项通过、10 项跳过（macOS 专属等）**，其中 `tests/test_v152.py` 新增 12 项；缺少样片时这些测试跳过。
+- **打包：** `LumenRAW-1.5.2-Windows.zip` 933,094,414 字节、2845 个文件，ZIP CRC 通过；`LumenRAW-1.5.2-Setup.exe` 862,629,988 字节，解包后与冻结版逐个一致，冒烟测试为 DirectML。安装包解包后的 EXE 另用 Z50 II 高效率★、Z50 II 无损、Z5 II 高效率★ 各跑一遍完整冒烟测试，全部通过（高效率类为内嵌 JPEG，无损类为 RAW 并估出色温）。
+- **未覆盖：** 没有用户提供的原始文件，“无损也打不开”的报告未能复现；Mac 版未构建。
+
 ## 1.5.0 macOS 验证 · 2026-10-04
 
 同一台 Apple M1 Pro（16 GB），macOS 27.0（26A428）；构建环境同 1.3.1 Mac 版（python-build-standalone CPython 3.12.14、PySide6 6.11.2，新增 PySide6-Addons 6.11.2 提供 Qt Multimedia）。全部步骤由 `tools/build_macos.sh` 一次执行，日志在 `.publish/v150/macos/logs/`。

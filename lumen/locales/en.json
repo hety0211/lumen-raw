@@ -265,6 +265,7 @@
  "无": "none",
  "内置 LibRaw 无法解码这个文件的传感器数据（例如尼康“高效率”压缩），文件内嵌的预览（{size}）也不足以编辑。请在相机中改用无损压缩 RAW，或先用厂商软件转换为 DNG / TIFF。": "The built-in LibRaw cannot decode this file's sensor data (for example Nikon \"High Efficiency\" compression), and the embedded preview ({size}) is too small to edit. Switch the camera to lossless compressed RAW, or convert to DNG / TIFF with the maker's software first.",
  "内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用": "The built-in LibRaw does not support this RAW compression (such as Nikon \"High Efficiency\"); opened the camera's embedded full-size JPEG instead: 8-bit sRGB with the camera's white balance and style applied",
+ "内置 LibRaw 无法解码这个文件的传感器数据（压缩格式不受支持或数据不完整），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用": "The built-in LibRaw cannot decode this file's sensor data (unsupported compression or incomplete data); opened the camera's embedded full-size JPEG instead: 8-bit sRGB with the camera's white balance and style applied",
  "没有可用的 DirectML / CUDA，已使用 CPU。": "No DirectML / CUDA available; using the CPU.",
  "LUMEN_COMPUTE={v} 不适用于 macOS，已使用 CPU。": "LUMEN_COMPUTE={v} does not apply on macOS; using the CPU.",
  "这个区域太暗或已过曝，请选择有细节的中性灰／白色区域。": "This area is too dark or clipped; pick a neutral gray / white area with detail.",

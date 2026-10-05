@@ -6,7 +6,7 @@
 
 LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Opening, editing, lens corrections, AI denoising / super-resolution / masks and export all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing.
 
-Current version: **1.5.1** (Windows, 2026-10-04). The macOS build is at 1.5.0.
+Current version: **1.5.2** (Windows, 2026-10-05). The macOS build is at 1.5.0.
 
 ![LUMEN RAW 1.5.1 in English: the Crop · Lens panel has identified a Nikon Nikkor Z 14-24mm f/2.8 S from EXIF and corrects its distortion, vignetting and chromatic aberration](docs/screenshots/workspace-en.png)
 
@@ -16,14 +16,14 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 
 | System | Download | Requirements |
 |---|---|---|
-| Windows | [`LumenRAW-1.5.1-Setup.exe` (installer) or `LumenRAW-1.5.1-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.1) | Windows 10 22H2 / Windows 11, x64 |
+| Windows | [`LumenRAW-1.5.2-Setup.exe` (installer) or `LumenRAW-1.5.2-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2) | Windows 10 22H2 / Windows 11, x64 |
 | macOS | [`LumenRAW-1.5.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.0-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
 
-The macOS 1.5.0 build does not yet have the lens corrections and interface languages of 1.5.1 (its interface is Chinese); everything else is the same. Projects (`.lumen`) and albums (`.lumenalbum`) use one format on both platforms; the Mac 1.5.0 build ignores lens corrections stored in a project. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+The macOS 1.5.0 build does not yet have the lens corrections and interface languages of 1.5.1 or the Nikon Z50 II / Z5 II fixes of 1.5.2 (its interface is Chinese); everything else is the same. Projects (`.lumen`) and albums (`.lumenalbum`) use one format on both platforms; the Mac 1.5.0 build ignores lens corrections stored in a project. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
-- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.5.0 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
+- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.5.1 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
 - **Portable:** extract and run `LumenRAW-Windows\LumenRAW.exe`. Keep the `_internal` folder next to the exe. The portable build follows the system language until you choose one.
 - Both include Python, ExifTool, fonts, the nine AI models, the speech model and the lensfun lens database, and work fully offline.
 
@@ -39,7 +39,7 @@ The macOS 1.5.0 build does not yet have the lens corrections and interface langu
 - **Lens corrections (1.5.1):** the lens is identified from EXIF and its distortion, vignetting and lateral chromatic aberration (purple / green edge fringes) are corrected with the open-source lensfun database. See [Lens corrections](#lens-corrections).
 - **Nine interface languages (1.5.1):** switch any time from the **Language** menu; the installer offers the same languages.
 - **Edit in one sentence (1.5):** type or say the look you want; a local or cloud language model of your choice returns the parameters, applied as one undoable step. See [Natural-language editing](#natural-language-editing).
-- **RAW formats:** Sony ARW / SR2 / SRF, Canon CRW / CR2 / CR3, Nikon NEF / NRW, Fujifilm RAF (including X-Trans), Panasonic RW2, DNG and other formats supported by the bundled LibRaw, plus JPEG / PNG / TIFF. Nikon "High Efficiency" NEFs that LibRaw cannot decode open from their full-size embedded JPEG.
+- **RAW formats:** Sony ARW / SR2 / SRF, Canon CRW / CR2 / CR3, Nikon NEF / NRW, Fujifilm RAF (including X-Trans), Panasonic RW2, DNG and other formats supported by the bundled LibRaw, plus JPEG / PNG / TIFF. Nikon "High Efficiency" NEFs that LibRaw cannot decode open from their full-size embedded JPEG. For the Nikon Z50 II and Z5 II, which the bundled LibRaw does not list, LUMEN RAW supplies the colour matrix of their lossless NEFs.
 - **Non-destructive development:** exposure, contrast, highlights / shadows / whites / blacks, an exposure curve you can bend anywhere, white balance (camera-recorded temperature and an eyedropper), 8-color HSL, RGB and per-channel curves, three-way color grading, monochrome, vignette and grain. Landscape and travel presets with adjustable strength (importable and exportable), auto adjust, snapshots, undo / redo.
 - **Detail and retouching:** dehaze, clarity, texture, sharpening, luminance and color noise reduction; spot healing and clone stamp.
 - **Masks:** brush, linear and radial gradients, luminance range, similar-color selection, and local AI models for sky, people, subject, background and foreground. Invert, feather, opacity and brush refinement; up to 32 masks per photo.
@@ -151,7 +151,7 @@ The model can set 16 global sliders (exposure, contrast, highlights, shadows, wh
 - **Color:** 8-bit input is converted to sRGB via its ICC profile; 16-bit PNG / TIFF are treated as sRGB. There are no camera color profiles or display soft-proofing, and fully clipped highlights cannot always be recovered.
 - **Languages:** changing the interface language needs a restart. Translations other than Simplified Chinese were made by the developers; corrections from native speakers are welcome.
 - **Not supported:** Lightroom catalogs and XMP presets are not read. Exports do not copy the original's full EXIF / GPS.
-- **Tested cameras:** Sony A7 III, A7R V; Canon EOS R, R5 Mark II, Rebel SL1; Nikon Z 6, Z8; Fujifilm X-T2; Panasonic DC-S1. Other models and compressions depend on LibRaw.
+- **Tested cameras:** Sony A7 III, A7R V; Canon EOS R, R5 Mark II, Rebel SL1; Nikon Z 6, Z8, Z50 II, Z5 II; Fujifilm X-T2; Panasonic DC-S1. Other models and compressions depend on LibRaw.
 
 ## Run from source
 
@@ -194,7 +194,7 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 1.5.1, 315 regression tests pass on Windows with 10 skipped (macOS-only and similar); 1.5.0 passed 297 on macOS. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 1.5.2, 327 regression tests pass on Windows with 10 skipped (macOS-only and similar); 1.5.0 passed 297 on macOS. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.

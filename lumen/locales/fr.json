@@ -265,6 +265,7 @@
  "无": "aucun",
  "内置 LibRaw 无法解码这个文件的传感器数据（例如尼康“高效率”压缩），文件内嵌的预览（{size}）也不足以编辑。请在相机中改用无损压缩 RAW，或先用厂商软件转换为 DNG / TIFF。": "Le LibRaw intégré ne peut pas décoder les données du capteur de ce fichier (par exemple la compression « High Efficiency » de Nikon), et l’aperçu intégré ({size}) est insuffisant pour l’édition. Passez l’appareil en RAW compressé sans perte, ou convertissez d’abord en DNG / TIFF avec le logiciel du fabricant.",
  "内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用": "Le LibRaw intégré ne prend pas en charge cette compression RAW (comme « High Efficiency » de Nikon) ; le JPEG pleine taille intégré par l’appareil a été ouvert à la place : sRVB 8 bits, balance des blancs et style de l’appareil appliqués",
+ "内置 LibRaw 无法解码这个文件的传感器数据（压缩格式不受支持或数据不完整），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用": "Le LibRaw intégré ne peut pas décoder les données du capteur de ce fichier (compression non prise en charge ou données incomplètes) ; le JPEG pleine taille intégré par l’appareil a été ouvert à la place : sRVB 8 bits, balance des blancs et style de l’appareil appliqués",
  "没有可用的 DirectML / CUDA，已使用 CPU。": "Aucun DirectML / CUDA disponible ; utilisation du CPU.",
  "LUMEN_COMPUTE={v} 不适用于 macOS，已使用 CPU。": "LUMEN_COMPUTE={v} ne s’applique pas sous macOS ; utilisation du CPU.",
  "这个区域太暗或已过曝，请选择有细节的中性灰／白色区域。": "Cette zone est trop sombre ou brûlée ; choisissez une zone gris neutre / blanche avec du détail.",

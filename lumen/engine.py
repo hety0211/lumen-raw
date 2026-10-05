@@ -26,6 +26,20 @@ PHOTO_FILTER = tr('图片与工程 (') + ' '.join('*'+x for x in sorted(RAW_EXTE
 MAX_EXPORT_PIXELS = large_image.MAX_PIXELS
 Image.MAX_IMAGE_PIXELS = MAX_EXPORT_PIXELS
 
+# Nikon maker note NEFCompression 13 / 14: "High Efficiency" / "High Efficiency★", which LibRaw
+# cannot decode. It reports them as unsupported only for bodies it lists (Z 8, Z 9…); on newer
+# ones (Z50 II, Z5 II) unpack fails with a data error instead (1.5.2).
+NIKON_HIGH_EFFICIENCY = {13, 14}
+
+# XYZ (D65) → camera matrices × 10000, keyed by EXIF Model, for bodies the bundled LibRaw 0.22
+# has no colour data for; without one it returns camera RGB unconverted (washed-out colours).
+# Values from rawspeed's cameras.xml (Adobe's) (1.5.2).
+CAMERA_MATRICES = {
+    'NIKON Z50_2': (11640, -4829, -1079, -5107, 13006, 2325, -972, 1711, 7380),  # Z 50 / Z fc sensor
+    'NIKON Z5_2': (13133, -5542, -1280, -4325, 12543, 1972, 34, 792, 7662),
+}
+SRGB_TO_XYZ = np.array([[.412453, .357580, .180423], [.212671, .715160, .072169], [.019334, .119193, .950227]])
+
 
 def to_linear(rgb):
     if rgb.nbytes>large_image.MAP_BYTES and rgb.shape[0]>large_image.STRIP_ROWS:
@@ -114,25 +128,31 @@ def load_image(path, preview_limit=1600, develop_reference=False):
         info['photo'] = photo_metadata.embedded(path)
     elif path.suffix.lower() in RAW_EXTENSIONS:
         import rawpy
+        tags, warning = white_balance.metadata(path)
+        if tags.get('NEFCompression') in NIKON_HIGH_EFFICIENCY:
+            return load_embedded(path, preview_limit, info, (tags, warning))
         with rawpy.imread(str(path)) as raw:
             try:
                 raw.unpack()
-            except rawpy.LibRawFileUnsupportedError:
-                return load_embedded(path, preview_limit, info)
+            except (rawpy.LibRawFileUnsupportedError, rawpy.LibRawDataError):
+                # Not recognised from the metadata: an unsupported compression or damaged sensor data.
+                return load_embedded(path, preview_limit, info, (tags, warning), known=False)
             info['width'], info['height'] = ((raw.sizes.height,raw.sizes.width) if raw.sizes.flip in (5,6) else (raw.sizes.width,raw.sizes.height))
             info['raw'] = True
-            tags, warning = white_balance.metadata(path)
-            info['white_balance'] = white_balance.from_metadata(tags, white_balance.estimate(raw))
             info['camera_model'] = tags.get('Model', '')
+            matrix = camera_matrix(raw, info['camera_model'])
+            info['white_balance'] = white_balance.from_metadata(tags, white_balance.estimate(raw, matrix))
             info['photo'] = photo_metadata.from_tags(tags)
             info['wb_warning'] = warning
             info['camera_wb_gains'] = list(raw.camera_whitebalance)
             _lens_info(info, tags)
-            rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16,
-                                  gamma=(1, 1), output_color=rawpy.ColorSpace.sRGB,
+            rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16, gamma=(1, 1),
+                                  output_color=rawpy.ColorSpace.sRGB if matrix is None else rawpy.ColorSpace.raw,
                                   half_size=bool(preview_limit), user_flip=None,
                                   highlight_mode=rawpy.HighlightMode.Blend).astype(np.float32)
             rgb /= 65535  # in place: a 61 MP frame would otherwise briefly need a second 700 MB copy
+            if matrix is not None:
+                camera_to_srgb(rgb, matrix)
             if preview_limit or develop_reference:
                 curve,label = develop.camera_curve(raw, rgb, path)
                 info['develop'] = dict(mode='camera',curve=curve,source=label)
@@ -171,9 +191,35 @@ def _lens_info(info, tags):
         info['lens_match'] = None
 
 
-def load_embedded(path, limit, info):
+def camera_matrix(raw, model):
+    """Lumen's XYZ → camera matrix when LibRaw has none for this body, otherwise None (1.5.2)."""
+    if np.any(raw.rgb_xyz_matrix[:3]):
+        return None
+    values = CAMERA_MATRICES.get(model.strip())
+    if values is None:
+        log.warning('no colour matrix for %r: colours stay in camera RGB', model)
+        return None
+    return np.asarray(values, np.float64).reshape(3, 3) / 10000
+
+
+def camera_to_srgb(rgb, cam_xyz):
+    """In place: white-balanced camera RGB → linear sRGB, as LibRaw converts with its own matrix
+    (cam_xyz_coeff: rows normalised so white stays white; result clipped like LibRaw's 16-bit output)."""
+    srgb_to_camera = cam_xyz @ SRGB_TO_XYZ
+    srgb_to_camera /= srgb_to_camera.sum(axis=1, keepdims=True)
+    matrix = np.linalg.inv(srgb_to_camera).astype(np.float32)
+    for y in range(0, rgb.shape[0], 512):
+        block = rgb[y:y + 512]
+        block[...] = cv2.transform(block, matrix)
+        np.clip(block, 0, 1, out=block)
+    return rgb
+
+
+def load_embedded(path, limit, info, metadata=None, known=True):
     """Sensor data LibRaw cannot decode (e.g. Nikon "High Efficiency" NEF): open the camera's
-    full-size embedded JPEG instead, as an 8-bit sRGB photograph (1.4.1)."""
+    full-size embedded JPEG instead, as an 8-bit sRGB photograph (1.4.1).
+
+    ``known`` is False when the compression was not recognised from the metadata (1.5.2)."""
     import rawpy
     from . import previews
     # A handle whose unpack failed no longer returns previews; open the file again.
@@ -183,11 +229,12 @@ def load_embedded(path, limit, info):
     if preview is None or preview.shape[0] * preview.shape[1] < .5 * width * height:
         size = f'{preview.shape[1]} × {preview.shape[0]}' if preview is not None else tr('无')
         raise ValueError(tr('内置 LibRaw 无法解码这个文件的传感器数据（例如尼康“高效率”压缩），文件内嵌的预览（{size}）也不足以编辑。请在相机中改用无损压缩 RAW，或先用厂商软件转换为 DNG / TIFF。', size=size))
-    tags, warning = white_balance.metadata(path)
+    tags, warning = metadata or white_balance.metadata(path)
     info.update(width=preview.shape[1], height=preview.shape[0], raw=False, embedded=True,
                 format=info['format'] + tr(' · 内嵌 JPEG'),
                 camera_model=tags.get('Model', ''), wb_warning=warning,
-                note=tr('内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用'))
+                note=tr('内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用') if known else
+                tr('内置 LibRaw 无法解码这个文件的传感器数据（压缩格式不受支持或数据不完整），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用'))
     info['photo'] = photo_metadata.from_tags(tags)
     _lens_info(info, tags)
     large_image.validate_size(preview.shape)

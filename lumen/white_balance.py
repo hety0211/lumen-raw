@@ -36,7 +36,9 @@ def metadata(path):
             '-DateTimeOriginal', '-CreateDate', '-FNumber#', '-ExposureTime#', '-ISO#', '-FocalLength#',
             # 1.5.1: lens profile matching (crop factor, focus distance).
             '-FocalLengthIn35mmFormat#', '-ScaleFactor35efl#', '-FocusDistance#', '-FocusDistance2#',
-            '-ApproximateFocusDistance#', '-SubjectDistance#', '--', str(Path(path).resolve())],
+            '-ApproximateFocusDistance#', '-SubjectDistance#',
+            # 1.5.2: Nikon "High Efficiency" NEFs are recognised before LibRaw tries them.
+            '-NEFCompression#', '--', str(Path(path).resolve())],
             capture_output=True, timeout=15, env=env,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
@@ -54,9 +56,10 @@ def from_metadata(tags, estimated=None):
     return dict(camera_kelvin=value, kelvin=value, estimated=value is not None)
 
 
-def estimate(raw):
+def estimate(raw, matrix=None):
     """Approximate CCT from LibRaw's XYZ-to-camera calibration and as-shot gains.
 
+    ``matrix`` replaces LibRaw's calibration for bodies it has none for (1.5.2).
     This is an estimate, never a substitute for a recorded camera Kelvin tag.
     McCamy's approximation is restricted to its useful photographic interval.
     """
@@ -64,7 +67,7 @@ def estimate(raw):
         gains = np.asarray(raw.camera_whitebalance[:3], dtype=float)
         if np.min(gains) <= 0:
             return None
-        xyz = np.linalg.solve(np.asarray(raw.rgb_xyz_matrix[:3], dtype=float), 1 / gains)
+        xyz = np.linalg.solve(np.asarray(raw.rgb_xyz_matrix[:3] if matrix is None else matrix, dtype=float), 1 / gains)
         if np.min(xyz) <= 0:
             return None
         x, y = (xyz / xyz.sum())[:2]

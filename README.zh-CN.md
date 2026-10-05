@@ -6,7 +6,7 @@
 
 LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows 和 Apple 芯片 Mac，无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。打开、调色、镜头校正、AI 降噪 / 超分 / 蒙版和导出全部在本机离线完成；只有你主动使用云端大模型修图时，才会联网发送指令和参数。
 
-当前版本 **1.5.1**（Windows，2026-10-04）。macOS 版目前为 1.5.0。
+当前版本 **1.5.2**（Windows，2026-10-05）。macOS 版目前为 1.5.0。
 
 ![LUMEN RAW 1.5.1 界面：右侧「裁切·镜头」面板按 EXIF 识别出尼康 Z 14-24mm f/2.8 S，并校正了畸变、暗角和横向色差](docs/screenshots/lens.png)
 
@@ -16,14 +16,14 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 
 | 系统 | 下载 | 要求 |
 |---|---|---|
-| Windows | [`LumenRAW-1.5.1-Setup.exe`（安装版）或 `LumenRAW-1.5.1-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.1) | Windows 10 22H2 / Windows 11，x64 |
+| Windows | [`LumenRAW-1.5.2-Setup.exe`（安装版）或 `LumenRAW-1.5.2-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2) | Windows 10 22H2 / Windows 11，x64 |
 | macOS | [`LumenRAW-1.5.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.0-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
 
-Mac 版 1.5.0 还没有 1.5.1 的镜头校正和多语言界面，其余功能相同。两个平台的工程（`.lumen`）和选片集（`.lumenalbum`）格式相同；在 Mac 1.5.0 中打开带镜头校正的工程时，校正会被忽略。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
+Mac 版 1.5.0 还没有 1.5.1 的镜头校正和多语言界面，也没有 1.5.2 对尼康 Z50 II / Z5 II 的修复，其余功能相同。两个平台的工程（`.lumen`）和选片集（`.lumenalbum`）格式相同；在 Mac 1.5.0 中打开带镜头校正的工程时，校正会被忽略。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **Windows**
 
-- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 1.5.0。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
+- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 1.5.1。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
 - **便携版：** 解压后运行 `LumenRAW-Windows\LumenRAW.exe`。`_internal` 文件夹必须留在 exe 旁边。便携版的界面语言默认跟随系统。
 - 两种包都自带 Python 运行环境、ExifTool、字体、九个 AI 模型、语音识别模型和 lensfun 镜头数据库，可完全离线使用。
 
@@ -39,7 +39,7 @@ Mac 版 1.5.0 还没有 1.5.1 的镜头校正和多语言界面，其余功能�
 - **镜头校正（1.5.1）：** 按 EXIF 自动识别镜头，用开源 lensfun 数据库校正畸变、暗角和横向色差（边缘紫边／绿边）。见下方[镜头校正](#镜头校正)。
 - **九种界面语言（1.5.1）：** 顶部菜单「语言 / Language」随时切换，安装程序也提供同样的九种语言。
 - **一句话修图（1.5）：** 输入或说出想要的效果，你选择的本地或云端大模型返回参数，LUMEN RAW 直接应用，一步即可撤销。见下方[自然语言修图](#自然语言修图)。
-- **多品牌 RAW：** Sony ARW / SR2 / SRF，Canon CRW / CR2 / CR3，Nikon NEF / NRW，Fujifilm RAF（含 X-Trans），Panasonic RW2，DNG，以及内置 LibRaw 支持的其他格式；也能打开 JPEG / PNG / TIFF。LibRaw 无法解码的尼康“高效率” NEF 改用文件内嵌的全尺寸 JPEG 打开。
+- **多品牌 RAW：** Sony ARW / SR2 / SRF，Canon CRW / CR2 / CR3，Nikon NEF / NRW，Fujifilm RAF（含 X-Trans），Panasonic RW2，DNG，以及内置 LibRaw 支持的其他格式；也能打开 JPEG / PNG / TIFF。LibRaw 无法解码的尼康“高效率” NEF 改用文件内嵌的全尺寸 JPEG 打开；内置 LibRaw 尚未收录的尼康 Z50 II、Z5 II，无损 NEF 的色彩矩阵由 LUMEN RAW 补上。
 - **非破坏性显影：** 曝光、对比度、亮部 / 暗部 / 白色 / 黑色，可在任意位置拖动的曝光曲线，白平衡（读取相机记录色温，带吸管），八色 HSL，RGB 与单通道曲线，三段色彩分级，黑白，暗角与颗粒。另有风光旅行预设（可调强度、可导入导出）、自动调整、快照和撤销 / 重做。
 - **细节与修复：** 去薄雾、清晰度、纹理、锐化、明度 / 彩色降噪；污点修复和仿制图章。
 - **蒙版：** 画笔、线性渐变、径向、亮度范围、相似颜色点选，以及本地 AI 识别的天空、人物、主体、背景、近景。可反选、羽化、调不透明度、用画笔补画或擦除，每张照片最多 32 个。
@@ -151,7 +151,7 @@ Mac 版 1.5.0 还没有 1.5.1 的镜头校正和多语言界面，其余功能�
 - **色彩：** 8 位输入按 ICC 转换到 sRGB，16 位 PNG / TIFF 按 sRGB 处理。没有相机色彩配置文件或显示器软打样。完全过曝的区域不保证能恢复。
 - **界面语言：** 切换语言需要重新启动。简体中文以外的译文由开发者完成，欢迎母语用户指正用词。
 - **不支持：** 不读取 Lightroom 目录或 XMP 预设。导出不完整复制原片的 EXIF / GPS。
-- **已实测机型：** Sony A7 III、A7R V，Canon EOS R、R5 Mark II、Rebel SL1，Nikon Z 6、Z8，Fujifilm X-T2，Panasonic DC-S1。其他机型和压缩方式以 LibRaw 的支持范围为准。
+- **已实测机型：** Sony A7 III、A7R V，Canon EOS R、R5 Mark II、Rebel SL1，Nikon Z 6、Z8、Z50 II、Z5 II，Fujifilm X-T2，Panasonic DC-S1。其他机型和压缩方式以 LibRaw 的支持范围为准。
 
 ## 从源码运行
 
@@ -194,7 +194,7 @@ cd lumen-raw
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **测试：** 1.5.1 的回归测试在 Windows 上 315 项通过、10 项跳过（macOS 专属等）；1.5.0 在 macOS 上 297 项通过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
+- **测试：** 1.5.2 的回归测试在 Windows 上 327 项通过、10 项跳过（macOS 专属等）；1.5.0 在 macOS 上 297 项通过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 - **界面翻译：** 代码中的界面文字为简体中文原文，经 `tr()` 查找 `lumen/locales/<语言>.json`；`python tools/i18n_catalog.py` 检查各语言的缺漏和占位符。新增界面文字后请同时补充各语言的译文。
 - **Windows 发布构建：** `build-release.cmd` 依次执行测试、DirectML 检查、便携版 ZIP 和 Inno Setup 安装包。
 - **macOS 发布构建：** `./build-macos.command` 依次执行测试、Metal / Core ML 自检、PyInstaller、临时签名、冒烟测试和 DMG，输出在 `.publish/v<版本>/macos/`。
