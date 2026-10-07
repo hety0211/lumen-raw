@@ -87,15 +87,28 @@ def save_setting(key, value, path=None):
         parser.write(handle, space_around_delimiters=False)  # as the installer writes it
 
 
+def macos_languages():
+    """System Settings' preferred languages.  Qt 6.11 reports the "C" locale on macOS when
+    LANG is unset, which is how the Finder starts apps."""
+    try:
+        from Foundation import NSLocale
+        return [str(name) for name in NSLocale.preferredLanguages()]
+    except Exception:
+        return []
+
+
 def system_language():
+    import sys
+    names = macos_languages() if sys.platform == 'darwin' else []
     try:
         from PySide6.QtCore import QLocale
-        for name in QLocale.system().uiLanguages():
-            code = normalize(name)
-            if code:
-                return code
+        names += QLocale.system().uiLanguages()
     except Exception:
         pass
+    for name in names:
+        code = normalize(name)
+        if code:
+            return code
     if os.name == 'nt':
         try:
             import ctypes

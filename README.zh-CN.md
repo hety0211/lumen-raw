@@ -6,7 +6,7 @@
 
 LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows 和 Apple 芯片 Mac，无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。打开、调色、镜头校正、AI 降噪 / 超分 / 蒙版和导出全部在本机离线完成；只有你主动使用云端大模型修图时，才会联网发送指令和参数。
 
-当前版本 **1.5.2**（Windows，2026-10-05）。macOS 版目前为 1.5.0。
+当前版本 **1.5.2**（Windows 2026-10-05，macOS 2026-10-08）。
 
 ![LUMEN RAW 1.5.1 界面：右侧「裁切·镜头」面板按 EXIF 识别出尼康 Z 14-24mm f/2.8 S，并校正了畸变、暗角和横向色差](docs/screenshots/lens.png)
 
@@ -17,9 +17,9 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 | 系统 | 下载 | 要求 |
 |---|---|---|
 | Windows | [`LumenRAW-1.5.2-Setup.exe`（安装版）或 `LumenRAW-1.5.2-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2) | Windows 10 22H2 / Windows 11，x64 |
-| macOS | [`LumenRAW-1.5.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.0-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
+| macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
 
-Mac 版 1.5.0 还没有 1.5.1 的镜头校正和多语言界面，也没有 1.5.2 对尼康 Z50 II / Z5 II 的修复，其余功能相同。两个平台的工程（`.lumen`）和选片集（`.lumenalbum`）格式相同；在 Mac 1.5.0 中打开带镜头校正的工程时，校正会被忽略。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
+两个平台功能相同，工程（`.lumen`）和选片集（`.lumenalbum`）格式也相同。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **Windows**
 
@@ -30,6 +30,7 @@ Mac 版 1.5.0 还没有 1.5.1 的镜头校正和多语言界面，也没有 1.5.
 **macOS**
 
 - 双击 DMG，把 **LUMEN RAW** 拖到「应用程序」文件夹（覆盖旧版即可）。
+- 界面语言默认使用「系统设置 → 通用 → 语言与地区」中第一个受支持的首选语言（也可在该页的「应用程序」中单独给 LUMEN RAW 指定），之后可在「语言 / Language」菜单中更改。1.5.0 Mac 版只有中文界面；如果 Mac 的首选语言是英文，现在首次打开为英文，在「Language」菜单中选「简体中文」即可。
 - 安装包是临时签名，没有经过 Apple 公证，第一次打开会被拦截：点「完成」，打开「系统设置 → 隐私与安全性」，在页面下方点「仍要打开」。也可以在终端执行 `xattr -dr com.apple.quarantine "/Applications/LUMEN RAW.app"`。
 - 第一次点“语音”时系统会询问麦克风权限，点「允许」。语音只在本机识别，不会上传。
 - 云端 API Key 存放在登录钥匙串中。每次更新 App 后第一次使用时，macOS 会询问是否允许读取，输入开机密码并选「始终允许」即可。
@@ -194,7 +195,7 @@ cd lumen-raw
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **测试：** 1.5.2 的回归测试在 Windows 上 327 项通过、10 项跳过（macOS 专属等）；1.5.0 在 macOS 上 297 项通过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
+- **测试：** 1.5.2 的回归测试在 Windows 上 328 项通过、11 项跳过（macOS 专属等），在 macOS 上 335 项通过、4 项跳过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 - **界面翻译：** 代码中的界面文字为简体中文原文，经 `tr()` 查找 `lumen/locales/<语言>.json`；`python tools/i18n_catalog.py` 检查各语言的缺漏和占位符。新增界面文字后请同时补充各语言的译文。
 - **Windows 发布构建：** `build-release.cmd` 依次执行测试、DirectML 检查、便携版 ZIP 和 Inno Setup 安装包。
 - **macOS 发布构建：** `./build-macos.command` 依次执行测试、Metal / Core ML 自检、PyInstaller、临时签名、冒烟测试和 DMG，输出在 `.publish/v<版本>/macos/`。

@@ -223,6 +223,20 @@ def test_language_codes_normalise_from_settings_installers_and_locales():
     assert i18n.normalize('de-AT') == 'de' and i18n.normalize('pt-BR') is None and i18n.normalize('') is None
 
 
+def test_macos_takes_the_language_list_of_system_settings(monkeypatch):
+    # An app opened from the Finder has no LANG, and Qt then reports the "C" locale.
+    monkeypatch.setattr(sys, 'platform', 'darwin')
+    monkeypatch.setattr(i18n, 'macos_languages', lambda: ['pt-BR', 'zh-Hans-CN', 'en-CN'])
+    assert i18n.system_language() == 'zh_CN'
+    monkeypatch.setattr(i18n, 'macos_languages', lambda: [])
+    assert i18n.system_language() in i18n.CODES
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS only')
+def test_macos_language_list_is_read_from_foundation():
+    assert i18n.macos_languages() and all(isinstance(name, str) for name in i18n.macos_languages())
+
+
 def test_every_source_string_is_translated_with_the_same_fields():
     sys.path.insert(0, str(ROOT / 'tools'))
     import i18n_catalog
@@ -262,8 +276,12 @@ def test_installer_offers_the_same_languages_and_writes_the_choice():
 def test_a_fresh_process_starts_in_the_saved_language(tmp_path):
     env = dict(os.environ, LOCALAPPDATA=str(tmp_path), PYTHONIOENCODING='utf-8')
     env.pop('LUMEN_LANGUAGE', None)
-    (tmp_path / 'LUMEN RAW').mkdir()
-    (tmp_path / 'LUMEN RAW' / 'settings.ini').write_text('[General]\nlanguage=ko\n', encoding='ascii')
+    folder = tmp_path
+    if sys.platform == 'darwin':  # ~/Library/Application Support there, not LOCALAPPDATA
+        env['HOME'] = str(tmp_path)
+        folder = tmp_path / 'Library' / 'Application Support'
+    (folder / 'LUMEN RAW').mkdir(parents=True)
+    (folder / 'LUMEN RAW' / 'settings.ini').write_text('[General]\nlanguage=ko\n', encoding='ascii')
     code = 'from lumen import i18n, model; print(i18n.language(), model.COLORS[0][0])'
     out = subprocess.run([sys.executable, '-c', code], cwd=ROOT, env=env, capture_output=True, text=True,
                          encoding='utf-8', timeout=60)

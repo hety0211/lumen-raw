@@ -137,7 +137,9 @@ def languages():
     counts = {code: len(i18n._load(code)) for code in i18n.CODES if code != i18n.SOURCE}
     if min(counts.values()) < 800:
         raise RuntimeError(f'interface catalogs incomplete: {counts}')
-    return dict(current=i18n.language(), catalogs=counts, restart=i18n.tr_in('en', '立即重新启动'))
+    from PySide6.QtCore import QLocale
+    return dict(current=i18n.language(), catalogs=counts, restart=i18n.tr_in('en', '立即重新启动'),
+                system=i18n.system_language(), macos=i18n.macos_languages(), qt=QLocale.system().uiLanguages())
 
 
 def natural_language(w, app, settle, destination):

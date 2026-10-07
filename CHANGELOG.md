@@ -1,5 +1,11 @@
 # 更新记录
 
+## 1.5.2 · macOS（Apple 芯片）· 2026-10-08
+
+- **Mac 版更新到 1.5.2：** 提供 `LumenRAW-1.5.2-macOS-arm64.dmg`（Apple 芯片、macOS 15 或更新），带上 1.5.1 的镜头校正与九种界面语言、1.5.2 的尼康 Z50 II / Z5 II NEF 修复。Mac 上 ExifTool 为 Perl 版，NEFCompression 识别同样有效。
+- **界面语言跟随 macOS：** 从「访达」或程序坞打开的 App 没有 `LANG` 环境变量，Qt 6.11 这时把系统语言报告为 “C”，1.5.1 的语言检测因此在 Mac 上一律落到英文。现在 Mac 上先读取 macOS 的首选语言列表（`NSLocale.preferredLanguages`，含「语言与地区 → 应用程序」中给 LUMEN RAW 单独指定的语言），取第一个受支持的语言，Qt 只作后备。语言设置保存在 `~/Library/Application Support/LUMEN RAW/settings.ini`。Info.plist 的 `CFBundleLocalizations` 由中文、英文改为全部九种语言。
+- **测试：** `test_a_fresh_process_starts_in_the_saved_language` 在 Mac 上按 `~/Library/Application Support` 放置设置文件（此前只设置 Windows 的 `LOCALAPPDATA`，Mac 上失败）；新增 Mac 首选语言列表的测试。冒烟测试报告的语言部分增加系统语言、macOS 首选语言与 Qt 语言列表。
+
 ## 1.5.2 · 2026-10-05
 
 - **尼康 Z50 II、Z5 II 的 NEF 可以正常打开：** 内置 LibRaw 0.22 的机型表里没有这两台机身。“高效率 / 高效率★” NEF 在它不认识的机身上解码时报“数据错误”而不是“不支持”，1.4.1 的内嵌 JPEG 回退因此没有生效，提示“无法打开文件：Data error or unsupported file format”。现在打开前先从 EXIF 的 NEFCompression（13 为高效率，14 为高效率★）识别，直接改用内嵌的全尺寸 JPEG（Z50 II 为 5568 × 3712，Z5 II 为 6048 × 4032）；LibRaw 解码传感器数据时报数据错误的其他文件也同样回退，并说明“压缩格式不受支持或数据不完整”。

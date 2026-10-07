@@ -55,7 +55,8 @@ app = BUNDLE(
         'CFBundleShortVersionString': version,
         'CFBundleVersion': version,
         'CFBundleDevelopmentRegion': 'zh_CN',
-        'CFBundleLocalizations': ['zh_CN', 'en'],
+        # 1.5.1: the interface languages, so native panels follow the same language list.
+        'CFBundleLocalizations': ['zh_CN', 'zh_TW', 'en', 'ja', 'ko', 'de', 'fr', 'es', 'ru'],
         'CFBundleAllowMixedLocalizations': True,
         'LSMinimumSystemVersion': minimum,
         'LSArchitecturePriority': ['arm64'],

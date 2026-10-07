@@ -1,5 +1,18 @@
 # LUMEN RAW 验证记录
 
+## 1.5.2 macOS 验证 · 2026-10-08
+
+同一台 Apple M1 Pro（16 GB），macOS 27.0.1（26A434）；构建环境同 1.5.0 Mac 版（python-build-standalone CPython 3.12.14、PySide6 6.11.2）。全部步骤由 `tools/build_macos.sh` 一次执行，日志在 `.publish/v152/macos/logs/`。尼康 Z50 II／Z5 II、Z8 无损与 A7R V 样片复制到 Mac 的 `LUMEN_SAMPLES`。
+
+- **问题与修复：** 第一次在 Mac 上跑 1.5.1 的测试时，`test_a_fresh_process_starts_in_the_saved_language` 失败：它只把 Windows 的 `LOCALAPPDATA` 指向临时目录，而 Mac 的设置文件在 `~/Library/Application Support`；测试改为两个平台都适用。排查时发现，进程没有 `LANG` 时，Qt 6.11 在 macOS 上报告的系统语言是 “C”（`uiLanguages()` 为 `['C']`），而同一进程中 `NSLocale.preferredLanguages` 为 `['en-CN', 'zh-Hans-CN']`。用一个经 LaunchServices（`open`，与「访达」相同）启动的探针 App 和打包后的 `LUMEN RAW.app` 复核，结果相同，所以 1.5.1 的语言检测在 Mac 上会一律落到英文。现在 Mac 上先读 `NSLocale.preferredLanguages`，Qt 只作后备。
+- **自动检查：** Mac 上完整回归 **335 项通过、4 项跳过**（Windows DXGI 显卡选择、未复制到 Mac 的尼康 Z8 高效率 NEF 与佳能 HDR PQ 样片、SSH 会话中的真实钥匙串），182 秒；同一份源码在 Windows 上 **328 项通过、11 项跳过**（Mac 专属项等）。`tests/test_v152.py` 的尼康样片测试与 Z8／A7R V 色彩换算对照在 Mac 上全部运行并通过（Mac 上 ExifTool 为 Perl 版 13.59）。
+- **Metal／Core ML：** 最终构建中光影 3.8 ms、色彩 3.6 ms、合并 4.8 ms（1600 × 1067），与 NumPy 最大误差 3.8×10⁻⁶；九个模型全部在 Core ML 上运行，与 1.5.0 一致。
+- **尼康 NEF（打包版）：** `LUMEN RAW.app` 对 Z50 II 高效率★、Z50 II 无损、Z5 II 高效率★ 各跑一遍完整冒烟测试，全部通过：高效率★ 以内嵌 JPEG 打开（5568 × 3712、6048 × 4032），无损按 RAW 解码并估出 6320 K，与 Windows 结果一致。
+- **界面语言（打包版）：** 用 `defaults write io.github.hety0211.lumenraw AppleLanguages`（即「语言与地区 → 应用程序」的单独设置）依次设为 zh-Hans-CN、zh-Hant-TW、de-DE 和 “pt-BR, ja-JP, en-US”，打包版分别以简体中文、繁體中文、Deutsch、日本語启动，自然语言修图的状态文字也为对应语言；未设置时按本机列表（en-CN 在前）为 English。测试后已删除该设置。日文、德文、英文界面截图检查无乱码，菜单中没有会被 macOS 按文字自动移到应用菜单的项目（九种语言逐项按 Qt 的 About／Preferences／Quit 规则检查）。
+- **冒烟测试：** 源码、打包后的 `LUMEN RAW.app` 与直接从挂载的 DMG 运行均通过：显影 `Metal · Apple M1 Pro`，AI 超分 `CoreMLExecutionProvider`，lensfun 数据库 1569 支镜头、1057 台机身，A7 III 样片识别为 Tamron E 28-200mm F2.8-5.6 A071（APS-C 裁切系数 1.5），八种译文目录各 898 条，随包语音模型与一次自然语言修图。
+- **打包：** `LumenRAW-1.5.2-macOS-arm64.dmg` 898,304,953 字节，SHA-256 `ed48355f723efb47b6b5777acc51a109502786376bc933b329188c22b1364025`；App 1.2 GB，1101 个文件，临时签名，`codesign --verify --deep --strict` 通过；最低系统 macOS 15.0；Info.plist 声明九种本地化；挂载后签名有效。
+- **未覆盖：** 没有在中文首选语言的 Mac 上实机首次启动（以单 App 语言设置代替）；「语言与地区 → 应用程序」列表中是否出现 LUMEN RAW 未在图形界面中确认；德文界面左侧“自然语言输入”较窄，按钮和状态文字被截断（Windows 上是否相同未核对，未在本版处理）；其余同 1.5.0 Mac 版（麦克风授权弹窗、未公证首次打开、钥匙串授权对话框未人工实测）。
+
 ## 1.5.2 验证 · 2026-10-05
 
 同一台 Windows 主机与环境（rawpy 0.27.1 / LibRaw 0.22.1）。样片来自 raw.pixls.us（CC0）：尼康 Z50 II 九个 NEF（DX、1:1、16:9 三种画幅 × 无损、高效率、高效率★），Z5 II 无损与高效率★ 各一个。

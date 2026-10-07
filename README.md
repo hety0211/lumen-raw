@@ -6,7 +6,7 @@
 
 LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Opening, editing, lens corrections, AI denoising / super-resolution / masks and export all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing.
 
-Current version: **1.5.2** (Windows, 2026-10-05). The macOS build is at 1.5.0.
+Current version: **1.5.2** (Windows 2026-10-05, macOS 2026-10-08).
 
 ![LUMEN RAW 1.5.1 in English: the Crop · Lens panel has identified a Nikon Nikkor Z 14-24mm f/2.8 S from EXIF and corrects its distortion, vignetting and chromatic aberration](docs/screenshots/workspace-en.png)
 
@@ -17,9 +17,9 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 | System | Download | Requirements |
 |---|---|---|
 | Windows | [`LumenRAW-1.5.2-Setup.exe` (installer) or `LumenRAW-1.5.2-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2) | Windows 10 22H2 / Windows 11, x64 |
-| macOS | [`LumenRAW-1.5.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.0-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
+| macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
 
-The macOS 1.5.0 build does not yet have the lens corrections and interface languages of 1.5.1 or the Nikon Z50 II / Z5 II fixes of 1.5.2 (its interface is Chinese); everything else is the same. Projects (`.lumen`) and albums (`.lumenalbum`) use one format on both platforms; the Mac 1.5.0 build ignores lens corrections stored in a project. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+Both platforms have the same features. Projects (`.lumen`) and albums (`.lumenalbum`) use one format on both platforms. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
@@ -30,6 +30,7 @@ The macOS 1.5.0 build does not yet have the lens corrections and interface langu
 **macOS**
 
 - Open the DMG and drag **LUMEN RAW** to Applications (replacing an older copy).
+- The interface starts in the first supported language of System Settings → General → Language & Region (or the language set for LUMEN RAW under Applications there); change it in the **Language** menu. The 1.5.0 Mac build was Chinese-only, so a Mac whose first language is English now starts in English.
 - The app is ad-hoc signed and not notarized by Apple, so the first launch is blocked. Open System Settings → Privacy & Security and click **Open Anyway**, or run `xattr -dr com.apple.quarantine "/Applications/LUMEN RAW.app"`.
 - The first voice instruction asks for microphone access. Speech is recognized on the Mac and never uploaded.
 - Cloud API keys are kept in the login keychain. After each update, macOS asks once whether the new build may read them; choose **Always Allow**.
@@ -194,7 +195,7 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 1.5.2, 327 regression tests pass on Windows with 10 skipped (macOS-only and similar); 1.5.0 passed 297 on macOS. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 1.5.2, 328 regression tests pass on Windows with 11 skipped (macOS-only and similar) and 335 on macOS with 4 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.
