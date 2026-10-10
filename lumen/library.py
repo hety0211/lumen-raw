@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QAbstractItemView, QFileDialog, QMessageBox,QMenu,QDialog,QProgressDialog)
-from . import model, engine, host
+from . import model, engine, host, catalog
 from .scheduler import Activity as A
 from .widgets import qimage
 from .i18n import tr
@@ -40,13 +40,13 @@ def thumbnail(path):
                 preview=previews.orient(preview,raw.sizes.flip) if preview is not None else None
         if preview is None:
             rgb,info=engine.load_image(path,144)
-            return np.clip(engine.to_srgb(engine.develop.apply(rgb,info.get('develop',{}))),0,1)
+            return engine.develop_view(rgb,dict(develop=info.get('develop',{}),process=2))
         im=Image.fromarray(np.ascontiguousarray(preview))
     else:
         try:
             im=Image.open(path)
         except Exception:
-            return np.clip(engine.to_srgb(engine.load_image(path,144)[0]),0,1)
+            return engine.develop_view(engine.load_image(path,144)[0],dict(process=2))
     with im:
         pic=ImageOps.exif_transpose(im).convert('RGB')
         pic.thumbnail((128,80))
@@ -71,10 +71,10 @@ class LibraryMixin:
         row.addWidget(self.library_count)
         row.addWidget(self.button(tr('＋ 导入多张'),self.open_file))
         row.addWidget(self.button(tr('保存选片集'),self.save_album))
+        row.addSpacing(12)
+        # 1.6.0: ratings, flags, colour labels and filters (rating.RatingMixin).
+        self.build_rating_controls(row)
         row.addStretch()
-        tip=QLabel(tr('{COMMAND} / Shift 多选 · 单击切换照片', COMMAND=host.COMMAND))
-        tip.setObjectName('subtle')
-        row.addWidget(tip)
         self.sync_button=self.button(tr('将当前调色套用到选中照片'),self.sync_look,True)
         row.addWidget(self.sync_button)
         layout.addLayout(row)
@@ -94,10 +94,13 @@ class LibraryMixin:
         self.filmstrip.itemSelectionChanged.connect(self.update_library_status)
         self.filmstrip.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.filmstrip.customContextMenuRequested.connect(self.show_film_menu)
+        self.filmstrip.setToolTip(tr('{COMMAND} / Shift 多选 · 单击切换照片', COMMAND=host.COMMAND))
+        self.install_rating_delegate()
         layout.addWidget(self.filmstrip)
         return box
 
     def add_documents(self, paths):
+        added=[]
         for path in paths:
             path=str(Path(path).resolve())
             if path in self.documents:
@@ -109,6 +112,11 @@ class LibraryMixin:
             item.setToolTip(path)
             self.filmstrip.addItem(item)
             self.thumbnail_queue.append(path)
+            added.append(path)
+        if added:
+            self.refresh_ratings(added)
+            # 1.6.0: ratings Lightroom, Bridge or a camera wrote into XMP, for photos the catalog does not know.
+            self.read_xmp_async(added)
         self.update_library_status()
         self.next_film_thumbnails()
 
@@ -163,6 +171,11 @@ class LibraryMixin:
         menu.addSeparator()
         export=menu.addAction(tr('批量导出 {count} 张…',count=count) if count>1 else tr('批量导出…'),self.batch_export)
         export.setEnabled(count>0 and not busy)
+        # 1.6.0: ratings, flags, labels and XMP.
+        menu.addSeparator()
+        self.add_rating_actions(menu)
+        menu.addAction(tr('从 XMP 读取评级'),self.read_selected_xmp).setEnabled(count>0)
+        menu.addAction(tr('评级写入 XMP 附属文件'),self.write_selected_xmp).setEnabled(count>0)
         return menu
 
     def show_film_menu(self,point):
@@ -285,6 +298,7 @@ class LibraryMixin:
         count=len(self.filmstrip.selectedItems())
         self.library_count.setText(tr('选片集 · {n_items} 张 / 已选 {count} 张', n_items=len(self.documents), count=count))
         self.sync_button.setEnabled(self.source is not None and count>0 and not self.loading)
+        self.update_rating_bar()
 
     def sync_look(self):
         if self.source is None or self.loading:return
@@ -298,6 +312,7 @@ class LibraryMixin:
             document=self.documents[path]
             before=copy.deepcopy(document['edits'])
             document['edits']=model.apply_look(before,look)
+            document['edits']['process']=self.edits.get('process',1)  # 1.6.0: the look's process version too
             self.sync_lens(document['edits'])
             history=document.setdefault('history',model.History(before))
             history.push(document['edits'])
@@ -319,7 +334,8 @@ class LibraryMixin:
                 try:source=os.path.relpath(document['path'],path.parent.resolve())
                 except ValueError:source=document['path']
                 documents.append(dict(source=source,edits=model.validate(document['edits']),
-                    snapshots=model.validate_snapshots(document['snapshots']),initialized=document['initialized']))
+                    snapshots=model.validate_snapshots(document['snapshots']),initialized=document['initialized'],
+                    **self.album_ratings(document['path'])))
             data=json.dumps(dict(application='Lumen album',version=1,documents=documents),ensure_ascii=False)
             if len(data.encode('utf-8'))>128*1024*1024:raise ValueError(tr('选片集过大，请拆分保存。'))
             temp=path.with_suffix('.lumenalbum.tmp');temp.write_text(data,encoding='utf-8');temp.replace(path)
@@ -344,19 +360,23 @@ class LibraryMixin:
             data=json.loads(path.read_text(encoding='utf-8'))
             if data.get('application')!='Lumen album' or not 0<=len(data['documents'])<=2000:
                 raise ValueError(tr('无效选片集。'))
-            records={}
+            records={};ratings={}
             for item in data['documents']:
                 source=str((path.parent/item['source']).resolve())
+                try:ratings[source]=catalog.validate({k:item[k] for k in ('rating','flag','label') if k in item})
+                except ValueError:pass
                 record=new_document(source)
                 record.update(edits=model.validate(item['edits']),snapshots=model.validate_snapshots(item.get('snapshots',[])),initialized=bool(item.get('initialized',True)))
                 record['saved_edits']=copy.deepcopy(record['edits']);record['saved_snapshots']=copy.deepcopy(record['snapshots'])
                 records[source]=record
             available=[p for p in records if Path(p).exists()]
             if records and not available:raise ValueError(tr('选片集的原片均已移动或存储设备未连接。'))
+            self.restore_album_ratings(ratings)
             self.source_path='';self.source=None
             self.documents={};self.filmstrip.clear();self.thumbnail_queue=[]
             self.add_documents(records)
             self.documents=records
+            self.refresh_ratings()
             self.album_path=str(path)
             self.library_structure_dirty=False
             if available:self.open_path(available[0])

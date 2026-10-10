@@ -105,9 +105,11 @@ class StudioMixin:
         token = self.thumbnail_token
         source = engine.resize_limit(self.source, 180).copy()
         baseline = copy.deepcopy(self.edits['develop'])
+        version = engine.process_version(self.edits)
         looks = copy.deepcopy(self.presets)
         def work():
-            return [engine.process(source, model.apply_look(dict(model.recipe(),develop=baseline), p['look'])) for p in looks]
+            return [engine.process(source, model.apply_look(dict(model.recipe(), develop=baseline, process=version), p['look']))
+                    for p in looks]
         def ready(images):
             if token != self.thumbnail_token:
                 return
@@ -326,7 +328,7 @@ class StudioMixin:
         if self.source is None or self.loading:
             return
         self.commit()
-        self.edits['adjustments'].update(engine.auto_tone(engine.develop.apply(self.source,self.edits['develop']), self.edits['wb_gain']))
+        self.edits['adjustments'].update(engine.auto_tone_for(self.source, self.edits))
         self.clear_preset_selection()
         self.refresh()
         self.changed()

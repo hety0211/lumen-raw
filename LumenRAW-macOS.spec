@@ -30,7 +30,8 @@ a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)],
     binaries=raw_binaries + ort_binaries,
     datas=assets + [(str(root / 'lumen' / 'locales'), 'lumen/locales')] + raw_data + ort_data + collect_data_files('tifffile'),
-    hiddenimports=raw_hidden + ort_hidden + ['PIL.ImageCms', 'objc', 'Foundation', 'Metal', 'PySide6.QtMultimedia'],
+    hiddenimports=raw_hidden + ort_hidden + ['PIL.ImageCms', 'objc', 'Foundation', 'Metal', 'PySide6.QtMultimedia',
+                                             'PySide6.QtNetwork'],
     excludes=['cupy', 'torch', 'torchvision', 'onnx', 'sympy', 'windowsml', 'tkinter'],
     noarchive=False,
 )
@@ -39,7 +40,11 @@ exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='LumenRAW',
           debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
           console=False, disable_windowed_traceback=False, argv_emulation=False,
           target_arch='arm64', codesign_identity=None, entitlements_file=None)
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='LumenRAW')
+# 1.6.0: Contents/MacOS/lumen-cli, the command line and the MCP server (stdio).
+cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name='lumen-cli',
+          debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
+          console=True, argv_emulation=False, target_arch='arm64', codesign_identity=None, entitlements_file=None)
+coll = COLLECT(exe, cli, a.binaries, a.datas, strip=False, upx=False, name='LumenRAW')
 
 document = lambda name, types, rank='Alternate': {
     'CFBundleTypeName': name, 'CFBundleTypeRole': 'Editor', 'LSHandlerRank': rank, 'LSItemContentTypes': types}

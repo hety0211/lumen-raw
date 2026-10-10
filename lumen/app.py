@@ -23,6 +23,8 @@ from .auto_masks import AutoMaskMixin
 from .workflow import WorkflowMixin
 from .nl_panel import NaturalLanguageMixin
 from .lens_panel import LensMixin
+from .rating import RatingMixin
+from .agent_dialog import AgentMixin
 from . import geometry, develop, watermark
 from . import performance
 from .exposure_curve import ExposureCurve
@@ -219,7 +221,7 @@ def heading(text):
 from .enhance_dialog import ExportDialog
 
 
-class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LensMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
+class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixin, LensMixin, RatingMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
     export_progress = Signal(int, str)
 
     def __init__(self):
@@ -270,9 +272,12 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LensMixin
         self.init_studio()
         self.init_resolution()
         self.init_library()
+        self.init_rating()
         self.init_natural_language()
         self.build_ui()
         self.shortcuts()
+        # 1.6.0: local control channel for lumen-cli and MCP agents.
+        self.init_agents()
         self.refresh()
 
     def button(self, text, callback, primary=False):
@@ -651,11 +656,17 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LensMixin
                              ('Ctrl+0', self.canvas.fit), ('J', self.toggle_clipping),
                              ('Return', self.confirm_crop), ('Enter', self.confirm_crop),
                              ('Y', lambda: self.split_check.setChecked(not self.split_check.isChecked())),
-                             ('Esc', lambda: self.wb_button.setChecked(False))]:
+                             ('Esc', lambda: self.wb_button.setChecked(False)),
+                             ('Ctrl+K', self.open_palette)]:
             action = QAction(self)
             action.setShortcut(QKeySequence(shortcut))
             action.triggered.connect(fn)
             self.addAction(action)
+        self.rating_shortcuts()
+
+    def open_palette(self):
+        from .palette import CommandPalette
+        CommandPalette(self).exec()
 
     def job(self, fn, success, fail=None, priority=0):
         """Queue background image work; see scheduler.JobScheduler."""
@@ -801,13 +812,13 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LensMixin
         source, edits, token, backend = self.source, copy.deepcopy(self.edits), self.generation, self.backend
         cache = self.render_cache
         # The comparison original is developed here once per photo / develop setting, not on the GUI thread.
-        original_key = (self.document_token, engine._key(edits.get('develop', {})))
+        original_key = (self.document_token, engine._key(edits.get('develop', {}), engine.process_version(edits)))
         original = self._original[0] != original_key
         self.statusBar().showMessage(tr('正在更新预览…'))
         started = time.perf_counter()
         def work():
             result = engine.process(source, edits, backend, apply_crop=False, detail_scale=detail_scale, cache=cache)
-            before = np.clip(engine.to_srgb(develop.apply(source, edits['develop'])), 0, 1) if original else None
+            before = engine.develop_view(source, edits) if original else None
             return result, before
         def finish(output):
             self.work.end(A.RENDER)
@@ -1138,6 +1149,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LensMixin
         self.develop_combo.setCurrentIndex(0 if self.edits['develop']['mode']=='camera' else 1)
         self.develop_combo.blockSignals(False)
         self.develop_hint.setText(tr(self.edits['develop']['source']))  # stored in the recipe as source text
+        self.refresh_process()
         self.update_library_status()
         self.refresh_retouch()
         self.save_button.setEnabled(self.source is not None and not self.work.busy(A.LOADING))
@@ -1282,6 +1294,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, NaturalLanguageMixin, LensMixin
         self.thumbnail_queue.clear()
         self.nl_recorder.cancel()
         self.nl_request+=1
+        self.control.shutdown()
         self.closing=True
         if not self.scheduler.shutdown():
             self.statusBar().showMessage(tr('正在完成当前预览任务后关闭…'))

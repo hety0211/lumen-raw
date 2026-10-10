@@ -131,7 +131,9 @@ def run(items, options, backend, progress, cancel):
             result = fit_long_edge(result, options['long_edge'])
             photo = info.get('photo', {})
             result = watermark.apply(result, edits['watermark'], photo)
-            target = target_path(options['folder'], path, options['extension'], taken)
+            # 1.6.0: commands may name the output file themselves (photo.export).
+            target = Path(options['names'][path]) if path in options.get('names', {}) else \
+                target_path(options['folder'], path, options['extension'], taken)
             engine.export_image(target, result, options['quality'], photo=photo)
             results.append((path, str(target), ''))
         except Exception as exc:

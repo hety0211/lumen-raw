@@ -43,7 +43,8 @@ def configure(level=None, filename='lumen.log'):
     root.setLevel(getattr(logging, level, logging.INFO))
     from . import __version__
     logging.getLogger('lumen').info('LUMEN RAW %s %s · Python %s · pid %d', __version__,
-                                    'starting' if filename == 'lumen.log' else 'AI worker', sys.version.split()[0], os.getpid())
+                                    {'lumen.log': 'starting', 'lumen-cli.log': 'command line'}.get(filename, 'AI worker'),
+                                    sys.version.split()[0], os.getpid())
 
 
 def describe_system():

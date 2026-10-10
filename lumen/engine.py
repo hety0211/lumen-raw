@@ -1,4 +1,13 @@
-"""Float32 linear-light RAW pipeline, masks and optional GPU (DirectML / Metal / CUDA) processing."""
+"""Float32 linear-light RAW pipeline, masks and optional GPU (DirectML / Metal / CUDA) processing.
+
+Two process versions render a recipe (``edits['process']``, 1.6.0):
+
+* 1 — the 1.0–1.5 pipeline, kept bit for bit for existing projects: the source is clipped to
+  0–1, the develop curve comes first and exposure / tone sliders act on its result.
+* 2 — scene-referred (``tone``): exposure, white balance and local shadows / highlights on the
+  unclipped linear decode, the develop curve as tone map, gamut mapping and OkLCh colour
+  (``color``).
+"""
 from __future__ import annotations
 import hashlib
 import json
@@ -15,7 +24,7 @@ from PIL import Image, ImageCms, ImageOps
 from .model import COLORS
 from . import white_balance, retouch, develop, selection, dng, photo_metadata
 from . import curves as tone_curves
-from . import large_image, performance, compute, gpu_graphs, lens
+from . import large_image, performance, compute, gpu_graphs, lens, color, tone
 from .i18n import tr
 
 log = logging.getLogger(__name__)
@@ -114,11 +123,15 @@ def resize_region(image, size, area):
     return horizontal[np.searchsorted(rows, ys)] * b0[:, None] + horizontal[np.searchsorted(rows, ys1)] * b1[:, None]
 
 
-def load_image(path, preview_limit=1600, develop_reference=False):
+def load_image(path, preview_limit=1600, develop_reference=False, clip=False):
     """RAW remains linear. Export decodes again at full resolution.
 
     The camera develop reference is derived for previews, or on request for a full decode
-    (batch export of photos that were never opened, 1.4.1)."""
+    (batch export of photos that were never opened, 1.4.1).
+
+    Since 1.6.0 RAW colours are converted to linear sRGB in floating point without clipping:
+    colours outside sRGB keep negative or above-one values for process version 2.  ``clip``
+    limits them to 0–1 at once (a process-1 export, which would clip them anyway)."""
     path = Path(path)
     info = dict(name=path.name, format=path.suffix[1:].upper(), path=str(path.resolve()))
     if path.suffix.lower() == '.dng' and dng.is_rendered(path):
@@ -142,19 +155,23 @@ def load_image(path, preview_limit=1600, develop_reference=False):
             info['camera_model'] = tags.get('Model', '')
             matrix = camera_matrix(raw, info['camera_model'])
             info['white_balance'] = white_balance.from_metadata(tags, white_balance.estimate(raw, matrix))
+            conversion = matrix if matrix is not None else xyz_to_camera(raw)
             info['photo'] = photo_metadata.from_tags(tags)
             info['wb_warning'] = warning
             info['camera_wb_gains'] = list(raw.camera_whitebalance)
             _lens_info(info, tags)
+            # 1.6.0: white-balanced camera RGB from LibRaw, converted here in float (LibRaw's own
+            # conversion writes 16-bit integers and clips colours outside sRGB).
+            # Bodies without any colour matrix keep LibRaw's own output, as before.
             rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16, gamma=(1, 1),
-                                  output_color=rawpy.ColorSpace.sRGB if matrix is None else rawpy.ColorSpace.raw,
+                                  output_color=rawpy.ColorSpace.sRGB if conversion is None else rawpy.ColorSpace.raw,
                                   half_size=bool(preview_limit), user_flip=None,
                                   highlight_mode=rawpy.HighlightMode.Blend).astype(np.float32)
             rgb /= 65535  # in place: a 61 MP frame would otherwise briefly need a second 700 MB copy
-            if matrix is not None:
-                camera_to_srgb(rgb, matrix)
+            if conversion is not None:
+                camera_to_srgb(rgb, conversion, clip)
             if preview_limit or develop_reference:
-                curve,label = develop.camera_curve(raw, rgb, path)
+                curve,label = develop.camera_curve(raw, np.clip(resize_limit(rgb, 800), 0, 1), path)
                 info['develop'] = dict(mode='camera',curve=curve,source=label)
         info['note'] = tr('LibRaw · 相机白平衡 · 线性 sRGB · 16-bit 解码')
     elif path.suffix.lower() in {'.tif', '.tiff', '.png'}:
@@ -202,17 +219,52 @@ def camera_matrix(raw, model):
     return np.asarray(values, np.float64).reshape(3, 3) / 10000
 
 
-def camera_to_srgb(rgb, cam_xyz):
+def xyz_to_camera(raw):
+    """LibRaw's XYZ → camera matrix of this body, or None when it has none (1.6.0)."""
+    matrix = np.asarray(raw.rgb_xyz_matrix[:3], np.float64)
+    return matrix if np.any(matrix) and np.all(np.abs((matrix @ SRGB_TO_XYZ).sum(axis=1)) > 1e-9) else None
+
+
+def camera_to_srgb(rgb, cam_xyz, clip=True):
     """In place: white-balanced camera RGB → linear sRGB, as LibRaw converts with its own matrix
-    (cam_xyz_coeff: rows normalised so white stays white; result clipped like LibRaw's 16-bit output)."""
+    (cam_xyz_coeff: rows normalised so white stays white).  ``clip`` limits the result to 0–1
+    like LibRaw's 16-bit output; without it colours outside sRGB are kept (1.6.0)."""
     srgb_to_camera = cam_xyz @ SRGB_TO_XYZ
     srgb_to_camera /= srgb_to_camera.sum(axis=1, keepdims=True)
     matrix = np.linalg.inv(srgb_to_camera).astype(np.float32)
     for y in range(0, rgb.shape[0], 512):
         block = rgb[y:y + 512]
         block[...] = cv2.transform(block, matrix)
-        np.clip(block, 0, 1, out=block)
+        if clip:
+            np.clip(block, 0, 1, out=block)
     return rgb
+
+
+def clip01(x):
+    """``x`` limited to 0–1 (process 1 starts from a clipped decode); ``x`` itself when it is."""
+    if x.nbytes > large_image.MAP_BYTES and x.shape[0] > large_image.STRIP_ROWS:
+        if all(block.min() >= 0 and block.max() <= 1 for _, block in large_image.strips(x)):
+            return x
+        out = large_image.allocate(x.shape)
+        for y, block in large_image.strips(x):
+            np.clip(block, 0, 1, out=out[y:y + len(block)])
+        return out
+    if x.size and x.min() >= 0 and x.max() <= 1:
+        return x
+    return np.clip(x, 0, 1).astype(np.float32, copy=False)
+
+
+def process_version(edits):
+    return 2 if edits.get('process', 1) == 2 else 1
+
+
+def develop_view(source, edits):
+    """Developed starting point of ``source`` (no slider edits) as display sRGB 0–1:
+    the before / after comparison, luminance-mask reference, AI selections, thumbnails."""
+    settings = edits.get('develop', {})
+    if process_version(edits) == 2:
+        return tone.develop_view(source, settings)
+    return np.clip(to_srgb(develop.apply(clip01(source), settings)), 0, 1)
 
 
 def load_embedded(path, limit, info, metadata=None, known=True):
@@ -270,6 +322,8 @@ def load_pillow(path, limit):
 SPATIAL_KEYS = ('denoise', 'color_noise', 'dehaze', 'clarity', 'texture', 'sharpness')
 TONAL_KEYS = ('exposure', 'temperature', 'tint', 'contrast', 'shadows', 'highlights', 'blacks', 'whites')
 GPU_TILE = 1024
+#: Pixels per GPU graph run: a 1600-pixel preview runs as one tile (fewer kernel launches).
+GPU_TILE_PIXELS = 2 ** 21
 
 
 def has_spatial(a):
@@ -342,6 +396,11 @@ class Backend:
         """True while the fused stages run on the GPU (DirectML graphs or Metal kernels)."""
         return self.use_dml or self.metal is not None
 
+    @property
+    def gpu_version2(self):
+        """True when the process-2 stages run on the GPU (Metal checks them separately)."""
+        return self.use_dml or (self.metal is not None and self.metal.version2)
+
     def _disable_gpu(self, warning):
         self.name = tr('CPU · {gpu_label} 回退', gpu_label=self.gpu_label)
         self.use_dml = False
@@ -356,7 +415,8 @@ class Backend:
         return self._sessions[kind]
 
     def _run_graph(self, kind, image, inputs):
-        """Channel-last 1024² tiles: pointwise graphs have no boundary effects."""
+        """Channel-last 1024² tiles: pointwise graphs have no boundary effects.  Inputs the
+        size of the image (process 2's local tone coefficients) are tiled with it."""
         if self.metal is not None:
             from .metal import PROVIDER
             out = self.metal.run(kind, image, inputs)
@@ -364,11 +424,17 @@ class Backend:
             return out
         session = self._session(kind)
         height, width = image.shape[:2]
+        tiled = {k for k, v in inputs.items() if v.ndim == 4 and v.shape[1:3] == (height, width)}
         out = large_image.allocate(image.shape)
-        for y in range(0, height, GPU_TILE):
-            for x in range(0, width, GPU_TILE):
-                tile = np.ascontiguousarray(image[y:y + GPU_TILE, x:x + GPU_TILE], dtype=np.float32)[None]
-                out[y:y + tile.shape[1], x:x + tile.shape[2]] = session.run(None, dict(inputs, image=tile))[0][0]
+        columns = min(width, 2 * GPU_TILE)
+        rows = max(1, min(height, GPU_TILE_PIXELS // columns))
+        for y in range(0, height, rows):
+            for x in range(0, width, columns):
+                tile = np.ascontiguousarray(image[y:y + rows, x:x + columns], dtype=np.float32)[None]
+                feed = dict(inputs, image=tile)
+                for k in tiled:
+                    feed[k] = np.ascontiguousarray(inputs[k][:, y:y + rows, x:x + columns])
+                out[y:y + tile.shape[1], x:x + tile.shape[2]] = session.run(None, feed)[0][0]
         if session.get_providers()[0] == 'CPUExecutionProvider' and self.use_dml:
             self._disable_gpu(compute.state.snapshot()[3] or tr('{gpu_label} 已回退 CPU。', gpu_label=self.gpu_label))
         return out
@@ -381,7 +447,10 @@ class Backend:
             self._disable_gpu(tr('{gpu_label} 运行失败，自动回退 CPU：', gpu_label=self.gpu_label) + str(exc)[:120])
             return None
 
-    def tonal(self, image, a):
+    def tonal(self, image, a, spec=None):
+        """Process 1 tone stage, or process 2 (``tone``) when ``spec`` is given."""
+        if spec is not None:
+            return self._tonal2(image, a, spec)
         if self.gpu_pointwise:
             result = self._gpu('tonal', image, gpu_graphs.tonal_inputs(a))
             if result is not None:
@@ -404,22 +473,44 @@ class Backend:
             compute.state.report('CPUExecutionProvider',warning=self.warning)
             return self._tonal(image, a, np)
 
+    def _tonal2(self, image, a, spec):
+        if self.gpu_version2:
+            result = self._gpu('tonal2', image, gpu_graphs.tonal2_inputs(a, spec, image.shape))
+            if result is not None:
+                return result
+        compute.state.report('CPUExecutionProvider', detail=tr('{threads} 线程 · NumPy 光影显影', threads=performance.THREADS))
+        return tone.tonal(image, a, spec)
+
     def color(self, image, edits):
         """Saturation / vibrance, HSL, curves, monochrome and grading."""
-        if self.gpu_pointwise:
+        if process_version(edits) == 2:
+            if self.gpu_version2:
+                kind = 'color2lab' if gpu_graphs.lab_stage(edits) else 'color2'
+                result = self._gpu(kind, image, gpu_graphs.color2_inputs(edits))
+                if result is not None:
+                    return result
+        elif self.gpu_pointwise:
             result = self._gpu('color', image, gpu_graphs.color_inputs(edits))
             if result is not None:
                 return result
         return color_stage(image, edits)
 
-    def fused(self, image, edits):
+    def fused(self, image, edits, spec=None):
         """Tonal + color in one GPU pass; only valid without spatial detail tools."""
+        a = edits['adjustments']
+        if spec is not None:
+            if self.gpu_version2:
+                inputs = dict(gpu_graphs.tonal2_inputs(a, spec, image.shape), **gpu_graphs.color2_inputs(edits))
+                result = self._gpu('fused2lab' if gpu_graphs.lab_stage(edits) else 'fused2', image, inputs)
+                if result is not None:
+                    return result
+            return color_stage(self.tonal(image, a, spec), edits)
         if self.gpu_pointwise:
-            inputs = dict(gpu_graphs.tonal_inputs(edits['adjustments']), **gpu_graphs.color_inputs(edits))
+            inputs = dict(gpu_graphs.tonal_inputs(a), **gpu_graphs.color_inputs(edits))
             result = self._gpu('fused', image, inputs)
             if result is not None:
                 return result
-        return color_stage(self.tonal(image, edits['adjustments']), edits)
+        return color_stage(self.tonal(image, a), edits)
 
     def _tonal_dml(self, image, a):
         return self._run_graph('tonal', image, gpu_graphs.tonal_inputs(a))
@@ -537,8 +628,11 @@ def saturation(x, a):
     return np.clip(lum + (x - lum) * amount, 0, 1)
 
 
-def details(rgb, a, detail_scale=1., reference_shape=None):
-    return saturation(spatial_details(rgb, a, detail_scale, reference_shape), a)
+def details(rgb, a, detail_scale=1., reference_shape=None, version=1):
+    x = spatial_details(rgb, a, detail_scale, reference_shape)
+    if version == 2:
+        return color.adjust(x, a.get('saturation', 0), a.get('vibrance', 0))
+    return saturation(x, a)
 
 
 def monochrome(x):
@@ -548,6 +642,13 @@ def monochrome(x):
 
 def color_stage(x, edits):
     """CPU reference for the pointwise color graph (after spatial details)."""
+    if process_version(edits) == 2:
+        # Process 2: curves, then one OkLCh pass (saturation, mixer, monochrome, grading).
+        a = edits['adjustments']
+        x = apply_curves(x, edits['curves'], edits.get('curve_mode', 'linear'), edits.get('tone_curve'))
+        x = color.adjust(x, a['saturation'], a['vibrance'], edits['hsl'], edits.get('monochrome', False),
+                         edits.get('grading', {}))
+        return np.clip(x, 0, 1).astype(np.float32)
     x = saturation(x, edits['adjustments'])
     x = apply_hsl(x, edits['hsl'])
     x = apply_curves(x, edits['curves'], edits.get('curve_mode', 'linear'), edits.get('tone_curve'))
@@ -688,7 +789,7 @@ class RenderCache:
     bound to the source array's identity and never mutated by the pipeline.
     """
 
-    STAGES = ('lens', 'base', 'tonal', 'detail', 'global', 'reference')
+    STAGES = ('lens', 'base', 'context', 'tonal', 'detail', 'global', 'reference')
 
     def __init__(self, max_bytes=512 * 2**20, alpha_bytes=192 * 2**20):
         self.max_bytes, self.alpha_bytes = max_bytes, alpha_bytes
@@ -754,10 +855,11 @@ def _mask_bounds(alpha):
     return rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
 
 
-def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None):
+def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None, version=1):
     """Blend one local adjustment in place, computing only the mask's padded bounding box.
 
-    ``reference_shape`` is the whole frame when ``x`` is a block of it (1.4.0)."""
+    ``reference_shape`` is the whole frame when ``x`` is a block of it (1.4.0).  Process 2
+    keeps colours pushed past white or out of gamut on hue instead of clipping channels."""
     bounds = _mask_bounds(alpha)
     if bounds is None:
         return x
@@ -772,7 +874,8 @@ def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None):
         py0, py1 = max(0, y0 - margin), min(h, y1 + margin)
         px0, px1 = max(0, x0 - margin), min(w, x1 + margin)
     patch = x[py0:py1, px0:px1]
-    local = details(backend.tonal(to_linear(patch), a), a, detail_scale, reference_shape=reference_shape)
+    spec = tone.mask_spec() if version == 2 else None
+    local = details(backend.tonal(to_linear(patch), a, spec), a, detail_scale, reference_shape, version)
     local = local[y0 - py0:y1 - py0, x0 - px0:x1 - px0]
     weight = alpha[y0:y1, x0:x1, None]
     region = x[y0:y1, x0:x1]
@@ -780,7 +883,20 @@ def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None):
     return x
 
 
-def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stream=True, cache=None):
+def _base(corrected, edits, rect=None):
+    """Retouched, white-balanced frame (or block ``rect``) that the tone stage starts from.
+    Process 1 clips it and applies the develop curve here; process 2 keeps it scene-linear."""
+    x = retouch.apply(corrected, edits.get('retouch', []), rect)
+    if process_version(edits) == 1:
+        x = develop.apply(clip01(x), edits.get('develop', {}))
+    gain = _gain(edits)
+    return x if np.all(gain == 1) else x * gain
+
+
+def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stream=True, cache=None,
+            tone_context=None):
+    """The edited photograph as display sRGB 0–1.  ``tone_context`` (process 2) supplies the local
+    tone-mapping coefficients of the whole frame when ``source`` is a strip of it."""
     backend = backend or Backend('cpu')
     large_image.validate_size(source.shape)
     if _stream and source.nbytes>large_image.MAP_BYTES:
@@ -793,44 +909,44 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
     cache = cache if cache is not None else _UNCACHED
     cache.bind(source, detail_scale)
     a = edits['adjustments']
+    version = process_version(edits)
     # Rotate at output only: mask / crop coordinates always refer to the original image.
     develop_settings = edits.get('develop', {})
     # 1.5.1: lens corrections come first; retouching, masks and crop refer to the corrected frame.
     lens_key = lens.key(edits.get('lens'))
-    corrected = cache.get('lens', _key(lens_key), lambda: lens.apply(source, edits['lens'])) if lens_key else source
+    corrected = cache.get('lens', _key(lens_key, version), lambda: lens.correct(source, edits)) if lens_key else source
     base_key = _key(edits.get('wb_gain', [1., 1., 1.]), edits.get('white_balance', {}),
-                    edits.get('retouch', []), develop_settings, lens_key)
-
-    def base():
-        gain = np.asarray(edits.get('wb_gain', [1., 1., 1.]), np.float32) * white_balance.gains(edits.get('white_balance', {}))
-        repaired = develop.apply(retouch.apply(corrected, edits.get('retouch', [])), develop_settings)
-        return repaired if np.all(gain == 1) else repaired * gain
-
-    balanced = cache.get('base', base_key, base)
-    tonal_key = _key(base_key, {k: a.get(k, 0) for k in TONAL_KEYS})
+                    edits.get('retouch', []), develop_settings, lens_key, version)
+    balanced = cache.get('base', base_key, lambda: _base(corrected, edits))
+    spec = None
+    if version == 2:
+        context = tone_context
+        if context is None and tone.needs_context(a):
+            context = cache.get('context', _key(base_key, a['temperature'], a['tint']), lambda: tone.context(balanced, a))
+        spec = tone.spec(edits, context)
+    tonal_key = _key(base_key, {k: a.get(k, 0) for k in TONAL_KEYS}, tone_context is not None)
     color_key = _key(a.get('saturation', 0), a.get('vibrance', 0), edits['hsl'], edits['curves'],
                      edits.get('tone_curve'), edits.get('curve_mode', 'linear'), edits.get('monochrome', False),
-                     edits.get('grading', {}), backend.gpu_pointwise)
-    if backend.gpu_pointwise and not has_spatial(a):
-        x = cache.get('global', _key(tonal_key, 'fused', color_key), lambda: backend.fused(balanced, edits))
+                     edits.get('grading', {}), backend.gpu_pointwise, backend.gpu_version2)
+    if (backend.gpu_version2 if version == 2 else backend.gpu_pointwise) and not has_spatial(a):
+        x = cache.get('global', _key(tonal_key, 'fused', color_key), lambda: backend.fused(balanced, edits, spec))
     else:
-        tonal = cache.get('tonal', tonal_key, lambda: backend.tonal(balanced, a))
+        tonal = cache.get('tonal', tonal_key, lambda: backend.tonal(balanced, a, spec))
         detail_key = _key(tonal_key, {k: a.get(k, 0) for k in SPATIAL_KEYS}, detail_scale)
         if has_spatial(a):
             tonal = cache.get('detail', detail_key, lambda: spatial_details(tonal, a, detail_scale))
         x = cache.get('global', _key(detail_key, color_key), lambda: backend.color(tonal, edits))
     masks = [m for m in edits['masks'] if m['enabled'] and any(m['adjustments'].values())]
     if masks:
-        reference_key = _key(develop_settings, lens_key)
-        mask_reference = cache.get('reference', reference_key,
-            lambda: np.clip(to_srgb(develop.apply(corrected, develop_settings)), 0, 1)) \
+        reference_key = _key(develop_settings, lens_key, version)
+        mask_reference = cache.get('reference', reference_key, lambda: develop_view(corrected, edits)) \
             if any(m['kind'] == 'luminance' for m in masks) else None
         x = x.copy()  # stage results are shared with the cache
         for mask in masks:
             geometry = {k: v for k, v in mask.items() if k not in ('adjustments', 'name', 'enabled')}
             alpha_key = _key(geometry, x.shape, reference_key if mask['kind'] == 'luminance' else '')
             alpha = cache.alpha(alpha_key, lambda: mask_alpha(mask, x.shape, mask_reference))
-            apply_local(x, alpha, mask['adjustments'], backend, detail_scale)
+            apply_local(x, alpha, mask['adjustments'], backend, detail_scale, version=version)
     x = finishing(x, edits.get('effects', {}), edits.get('crop'))
     if apply_crop:
         x = crop_rotate(x, edits)
@@ -841,27 +957,38 @@ def _gain(edits):
     return np.asarray(edits.get('wb_gain', [1., 1., 1.]), np.float32) * white_balance.gains(edits.get('white_balance', {}))
 
 
-def dehaze_context_for(source, edits, backend=None, detail_scale=1.):
+def tone_context_for(source, edits):
+    """Process 2 local tone-mapping coefficients exactly as ``process(source, edits)`` derives
+    them, or None (1.6.0)."""
+    a = edits['adjustments']
+    if process_version(edits) != 2 or not tone.needs_context(a):
+        return None
+    return tone.context(_base(lens.correct(source, edits), edits), a)
+
+
+def dehaze_context_for(source, edits, backend=None, detail_scale=1., tone_context=None):
     """Dehaze statistics exactly as ``process(source, edits)`` derives them, or None (1.4.0)."""
     a = edits['adjustments']
     if a.get('dehaze', 0) <= 0:
         return None
     backend = backend or Backend('cpu')
-    gain = _gain(edits)
-    balanced = develop.apply(retouch.apply(lens.correct(source, edits), edits.get('retouch', [])), edits.get('develop', {}))
-    if not np.all(gain == 1):
-        balanced = balanced * gain
-    tonal = np.ascontiguousarray(backend.tonal(balanced, a), dtype=np.float32)
+    balanced = _base(lens.correct(source, edits), edits)
+    spec = None
+    if process_version(edits) == 2:
+        spec = tone.spec(edits, tone_context if tone_context is not None else tone.context(balanced, a))
+    tonal = np.ascontiguousarray(backend.tonal(balanced, a, spec), dtype=np.float32)
     return dehaze_context(reduce_noise(tonal, a), a['dehaze'])
 
 
-def process_region(source, edits, backend=None, rect=None, detail_scale=1., dehaze_context=None, check=None):
+def process_region(source, edits, backend=None, rect=None, detail_scale=1., dehaze_context=None, check=None,
+                   tone_context=None):
     """``process(source, edits, apply_crop=False)[y0:y1, x0:x1]`` for ``rect = (x0, y0, x1, y1)`` (1.4.0).
 
     Neighbourhood tools read a margin around the block; retouching, masks, vignette and grain are
     evaluated in frame coordinates, so the block matches the whole-frame render.  Dehaze uses the
-    statistics of ``dehaze_context`` (by default those of the whole ``source``).  ``check`` is called
-    between stages and may raise to abandon a stale render.
+    statistics of ``dehaze_context`` and process 2 the local tone mapping of ``tone_context`` (by
+    default those of the whole ``source``).  ``check`` is called between stages and may raise to
+    abandon a stale render.
     """
     backend = backend or Backend('cpu')
     check = check or (lambda: None)
@@ -872,32 +999,32 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
     margin = spatial_margin(a, (h, w), detail_scale) + \
         max([spatial_margin(m['adjustments'], (h, w), detail_scale) for m in masks], default=0)
     area = target.grow(margin)
-    develop_settings = edits.get('develop', {})
+    version = process_version(edits)
+    if version == 2 and tone_context is None and tone.needs_context(a):
+        tone_context = tone_context_for(source, edits)
     if a.get('dehaze', 0) > 0 and dehaze_context is None:
-        dehaze_context = dehaze_context_for(source, edits, backend, detail_scale)
-    gain = _gain(edits)
+        dehaze_context = dehaze_context_for(source, edits, backend, detail_scale, tone_context)
     corrected = lens.view(source, edits)  # blocks of the lens-corrected frame on demand (1.5.1)
-    balanced = develop.apply(retouch.apply(corrected, edits.get('retouch', []), (area.x0, area.y0, area.x1, area.y1)),
-                             develop_settings)
-    if not np.all(gain == 1):
-        balanced = balanced * gain
+    balanced = _base(corrected, edits, (area.x0, area.y0, area.x1, area.y1))
+    spec = tone.spec(edits, tone_context, area) if version == 2 else None
     check()
-    if backend.gpu_pointwise and not has_spatial(a):
-        x = backend.fused(balanced, edits)
+    if (backend.gpu_version2 if version == 2 else backend.gpu_pointwise) and not has_spatial(a):
+        x = backend.fused(balanced, edits, spec)
     else:
-        x = backend.tonal(balanced, a)
+        x = backend.tonal(balanced, a, spec)
         if has_spatial(a):
             check()
             x = spatial_details(x, a, detail_scale, (h, w), dehaze_context, area)
         check()
         x = backend.color(x, edits)
     if masks:
-        reference = np.clip(to_srgb(develop.apply(corrected[area.y0:area.y1, area.x0:area.x1], develop_settings)), 0, 1) \
+        reference = develop_view(corrected[area.y0:area.y1, area.x0:area.x1], edits) \
             if any(m['kind'] == 'luminance' for m in masks) else None
         x = x.copy()
         for mask in masks:
             check()
-            apply_local(x, mask_alpha(mask, (h, w), reference, area), mask['adjustments'], backend, detail_scale, (h, w))
+            apply_local(x, mask_alpha(mask, (h, w), reference, area), mask['adjustments'], backend, detail_scale, (h, w),
+                        version)
     x = finishing(x, edits.get('effects', {}), edits.get('crop'), area)
     return np.ascontiguousarray(np.clip(x[area.inner(target)], 0, 1), dtype=np.float32)
 
@@ -959,15 +1086,14 @@ def display_block(render, edits, size, rect, final=True):
 
 
 def render_display(source, edits, backend, rect, final=False, detail_scale=1., kind='edited',
-                   dehaze_context=None, check=None):
+                   dehaze_context=None, check=None, tone_context=None):
     """Displayed block ``rect`` of the edited photograph or of its developed original (1.4.0)."""
-    develop_settings = edits.get('develop', {})
     if kind == 'original':
         def render(r):
-            return np.clip(to_srgb(develop.apply(source[r[1]:r[3], r[0]:r[2]], develop_settings)), 0, 1)
+            return develop_view(source[r[1]:r[3], r[0]:r[2]], edits)
     else:
         def render(r):
-            return process_region(source, edits, backend, r, detail_scale, dehaze_context, check)
+            return process_region(source, edits, backend, r, detail_scale, dehaze_context, check, tone_context)
     return display_block(render, edits, (source.shape[1], source.shape[0]), rect, final)
 
 
@@ -1040,6 +1166,13 @@ def auto_tone(source, gains=None):
     return dict(exposure=round(exposure, 2), shadows=round(float(np.clip((.05 - low_after) * 550, 0, 40))),
                 highlights=round(float(np.clip((.7 - high_after) * 65, -65, 0))),
                 blacks=-5., whites=0., contrast=5.)
+
+
+def auto_tone_for(source, edits):
+    """Automatic exposure and tone sliders for the photo's process version."""
+    if process_version(edits) == 2:
+        return tone.auto_tone(source, edits.get('develop', {}), _gain(edits))
+    return auto_tone(develop.apply(clip01(source), edits.get('develop', {})), edits.get('wb_gain'))
 
 
 def sample_white_balance(source, position):

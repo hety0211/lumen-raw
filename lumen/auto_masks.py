@@ -3,7 +3,7 @@ import copy
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel, QCheckBox, QComboBox
 from .widgets import AdjustSlider
 from .scheduler import Activity as A
-from . import engine, model, selection, develop, lens
+from . import engine, model, selection, lens
 from .i18n import tr
 
 
@@ -57,14 +57,13 @@ class AutoMaskMixin:
         self.color_region_button.setEnabled(False)
         token=self.document_token
         source=self.source
-        profile=self.edits['develop'].copy()
         corrections=copy.deepcopy(self.edits)
         cuda=self.backend_combo.currentIndex()==0
         tolerance=self.color_tolerance.spin.value()
         self.statusBar().showMessage(tr('正在本地识别选区…'))
         def work():
             # Masks are drawn on the lens-corrected frame (1.5.1).
-            rgb=engine.to_srgb(develop.apply(lens.correct(source,corrections),profile)).clip(0,1)
+            rgb=engine.develop_view(lens.correct(source,corrections),corrections)
             if kind=='color':
                 alpha=selection.color_region(rgb,point,tolerance)
                 provider=tr('连通颜色选择')
@@ -102,6 +101,30 @@ class AutoMaskMixin:
         self.develop_hint=QLabel(tr('RAW 默认使用相机预览作为亮度参考，曝光滑块仍从 0 EV 开始。'))
         self.develop_hint.setObjectName('subtle');self.develop_hint.setWordWrap(True)
         layout.addWidget(self.develop_hint)
+        # 1.6.0: process version of the recipe; projects from 1.x keep version 1 until upgraded.
+        row=QHBoxLayout()
+        self.process_label=QLabel();self.process_label.setObjectName('subtle');self.process_label.setWordWrap(True)
+        row.addWidget(self.process_label,1)
+        self.process_button=self.button(tr('升级'),self.upgrade_process)
+        self.process_button.setToolTip(tr('改用处理版本 2：曝光、白平衡与亮部／暗部在线性光下计算，高光和饱和色彩保留更多层次；数值不变，画面会有变化，可撤销。'))
+        row.addWidget(self.process_button)
+        layout.addLayout(row)
+
+    def refresh_process(self):
+        version=self.edits.get('process',1)
+        self.process_label.setText(tr('处理版本 2 · 场景参考') if version==2 else tr('处理版本 1 · 1.x 旧版渲染'))
+        self.process_label.setToolTip(tr('处理版本 2（1.6.0）：RAW 解码不截断色域外颜色；曝光、白平衡与亮部／暗部在线性光下计算（亮部／暗部为边缘感知的局部色调映射），显影曲线作为色调映射，超出 sRGB 的颜色按 OkLCh 保持色相与明度压缩；饱和度、色彩混合器与色彩分级在 OkLCh 中计算。') if version==2
+                                      else tr('1.6.0 之前保存的工程使用处理版本 1，画面与旧版完全一致。'))
+        self.process_button.setVisible(version==1)
+        self.process_button.setEnabled(self.source is not None)
+
+    def upgrade_process(self):
+        if self.source is None or self.edits.get('process',1)==2:return
+        self.commit()
+        self.edits['process']=2
+        self.refresh();self.changed();self.commit()
+        from . import host
+        self.statusBar().showMessage(tr('已改用处理版本 2 · {v} 可撤销', v=host.keys('Ctrl+Z')))
 
     def change_develop_profile(self,index):
         if self.refreshing or self.source is None:return

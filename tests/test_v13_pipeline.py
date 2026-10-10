@@ -15,6 +15,7 @@ def source(seed=7, shape=(150, 220, 3)):
 
 def edits_with_masks():
     e = model.recipe()
+    e['process'] = 1  # the 1.x pipeline these 1.3.0 checks describe (process 2: test_v160)
     e['adjustments'].update(exposure=.4, shadows=35, contrast=12, clarity=30, texture=20,
                             sharpness=40, denoise=15, saturation=10, vibrance=-15)
     e['develop'] = dict(mode='camera', curve=[[0, 0], [.1, .3], [1, 1]], source='test')

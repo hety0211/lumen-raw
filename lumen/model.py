@@ -24,9 +24,15 @@ def effects():
     return dict(vignette=0., midpoint=50., feather=70., grain=0., grain_size=30.)
 
 
+#: Recipe format written by this version; 6 adds ``process`` (1.6.0).
+VERSION = 6
+#: Process version of new photos: 2 is the scene-referred pipeline of 1.6.0 (see engine).
+PROCESS = 2
+
+
 def recipe():
     from .watermark import defaults
-    return dict(version=5, watermark=defaults(), develop=dict(mode='linear', curve=[[0.,0.],[1.,1.]], source=N_('线性起点')), adjustments=adjustments(), curve_mode='smooth',
+    return dict(version=VERSION, process=PROCESS, watermark=defaults(), develop=dict(mode='linear', curve=[[0.,0.],[1.,1.]], source=N_('线性起点')), adjustments=adjustments(), curve_mode='smooth',
                 hsl=[[0., 0., 0.] for _ in COLORS],
                 curves={c: [[0., 0.], [1., 1.]] for c in ['RGB', 'R', 'G', 'B']},
                 tone_curve=[[0., 0.], [1., 1.]],
@@ -66,9 +72,13 @@ def validate(data):
             base[k] = number(a.get(k, 0), -5 if k == 'exposure' else -100,
                              5 if k == 'exposure' else 100)
         return base
-    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5):
+    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5, 6):
         raise ValueError(tr('不支持的工程版本。'))
     r = recipe()
+    # Projects before 1.6.0 have no process version: they keep rendering as they always did.
+    r['process'] = data.get('process', 1)
+    if r['process'] not in (1, 2) or isinstance(r['process'], bool):
+        raise ValueError(tr('不支持的处理版本。'))
     from .watermark import validate as validate_watermark
     r['watermark'] = validate_watermark(data.get('watermark', r['watermark']))
     profile = data.get('develop', r['develop'])

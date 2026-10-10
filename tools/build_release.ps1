@@ -109,6 +109,9 @@ try {
     $process = Start-Process -FilePath 'dist\LumenRAW\LumenRAW.exe' -ArgumentList @('--smoke-test', "`"$sample`"", "`"$frozenSmoke`"") -Wait -PassThru
     if ($process.ExitCode -ne 0) { Fail "frozen smoke test (exit $($process.ExitCode)); see $frozenSmoke\report.json" }
     Get-Content -LiteralPath (Join-Path $frozenSmoke 'report.json') -Encoding UTF8 | Where-Object { $_ -match '"(ok|backend|provider|device|warning)"' } | ForEach-Object { Say $_ }
+    # 1.6.0: the console lumen-cli.exe (command line and MCP server).
+    if (-not (Test-Path -LiteralPath 'dist\LumenRAW\lumen-cli.exe')) { Fail 'lumen-cli.exe missing' }
+    Run 'frozen lumen-cli and MCP check' $python @('tools\check_cli.py', 'dist\LumenRAW\lumen-cli.exe', $sample, (Join-Path $publish 'cli-smoke')) (Join-Path $logs 'cli-smoke.log')
 
     Step 'Portable ZIP'
     foreach ($old in @("LumenRAW-$version-Windows.zip", "LumenRAW-$version-Windows.json", "LumenRAW-$version-Windows.zip.tmp")) {
@@ -143,6 +146,7 @@ try {
     if (Test-Path -LiteralPath $installedSmoke) { Remove-Item -LiteralPath $installedSmoke -Recurse -Force }
     $process = Start-Process -FilePath (Join-Path $extract 'LumenRAW.exe') -ArgumentList @('--smoke-test', "`"$sample`"", "`"$installedSmoke`"") -Wait -PassThru
     if ($process.ExitCode -ne 0) { Fail "installer smoke test (exit $($process.ExitCode))" }
+    Run 'installed lumen-cli and MCP check' $python @('tools\check_cli.py', (Join-Path $extract 'lumen-cli.exe'), $sample, (Join-Path $publish 'installer-cli-smoke')) (Join-Path $logs 'installer-cli-smoke.log')
 
     Step 'Checksums'
     Run 'SHA256SUMS' $python @('tools\package_windows.py', '--checksums')

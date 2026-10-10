@@ -7,11 +7,11 @@ from lumen import model, engine
 def test_old_recipe_migrates_without_changing_pixels():
     old = model.recipe()
     old['version'] = 1
-    for key in ('wb_gain', 'grading', 'effects', 'straighten', 'monochrome'):
+    for key in ('wb_gain', 'grading', 'effects', 'straighten', 'monochrome', 'process'):
         old.pop(key)
     old['adjustments'].pop('texture')
     new = model.validate(old)
-    assert new['version'] == 5
+    assert new['version'] == model.VERSION and new['process'] == 1
     source = np.random.default_rng(5).random((30, 40, 3)).astype(np.float32) * .6
     np.testing.assert_allclose(engine.process(source, new), engine.process(source, old), atol=1e-6)
 

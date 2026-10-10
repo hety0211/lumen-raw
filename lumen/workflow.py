@@ -1,7 +1,7 @@
 """Browseable menus, watermark preferences and exclusive AI task scheduling."""
 from PySide6.QtGui import QActionGroup
 from PySide6.QtWidgets import QDialog,QMessageBox
-from . import i18n
+from . import i18n, host
 from .ai_dialog import EnhancementDialog
 from .scheduler import Activity as A
 from .watermark_dialog import WatermarkDialog
@@ -23,8 +23,11 @@ class WorkflowMixin:
         for kind,name in METHODS.items():group.addAction(name+'…',lambda checked=False,key=kind:self.open_merge(key))
         view=menu.addMenu(tr('查看'))
         for i in range(self.tabs.count()):view.addAction(self.tabs.tabText(i),lambda checked=False,index=i:self.tabs.setCurrentIndex(index))
+        self.build_library_menu(menu)
         self.build_language_menu(menu)
         helpmenu=menu.addMenu(tr('帮助'))
+        helpmenu.addAction(tr('AI 助手接入（MCP）…'),self.open_agent_dialog)
+        helpmenu.addAction(tr('命令面板…')+'\t'+host.keys('Ctrl+K'),self.open_palette)
         helpmenu.addAction(tr('支持的 RAW 格式'),lambda:QMessageBox.information(self,tr('RAW 支持'),tr('Sony ARW / SR2 / SRF\nCanon CRW / CR2 / CR3\nNikon NEF / NRW\nFujifilm RAF（含 X-Trans）\nPanasonic RW2 / RAW\nDNG\n\n具体机型和压缩方式以内置 LibRaw 支持为准。')))
 
     def build_language_menu(self,menu):

@@ -25,7 +25,7 @@ import cv2
 import numpy as np
 from PySide6.QtGui import QImage
 
-from . import engine, lens
+from . import engine, lens, tone
 from .i18n import tr
 
 log = logging.getLogger(__name__)
@@ -215,6 +215,7 @@ class DetailSource:
         self.full = None
         self.levels = {}
         self.contexts = {}
+        self.tones = {}
         self.lock = threading.Lock()
 
     def level(self, level):
@@ -232,17 +233,29 @@ class DetailSource:
                 image = self.levels[k]
             return image
 
-    def dehaze_context(self, edits, backend, proxy, proxy_scale):
+    def tone_context(self, edits, proxy):
+        """Process 2 local tone mapping of the preview, shared by every level (1.6.0)."""
+        a = edits['adjustments']
+        if engine.process_version(edits) != 2 or not tone.needs_context(a):
+            return None
+        key = engine._key(edits.get('wb_gain'), edits.get('white_balance'), edits.get('retouch'),
+                          edits.get('develop'), a.get('temperature'), a.get('tint'), lens.key(edits.get('lens')))
+        with self.lock:
+            if key not in self.tones:
+                self.tones = {key: engine.tone_context_for(proxy, edits)}
+            return self.tones[key]
+
+    def dehaze_context(self, edits, backend, proxy, proxy_scale, tone_context=None):
         """Dehaze statistics of the preview, shared by every level so all zooms match it."""
         a = edits['adjustments']
         key = engine._key(edits.get('wb_gain'), edits.get('white_balance'), edits.get('retouch'),
                           edits.get('develop'), {k: a.get(k, 0) for k in engine.TONAL_KEYS},
                           a.get('denoise', 0), a.get('color_noise', 0), a.get('dehaze', 0), backend.gpu_pointwise,
-                          lens.key(edits.get('lens')))
+                          lens.key(edits.get('lens')), engine.process_version(edits))
         with self.lock:
             if key not in self.contexts:
                 self.contexts.clear()
-                self.contexts[key] = engine.dehaze_context_for(proxy, edits, backend, proxy_scale)
+                self.contexts[key] = engine.dehaze_context_for(proxy, edits, backend, proxy_scale, tone_context)
             return self.contexts[key]
 
 
@@ -258,9 +271,11 @@ def render(holder, request, cancel):
     height, width = source.shape[:2]
     frame_width, frame_height = engine.display_size(edits, (width, height), final)
     detail_scale = width / holder.full.shape[1]
-    context = None
-    if any(kind == 'edited' for kind, _, _ in request['blocks']) and edits['adjustments'].get('dehaze', 0) > 0:
-        context = holder.dehaze_context(edits, backend, request['proxy'], request['proxy_scale'])
+    context = local = None
+    if any(kind == 'edited' for kind, _, _ in request['blocks']):
+        local = holder.tone_context(edits, request['proxy'])
+        if edits['adjustments'].get('dehaze', 0) > 0:
+            context = holder.dehaze_context(edits, backend, request['proxy'], request['proxy_scale'], local)
     results, pixels = [], 0
     for kind, key, (tx0, ty0, tx1, ty1) in request['blocks']:
         check()
@@ -269,7 +284,7 @@ def render(holder, request, cancel):
         block = None
         if x0 < x1 and y0 < y1:
             block = engine.render_display(source, edits, backend, (x0, y0, x1, y1), final, detail_scale,
-                                          kind, context, check)
+                                          kind, context, check, local)
             pixels += block.shape[0] * block.shape[1]
         tiles = {}
         for ty in range(ty0, ty1):

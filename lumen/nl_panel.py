@@ -620,14 +620,14 @@ class NaturalLanguageMixin:
             plan.notes.append(tr('正在进行其他识别，区域蒙版未创建'))
             plan.regions = []
             return self.nl_finish(nl_edit.attach_regions(plan, []))
-        from . import develop, selection
+        from . import selection
         self.work.begin(A.SELECTION)
-        token, source, profile = self.document_token, self.source, self.edits['develop'].copy()
+        token, source, profile = self.document_token, self.source, copy.deepcopy(self.edits)
         cuda = self.backend_combo.currentIndex() == 0
         kinds = [kind for kind, _ in plan.regions]
         self.nl_status.setText(tr('正在本地识别') + tr('、').join(tr(nl_edit.REGIONS[k][0]) for k in kinds) + '…')
         def work():
-            rgb = engine.to_srgb(develop.apply(source, profile)).clip(0, 1)
+            rgb = engine.develop_view(source, profile)
             alphas = []
             for kind in kinds:
                 alpha, _ = selection.automatic(rgb, kind, cuda)

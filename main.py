@@ -47,6 +47,11 @@ if __name__ == '__main__':
     import multiprocessing
     # The frozen app re-enters here to start the AI worker process (spawn).
     multiprocessing.freeze_support()
+    # 1.6.0: lumen-cli.exe (the console build of this script) and ``main.py --cli`` run the command line.
+    from pathlib import Path as _Path
+    if _Path(sys.executable).stem.lower() == 'lumen-cli' or sys.argv[1:2] == ['--cli']:
+        from lumen.cli import main as cli
+        raise SystemExit(cli(sys.argv[2:] if sys.argv[1:2] == ['--cli'] else sys.argv[1:]))
     if len(sys.argv)>=3 and (sys.argv[1] in ('--merge-test','--workflow-test','--release-test') or (len(sys.argv)==4 and sys.argv[1]=='--smoke-test')):
         # Windowed PyInstaller builds have no Python stderr even when the process
         # handles are redirected. Persist diagnostic failures, including native

@@ -14,7 +14,7 @@ a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)],
     binaries=raw_binaries + ort_binaries + winml_binaries,
     datas=[(str(root / 'assets'), 'assets'), (str(root / 'lumen' / 'locales'), 'lumen/locales')] + raw_data + ort_data + winml_data + collect_data_files('tifffile'),
-    hiddenimports=raw_hidden + ort_hidden + winml_hidden + ['PIL.ImageCms', 'PySide6.QtMultimedia'],
+    hiddenimports=raw_hidden + ort_hidden + winml_hidden + ['PIL.ImageCms', 'PySide6.QtMultimedia', 'PySide6.QtNetwork'],
     excludes=['cupy', 'torch', 'torchvision', 'onnx', 'sympy'], noarchive=False,
 )
 if os.name == 'nt':
@@ -27,4 +27,8 @@ pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='LumenRAW',
           debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
           console=False, disable_windowed_traceback=False, icon=str(root/'assets/lumen.ico'))
-coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name='LumenRAW')
+# 1.6.0: the same program as a console executable: the command line and the MCP server (stdio).
+cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name='lumen-cli',
+          debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
+          console=True, icon=str(root/'assets/lumen.ico'))
+coll = COLLECT(exe, cli, a.binaries, a.datas, strip=False, upx=False, name='LumenRAW')

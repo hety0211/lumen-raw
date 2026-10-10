@@ -621,8 +621,11 @@ def fill_zoom(terms, width, height):
     return low
 
 
-def apply(source, settings, area=None, out=None):
-    """Corrected frame, or its block ``area`` (``engine.Area`` of the whole frame)."""
+def apply(source, settings, area=None, out=None, floor=0.):
+    """Corrected frame, or its block ``area`` (``engine.Area`` of the whole frame).
+
+    Bicubic resampling overshoots near edges; ``floor`` limits the result (process 1).  Process
+    2 passes None: its unclipped decode carries colours outside sRGB as negative values (1.6.0)."""
     terms = effective(settings)
     if terms is None:
         if area is None:
@@ -662,7 +665,8 @@ def apply(source, settings, area=None, out=None):
                                              (my - sy0).astype(np.float32), cv2.INTER_CUBIC,
                                              borderMode=cv2.BORDER_REPLICATE)
                                    for c, (mx, my) in enumerate(maps)], axis=2)
-            np.maximum(result, 0, out=result)
+            if floor is not None:
+                np.maximum(result, floor, out=result)
         else:
             result = np.array(source[top:bottom, x0:x1], np.float32)
         if gain is not None:
@@ -675,8 +679,8 @@ class CorrectedView:
     """Blocks of the corrected frame on demand, for block renders that read around their area
     (retouching, neighbourhood tools) without correcting the whole original."""
 
-    def __init__(self, source, settings):
-        self.source, self.settings = source, settings
+    def __init__(self, source, settings, floor=0.):
+        self.source, self.settings, self.floor = source, settings, floor
         self.shape, self.dtype = source.shape, np.float32
 
     def __getitem__(self, index):
@@ -685,18 +689,22 @@ class CorrectedView:
         y0, y1, _ = rows.indices(height)
         x0, x1, _ = columns.indices(width)
         from .engine import Area
-        return apply(self.source, self.settings, Area(width, height, x0, y0, x1, y1))
+        return apply(self.source, self.settings, Area(width, height, x0, y0, x1, y1), floor=self.floor)
+
+
+def _floor(edits):
+    return None if edits.get('process', 1) == 2 else 0.
 
 
 def correct(source, edits):
     """Whole corrected frame for ``edits`` (``source`` itself when no correction is active)."""
     settings = edits.get('lens')
-    return apply(source, settings) if active(settings) else source
+    return apply(source, settings, floor=_floor(edits)) if active(settings) else source
 
 
 def view(source, edits):
     settings = edits.get('lens')
-    return CorrectedView(source, settings) if active(settings) else source
+    return CorrectedView(source, settings, _floor(edits)) if active(settings) else source
 
 
 def validate(data):

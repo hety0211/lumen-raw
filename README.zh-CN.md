@@ -6,7 +6,7 @@
 
 LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows 和 Apple 芯片 Mac，无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。打开、调色、镜头校正、AI 降噪 / 超分 / 蒙版和导出全部在本机离线完成；只有你主动使用云端大模型修图时，才会联网发送指令和参数。
 
-当前版本 **1.5.2**（Windows 2026-10-05，macOS 2026-10-08）。
+当前版本：Windows **1.6.0**（2026-10-10），macOS **1.5.2**（2026-10-08）。
 
 ![LUMEN RAW 1.5.1 界面：右侧「裁切·镜头」面板按 EXIF 识别出尼康 Z 14-24mm f/2.8 S，并校正了畸变、暗角和横向色差](docs/screenshots/lens.png)
 
@@ -16,14 +16,14 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 
 | 系统 | 下载 | 要求 |
 |---|---|---|
-| Windows | [`LumenRAW-1.5.2-Setup.exe`（安装版）或 `LumenRAW-1.5.2-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2) | Windows 10 22H2 / Windows 11，x64 |
+| Windows | [`LumenRAW-1.6.0-Setup.exe`（安装版）或 `LumenRAW-1.6.0-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.6.0) | Windows 10 22H2 / Windows 11，x64 |
 | macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
 
-两个平台功能相同，工程（`.lumen`）和选片集（`.lumenalbum`）格式也相同。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
+1.6.0 目前只有 Windows 版：处理版本 2、评级和 AI 助手接入暂不包含在 Mac 版 1.5.2 中，1.6.0 保存的工程（`.lumen`）和选片集（`.lumenalbum`）也无法在 1.5.2 中打开；1.5.2 及更早的工程两边通用。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **Windows**
 
-- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 1.5.1。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
+- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 1.5.2。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
 - **便携版：** 解压后运行 `LumenRAW-Windows\LumenRAW.exe`。`_internal` 文件夹必须留在 exe 旁边。便携版的界面语言默认跟随系统。
 - 两种包都自带 Python 运行环境、ExifTool、字体、九个 AI 模型、语音识别模型和 lensfun 镜头数据库，可完全离线使用。
 
@@ -37,6 +37,9 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 
 ## 主要功能
 
+- **场景参考色彩（1.6.0）：** 新的处理版本 2：RAW 解码不再截断色域，曝光、白平衡与亮部／暗部在线性光下计算（亮部／暗部为不产生光晕的局部色调映射），饱和度、八色混合器与色彩分级在 OkLCh 中计算，超出 sRGB 的颜色保持色相与明度压缩。旧工程画面不变。见下方[色彩与处理版本](#色彩与处理版本)。
+- **图库评级（1.6.0）：** 星级、留用／排除旗标、色标，按 Lightroom 的快捷键操作，带字段筛选；自动保存，可与 XMP 互通，可导入 Lightroom 目录中的评级。见下方[评级与筛选](#评级与筛选)。
+- **AI 助手与命令行（1.6.0）：** Claude Code、Codex、WorkBuddy 等本地 AI 助手通过 MCP 直接操作 LUMEN RAW（窗口中可见、可撤销）；`lumen-cli` 命令行可批量出图。见下方[AI 助手（MCP）与命令行](#ai-助手mcp与命令行)。
 - **镜头校正（1.5.1）：** 按 EXIF 自动识别镜头，用开源 lensfun 数据库校正畸变、暗角和横向色差（边缘紫边／绿边）。见下方[镜头校正](#镜头校正)。
 - **九种界面语言（1.5.1）：** 顶部菜单「语言 / Language」随时切换，安装程序也提供同样的九种语言。
 - **一句话修图（1.5）：** 输入或说出想要的效果，你选择的本地或云端大模型返回参数，LUMEN RAW 直接应用，一步即可撤销。见下方[自然语言修图](#自然语言修图)。
@@ -86,6 +89,70 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 - **用量：** 每次修图后状态栏显示 token 用量，一次约 2,400 个。实测 DeepSeek（deepseek-flash）测试连接 1 次 + 修图 1 次共 2,486 个 token，花费不到 ¥0.01。附带预览图、多轮对话或换用其他模型时会有变化，以服务商账单为准。
 - **语音：** 点「语音」或按 `Ctrl+Shift+Space`（Mac 为 `⌘⇧Space`）说话，停顿约 1 秒自动结束，识别后自动修图（可在设置中关闭）。识别使用随包的 SenseVoice-Small 模型，在本机离线运行，支持中文、英文和中英混说，6 秒语音约 0.1 秒识别完成。
 
+## 色彩与处理版本
+
+1.6.0 新打开的照片使用 **处理版本 2（场景参考）**；1.6.0 之前保存的工程、选片集仍为处理版本 1，画面与旧版一致。「光影」面板“显影起点”下方显示当前照片的处理版本，旧工程可点「升级」改用版本 2（数值不变、画面会变，可撤销）。
+
+- **不截断的解码：** LibRaw 只做白平衡和去马赛克，相机色彩到 sRGB 的矩阵在浮点中计算，超出 sRGB 的颜色（日落、花、霓虹）保留到最后再处理。
+- **线性光中的光影：** 曝光、冷暖／色调、亮部／暗部／白色／黑色在显影曲线之前计算，显影曲线（相机参考或线性）作为色调映射按亮度作用。调低曝光或亮部时，相机曲线压缩在高光里的层次可以拉回来。
+- **局部色调映射：** 亮部／暗部按边缘感知的“基底亮度”调整（对数亮度的快速导向滤波），天空、阴影内部的纹理保持原有反差，强边缘不产生光晕，大幅压高光时画面不再发灰。
+- **OkLCh 调色：** 饱和度、自然饱和度、八色混合器、黑白与色彩分级在感知均匀的 OkLCh 中计算：给蓝天加饱和度不偏紫、不改变明度；黑白保留感知明度；分级只改色彩不改明度，黑白照片也能分级。
+- **高光肩部与色域映射：** 相机参考显影在接近白色处接上滤镜式（filmic）肩部，推过白色的亮度平滑过渡到白；超出 sRGB 的颜色保持色相，主要减少色度（过亮的饱和色略降明度），代替逐通道截断。
+- Windows 上处理版本 2 由 DirectML 运行，RX 9070 XT 上 1600 像素预览约 50–60 ms；CPU 模式约 0.65 秒。
+
+![同一张 CC0 样片加饱和度：左为处理版本 1，天空变暗并偏紫；右为处理版本 2，色相与明度不变](docs/screenshots/process2-sky.jpg)
+
+![曝光 +1.2：左为处理版本 1，番茄高光逐通道截断成平涂的红块；右为处理版本 2，肩部压缩与色域映射保留立体感](docs/screenshots/process2-highlights.jpg)
+
+## 评级与筛选
+
+![LUMEN RAW 1.6.0：底部图集的缩略图上显示星级、留用旗标、排除标记与色标，工具栏有星级、旗标、色标与筛选；状态栏为 AI 助手刚完成的一步调整](docs/screenshots/library.png)
+
+底部图集的工具栏和缩略图：
+
+| 操作 | 按键 |
+|---|---|
+| 0–5 星 | `0`–`5` |
+| 留用 / 排除 / 取消旗标 | `P` / `X` / `U` |
+| 红 / 黄 / 绿 / 蓝色标（再按一次取消） | `6` / `7` / `8` / `9` |
+
+- 作用于图集中选中的照片（没有选中时为当前照片）；右键菜单和「图库」菜单中也有同样的操作。
+- **自动保存：** 评级保存在数据目录的 `catalog.jsonl` 中，是只追加的操作日志：每次修改立即写入磁盘，崩溃也不会丢失，不需要保存。选片集同时带上评级，便于在另一台电脑上打开。
+- **筛选：** 快速筛选（已留用、未排除、★3 以上……）或输入带字段的条件：`rating>=3 -flag:reject label:red name:DSC0* ext:arw folder:2024 edited`（前加 `-` 表示排除，多个条件同时满足）。
+- **XMP：** 导入照片时读取 XMP 附属文件（`照片名.xmp`）或内嵌 XMP 中的星级和色标，Lightroom、Bridge 和相机写下的评级会直接出现。「图库」菜单可把评级写入 XMP 附属文件，或开启“评级变化时自动写入”（默认关闭）。只写附属文件，原片不会被修改；“排除”按 Lightroom 的方式写为 Rating −1。
+- **从 Lightroom 迁移：** 「图库 → 导入 Lightroom 目录中的评级…」只读打开 Lightroom Classic 的 `.lrcat`，导入星级、留用／排除和色标（虚拟副本跳过），可选把找到的照片加入图集。
+
+## AI 助手（MCP）与命令行
+
+LUMEN RAW 的所有操作都是带稳定 id 和 JSON 参数的“命令”（`edit.apply`、`library.rate`、`photo.export`……）。界面的评级、命令面板（`Ctrl+K`）、命令行和 MCP 服务走同一个入口。
+
+**让 AI 助手操作 LUMEN RAW：** 「帮助 → AI 助手接入（MCP）」中有现成的配置，可直接复制：
+
+```
+claude mcp add lumen-raw -- "%LOCALAPPDATA%\Programs\LUMEN RAW\lumen-cli.exe" mcp
+codex mcp add lumen-raw -- "%LOCALAPPDATA%\Programs\LUMEN RAW\lumen-cli.exe" mcp
+```
+
+WorkBuddy、Claude Desktop 等其他客户端使用 JSON 配置（`"command"` 为 `lumen-cli.exe` 的完整路径，`"args": ["mcp"]`）。之后可以对助手说“把这个文件夹里三星以上的照片按金色时刻预设处理，天空压暗一点，导出到桌面”。
+
+- **LUMEN RAW 打开时：** 助手通过本地控制通道（只有当前用户能连接的命名管道）在窗口中操作，每一步都显示出来，`Ctrl+Z` 即可撤销；状态栏和「AI 助手接入」窗口列出最近的操作，可在该窗口关闭窗口控制。
+- **LUMEN RAW 未打开时：** 助手在后台独立打开、调整、渲染和导出照片，照片旁的同名 `.lumen` 工程会被沿用；保存工程或导出前不会写任何文件。
+- **工具：** 打开照片、读取／应用调整（与自然语言修图同一套参数，含天空、主体等 AI 区域蒙版）、撤销／重做、自动色调、预设、复制调色、星级／旗标／色标、渲染预览（把 JPEG 图像交给助手查看）、导出、批量导出、保存工程等 25 个。
+- **协议：** stdio，支持 MCP 2026-07-28（无握手）和 2024-11-05 至 2025-11-25（`initialize` 握手）。
+
+**命令行：**
+
+```
+lumen-cli render DSC0001.ARW out.jpg --size 2560 --preset 金色时刻 --set exposure=0.3 --set hsl.blue.saturation=20
+lumen-cli render 旅行.lumen out.tif
+lumen-cli rate *.ARW 4
+lumen-cli list "rating>=3 -flag:reject"
+lumen-cli run edit.apply "{\"changes\": {\"adjustments\": {\"highlights\": -40}}}"
+lumen-cli commands
+```
+
+`run` 在 LUMEN RAW 打开时在窗口中执行（加 `--headless` 则始终在后台）。结果为 JSON；从源码运行时用 `python main.py --cli …`。
+
 ## 界面语言
 
 - 顶部菜单「语言 / Language」可选：简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский。选择后提示重新启动，未保存的编辑会先询问保存。
@@ -111,6 +178,8 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 | 确认裁切 / 退出白平衡吸管 | `Enter` / `Esc` | `Enter` / `Esc` |
 | 仿制图章取样 | `Alt` + 单击 | `Option` + 单击 |
 | 平移 / 缩放 | 中键拖动 / 滚轮 | 双指滑动 / 捏合或滚轮 |
+| 星级 / 旗标 / 色标 | `0`–`5` / `P` `X` `U` / `6`–`9` | 同左 |
+| 命令面板 | `Ctrl+K` | `⌘K` |
 
 ## GPU 加速
 
@@ -133,6 +202,7 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 | 日志 | `%LOCALAPPDATA%\LUMEN RAW\logs` | `~/Library/Logs/LUMEN RAW` |
 | 界面语言、镜头校正默认值（`settings.ini`），自然语言设置，GPU 兼容记录 | `%LOCALAPPDATA%\LUMEN RAW` | `~/Library/Application Support/LUMEN RAW` |
 | API Key | 设置文件中，DPAPI 加密 | 登录钥匙串（“LUMEN RAW”） |
+| 评级目录（`catalog.jsonl`），命令行日志 | `%LOCALAPPDATA%\LUMEN RAW` | `~/Library/Application Support/LUMEN RAW` |
 
 - 原片始终只读。编辑步骤保存在 `.lumen` / `.lumenalbum` 中；AI 和合成结果另存为新的 DNG 文件。从图集“删除”只是移出图集，不会删除磁盘上的文件。
 - 只有两种情况会联网：你使用云端模型修图时，以及 Windows 第一次下载 TensorRT for RTX 组件时。从源码运行时，首次恢复资源也需要下载。镜头数据库随包提供，识别镜头不联网。
@@ -151,7 +221,7 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
   - 每张照片最多 32 个蒙版、500 个修复笔划。
 - **色彩：** 8 位输入按 ICC 转换到 sRGB，16 位 PNG / TIFF 按 sRGB 处理。没有相机色彩配置文件或显示器软打样。完全过曝的区域不保证能恢复。
 - **界面语言：** 切换语言需要重新启动。简体中文以外的译文由开发者完成，欢迎母语用户指正用词。
-- **不支持：** 不读取 Lightroom 目录或 XMP 预设。导出不完整复制原片的 EXIF / GPS。
+- **不支持：** 不读取 Lightroom 的显影设置或 XMP 预设（只导入评级、旗标和色标）。导出不完整复制原片的 EXIF / GPS。
 - **已实测机型：** Sony A7 III、A7R V，Canon EOS R、R5 Mark II、Rebel SL1，Nikon Z 6、Z8、Z50 II、Z5 II，Fujifilm X-T2，Panasonic DC-S1。其他机型和压缩方式以 LibRaw 的支持范围为准。
 
 ## 从源码运行
@@ -195,7 +265,7 @@ cd lumen-raw
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **测试：** 1.5.2 的回归测试在 Windows 上 328 项通过、11 项跳过（macOS 专属等），在 macOS 上 335 项通过、4 项跳过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
+- **测试：** 1.6.0 的回归测试在 Windows 上 356 项通过、11 项跳过（macOS 专属等）；1.5.2 在 macOS 上 335 项通过、4 项跳过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 - **界面翻译：** 代码中的界面文字为简体中文原文，经 `tr()` 查找 `lumen/locales/<语言>.json`；`python tools/i18n_catalog.py` 检查各语言的缺漏和占位符。新增界面文字后请同时补充各语言的译文。
 - **Windows 发布构建：** `build-release.cmd` 依次执行测试、DirectML 检查、便携版 ZIP 和 Inno Setup 安装包。
 - **macOS 发布构建：** `./build-macos.command` 依次执行测试、Metal / Core ML 自检、PyInstaller、临时签名、冒烟测试和 DMG，输出在 `.publish/v<版本>/macos/`。

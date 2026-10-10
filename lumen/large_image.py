@@ -1,5 +1,6 @@
 """Bounded-memory image buffers and strip encoding for up to 400 megapixels."""
 import os,shutil,sys,tempfile,weakref
+import cv2
 from pathlib import Path
 import numpy as np
 from .i18n import tr
@@ -111,10 +112,10 @@ def fits_in_memory(shape):
 
 def process(source,edits,backend,apply_crop,detail_scale,cache=None):
     """Stream point operations. Spatial edits retain the original whole-image math."""
-    from . import engine,lens
+    from . import engine,lens,tone
     if lens.active(edits.get('lens')):
         # 1.5.1: correct the lens once (disk-backed for large frames), then process without it.
-        source=lens.apply(source,edits['lens'])
+        source=lens.correct(source,edits)
         edits=dict(edits,lens=dict(edits['lens'],enabled=False))
     a=edits['adjustments']
     spatial=any(a[k] for k in ('dehaze','clarity','texture','sharpness','denoise','color_noise'))
@@ -127,6 +128,14 @@ def process(source,edits,backend,apply_crop,detail_scale,cache=None):
             raise ValueError(tr('当前空间类编辑预计需要约 {v:.1f} GB 可用内存。可先裁切、关闭质感／蒙版／修复，或在内存更大的电脑处理。4 亿像素的基础调色、AI 副本和 DNG 导出使用分块缓存。', v=required/2**30))
         return engine.process(source,edits,backend,apply_crop,detail_scale,_stream=False,cache=cache)
     output=allocate(source.shape)
-    for y,block in strips(source):
-        output[y:y+len(block)]=engine.process(block,edits,backend,False,detail_scale,_stream=False)
+    if engine.process_version(edits)==2 and tone.needs_context(a):
+        # 1.6.0: local tone mapping reads the whole frame once, at its low resolution.
+        h,w=source.shape[:2];ratio=min(1.,tone.CONTEXT_EDGE/max(h,w))
+        small=cv2.resize(source,(max(1,round(w*ratio)),max(1,round(h*ratio))),interpolation=cv2.INTER_AREA) if ratio<1 else np.asarray(source)
+        context=tone.context(small*engine._gain(edits),a)
+        for y in range(0,h,STRIP_ROWS):
+            output[y:y+STRIP_ROWS]=engine.process_region(source,edits,backend,(0,y,w,min(h,y+STRIP_ROWS)),detail_scale,tone_context=context)
+    else:
+        for y,block in strips(source):
+            output[y:y+len(block)]=engine.process(block,edits,backend,False,detail_scale,_stream=False)
     return transform(output,edits) if apply_crop else output

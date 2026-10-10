@@ -102,8 +102,12 @@ def test_full_size_decode_and_thumbnail_use_the_same_paths():
     from lumen import library
     need(Z50II_LOSSLESS)
     need(HIGH_EFFICIENCY[1])
-    full, info = engine.load_image(Z50II_LOSSLESS, None)
+    full, info = engine.load_image(Z50II_LOSSLESS, None, clip=True)
     assert full.shape == (3728, 5600, 3) and full.dtype == np.float32 and 0 <= full.min() and full.max() <= 1
+    # 1.6.0: without clip, colours outside sRGB stay (process 2 maps them later).
+    unclipped, _ = engine.load_image(Z50II_LOSSLESS, None)
+    assert np.isfinite(unclipped).all() and unclipped.min() < 0
+    np.testing.assert_allclose(np.clip(unclipped, 0, 1), full, atol=1e-6)
     embedded, _ = engine.load_image(HIGH_EFFICIENCY[1], None)
     assert embedded.shape == (3712, 5568, 3)
     assert library.thumbnail(HIGH_EFFICIENCY[1]).shape == (80, 120, 3)

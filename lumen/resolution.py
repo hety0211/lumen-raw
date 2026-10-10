@@ -65,9 +65,9 @@ class ResolutionMixin:
     def preview_original(self):
         """Developed original at preview size for comparison and luminance masks, cached per photo
         and develop settings instead of being recomputed on every display update (1.4.0)."""
-        key = (self.document_token, engine._key(self.edits.get('develop', {})))
+        key = (self.document_token, engine._key(self.edits.get('develop', {}), engine.process_version(self.edits)))
         if self._original[0] != key:
-            self._original = (key, np.clip(engine.to_srgb(develop.apply(self.source, self.edits['develop'])), 0, 1))
+            self._original = (key, engine.develop_view(self.source, self.edits))
         return self._original[1]
 
     def preview_reference(self):
@@ -75,17 +75,17 @@ class ResolutionMixin:
         lens_key = lens.key(self.edits.get('lens'))
         if lens_key is None:
             return self.preview_original()
-        key = (self.document_token, engine._key(self.edits.get('develop', {}), lens_key))
+        key = (self.document_token, engine._key(self.edits.get('develop', {}), lens_key, engine.process_version(self.edits)))
         if self._reference[0] != key:
-            corrected = lens.apply(self.source, self.edits['lens'])
-            self._reference = (key, np.clip(engine.to_srgb(develop.apply(corrected, self.edits['develop'])), 0, 1))
+            self._reference = (key, engine.develop_view(lens.correct(self.source, self.edits), self.edits))
         return self._reference[1]
 
     def detail_keys(self):
         final = self.final_view.isChecked()
         geometry = [self.edits.get('crop'), self.edits.get('straighten', 0), self.edits.get('rotation', 0)] if final else None
         return {'edited': (self.document_token, self.generation, final),
-                'original': (self.document_token, engine._key(self.edits.get('develop', {}), geometry), final)}
+                'original': (self.document_token, engine._key(self.edits.get('develop', {}), geometry,
+                                                              engine.process_version(self.edits)), final)}
 
     def wanted_kinds(self):
         if self.comparing:
