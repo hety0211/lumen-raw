@@ -1252,7 +1252,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             engine.export_image(path, result, quality, photo=photo)
             return result.shape, backend
         def success(result):
-            self.export_dialog.reset()
+            self.close_export_dialog()
             self.work.end(A.EXPORTING)
             self.open_button.setEnabled(True)
             self.export_button.setEnabled(True)
@@ -1260,7 +1260,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.statusBar().showMessage(tr('导出完成 · {width} × {height} · {backend} · {path}', width=shape[1], height=shape[0], backend=backend, path=path))
             QMessageBox.information(self, tr('导出完成'), tr('已保存：\n{path}\n\n{width} × {height} 像素\n{backend}', path=path, width=shape[1], height=shape[0], backend=backend))
         def failed(text):
-            self.export_dialog.reset()
+            self.close_export_dialog()
             self.work.end(A.EXPORTING)
             self.open_button.setEnabled(True)
             self.export_button.setEnabled(True)
@@ -1269,6 +1269,12 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             else:
                 self.error(tr('导出失败：\n') + text)
         self.job(work, success, failed)
+
+    def close_export_dialog(self):
+        """With autoClose off, reset() alone leaves the window-modal progress dialog open over the editor."""
+        self.export_dialog.reset()
+        self.export_dialog.hide()
+        self.export_dialog.deleteLater()
 
     def update_export_progress(self, value, text):
         if self.work.active(A.EXPORTING) and not self.export_cancel.is_set():

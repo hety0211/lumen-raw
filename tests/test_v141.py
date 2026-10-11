@@ -88,7 +88,7 @@ def _wait(predicate, timeout=60):
 
 def test_batch_export_uses_each_photos_edits_and_never_overwrites(tmp_path, monkeypatch):
     from PIL import Image
-    from PySide6.QtWidgets import QMessageBox, QDialog
+    from PySide6.QtWidgets import QMessageBox, QDialog, QProgressDialog
     from lumen import batch_export
     from lumen.app import MainWindow
     _app()
@@ -127,6 +127,7 @@ def test_batch_export_uses_each_photos_edits_and_never_overwrites(tmp_path, monk
     # Only the first photo (opened and edited) carries +1 EV.
     assert brightness['照片0-Lumen.jpg'] > brightness['照片1-Lumen-2.jpg'] + 20
     assert messages and '已导出 3 张' in messages[-1]
+    assert not [d for d in w.findChildren(QProgressDialog) if d.isVisible()]
     w.saved_edits = copy.deepcopy(w.edits)
     for document in w.documents.values():
         document['saved_edits'] = copy.deepcopy(document['edits'])

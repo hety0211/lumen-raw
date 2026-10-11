@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 from PySide6.QtCore import Qt, QPoint, QPointF
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QProgressDialog
 from lumen.app import MainWindow, STYLE
 from lumen import model, engine
 
@@ -126,6 +126,9 @@ def test_project_reopen_and_export(window, tmp_path):
     w.start_export(str(output), 2)
     wait_until(lambda: not w.exporting)
     assert output.exists() and Path(w.source_path).read_bytes() == before
+    # The window-modal progress dialog must close with the export, not linger over the editor.
+    assert not [d for d in w.findChildren(QProgressDialog) if d.isVisible()]
+    assert QApplication.activeModalWidget() is None
     with Image.open(output) as img:
         assert img.size == (384, 576)
 
@@ -263,6 +266,7 @@ def test_kelvin_ui_baseline_restore_and_export_cancel(window,tmp_path):
     w.export_cancel.set()
     wait_until(lambda: not w.exporting)
     assert not output.exists() and not list(tmp_path.glob('*.lumen-tmp*'))
+    assert not [d for d in w.findChildren(QProgressDialog) if d.isVisible()]
 
 
 def test_neural_preview_dialog_works_offline(window):

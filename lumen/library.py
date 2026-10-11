@@ -213,7 +213,7 @@ class LibraryMixin:
         self.statusBar().showMessage(tr('正在批量导出 {n_items} 张照片…', n_items=len(items)))
         cancel=self.export_cancel
         def finish():
-            self.export_dialog.reset()
+            self.close_export_dialog()
             self.work.end(A.EXPORTING)
             self.open_button.setEnabled(True)
             self.export_button.setEnabled(self.source is not None)
