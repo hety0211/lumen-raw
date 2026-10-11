@@ -34,7 +34,8 @@ TABLE = 65537                     # samples of the tone map over scene luminance
 HEADROOM = 4.                     # two stops above white: the shoulder's range
 SHOULDER = .92                    # display level where the camera curve hands over to the shoulder
 CONTEXT_EDGE = 512                # long edge of the local tone-mapping grid
-CONTEXT_EPS = .2                  # guided-filter ε in stops²: steps above ~0.45 stop are kept
+CONTEXT_EPS = .05                 # guided-filter ε in stops²: steps above ~0.22 stop are kept
+                                  # (1.6.1; 0.2 left a faint halo, ~7/255, beside 1–2 stop edges)
 FLOOR = 2. ** -16                 # luminance floor for log2
 
 

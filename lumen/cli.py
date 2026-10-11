@@ -111,7 +111,8 @@ def render(args):
         target[key] = _value(value)
     if changes:
         run('edit.apply', changes=changes)
-    result = run('photo.export', output=args.output, quality=args.quality, long_edge=args.size, overwrite=args.overwrite)
+    result = run('photo.export', output=args.output, quality=args.quality, long_edge=args.size, overwrite=args.overwrite,
+                 metadata=not args.no_metadata, location=not args.no_location)
     return result
 
 
@@ -136,6 +137,8 @@ def main(argv=None):
                    help='edit value, e.g. exposure=0.3, highlights=-40, hsl.blue.saturation=20 (repeatable)')
     p.add_argument('--process', type=int, choices=(1, 2), help='process version')
     p.add_argument('--overwrite', action='store_true')
+    p.add_argument('--no-metadata', action='store_true', help="don't copy the original's EXIF / IPTC / XMP")
+    p.add_argument('--no-location', action='store_true', help='copy metadata without the GPS position')
     p = sub.add_parser('info', help='size, format and shooting data of a photo')
     p.add_argument('photo')
     p = sub.add_parser('list', help='library photos (editor open) or rated photos in the catalog')

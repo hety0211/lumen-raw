@@ -538,14 +538,19 @@ def render_preview(context, path=None, size=1024, original=False, output=None):
 
 
 FORMATS = {'.jpg': '.jpg', '.jpeg': '.jpg', '.png': '.png', '.tif': '.tif', '.tiff': '.tif', '.dng': '.dng'}
+#: 1.6.1 (GitHub issue #5): exports carry the original's metadata unless asked not to.
+METADATA = dict(type='boolean', description="Copy the original's EXIF, IPTC and XMP (camera, lens, date, "
+                "exposure, copyright, keywords, rating) into the file. Default true.")
+LOCATION = dict(type='boolean', description='With metadata: include the GPS position. Default true.')
 
 
 @command('photo.export', 'Export the edited photo at full resolution (JPEG, PNG, 16-bit TIFF or linear DNG).',
          dict(output=dict(type='string', description='Output file; the extension picks the format.'), path=PATH,
               quality=dict(type='integer', minimum=50, maximum=100), long_edge=dict(type='integer', minimum=16, maximum=20000),
-              overwrite=dict(type='boolean', description='Replace an existing output file (never the original).')),
+              overwrite=dict(type='boolean', description='Replace an existing output file (never the original).'),
+              metadata=METADATA, location=LOCATION),
          required=('output',), tool='export_photo')
-def photo_export(context, output, path=None, quality=92, long_edge=None, overwrite=False):
+def photo_export(context, output, path=None, quality=92, long_edge=None, overwrite=False, metadata=True, location=True):
     from . import batch_export
     path = _target(context, path)
     output = Path(output).expanduser().resolve()
@@ -561,12 +566,16 @@ def photo_export(context, output, path=None, quality=92, long_edge=None, overwri
     edits = context.edits(path)
     results = batch_export.run([(path, edits, context.initialized(path))],
                                dict(extension=FORMATS[output.suffix.lower()], long_edge=long_edge, quality=quality,
-                                    folder=str(output.parent), names={path: str(output)}),
+                                    folder=str(output.parent), names={path: str(output)}, metadata=metadata,
+                                    location=location),
                                context.backend(), lambda *_: None, _Never())
     _, target, error = results[0]
-    if error:
+    if not target:
         raise CommandError(error)
-    return dict(path=path, output=target)
+    result = dict(path=path, output=target)
+    if error:
+        result['metadata_error'] = error
+    return result
 
 
 class _Never:
@@ -577,9 +586,10 @@ class _Never:
 @command('photo.export_batch', 'Export several photos with their own edits into a folder (names <photo>-Lumen.<ext>, never overwriting).',
          dict(folder=dict(type='string'), paths=PATHS, query=dict(type='string', description='Library filter instead of paths.'),
               format=dict(type='string', enum=['jpg', 'png', 'tif', 'dng']), quality=dict(type='integer', minimum=50, maximum=100),
-              long_edge=dict(type='integer', minimum=16, maximum=20000)),
+              long_edge=dict(type='integer', minimum=16, maximum=20000), metadata=METADATA, location=LOCATION),
          required=('folder',), tool='export_photos')
-def photo_export_batch(context, folder, paths=None, query=None, format='jpg', quality=92, long_edge=None):
+def photo_export_batch(context, folder, paths=None, query=None, format='jpg', quality=92, long_edge=None,
+                       metadata=True, location=True):
     from . import batch_export
     if not Path(folder).expanduser().is_dir():
         raise CommandError(f'folder not found: {folder}')
@@ -592,9 +602,10 @@ def photo_export_batch(context, folder, paths=None, query=None, format='jpg', qu
     context.notify(f'export {len(targets)} photos')
     items = [(p, context.edits(p), context.initialized(p)) for p in targets]
     results = batch_export.run(items, dict(extension='.' + format, long_edge=long_edge, quality=quality,
-                                           folder=str(Path(folder).expanduser().resolve())),
+                                           folder=str(Path(folder).expanduser().resolve()), metadata=metadata,
+                                           location=location),
                                context.backend(), lambda *_: None, _Never())
-    return dict(exported=[dict(path=p, output=t) for p, t, e in results if t],
+    return dict(exported=[dict(path=p, output=t, **({'metadata_error': e} if e else {})) for p, t, e in results if t],
                 failed=[dict(path=p, error=e) for p, t, e in results if not t])
 
 

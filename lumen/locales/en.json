@@ -997,5 +997,11 @@
  "这个目录中没有评级、旗标或色标。": "This catalog has no ratings, flags or color labels.",
  "无星级": "No Stars",
  " · 筛选后 {n} 张": " · {n} after filtering",
- "无法读取 Lightroom 目录：": "Cannot read the Lightroom catalog: "
+ "无法读取 Lightroom 目录：": "Cannot read the Lightroom catalog: ",
+ "未能写入原片元数据：": "Could not write the original's metadata: ",
+ "{n} 张未能写入原片元数据（成片已导出）：": "{n} photos were exported without the original's metadata:",
+ "没有找到 ExifTool": "ExifTool not found",
+ "保留原片元数据（拍摄参数、版权、关键词）": "Keep the original's metadata (shooting data, copyright, keywords)",
+ "从原片复制 EXIF、IPTC 与 XMP：相机、镜头、拍摄时间与参数、版权、关键词与评级。原片的尺寸、方向、缩略图与 Lightroom 调整参数不复制。": "Copies EXIF, IPTC and XMP from the original: camera, lens, capture time and settings, copyright, keywords and rating. The original's size, orientation, thumbnail and Lightroom adjustments are not copied.",
+ "包含拍摄地点（GPS）": "Include the location (GPS)"
 }

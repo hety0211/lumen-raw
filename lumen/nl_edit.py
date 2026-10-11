@@ -982,7 +982,7 @@ def plan(edits, reply):
             if kind in ('linear', 'radial'):
                 _gradient(region, mask)
             else:
-                mask['feather'] = 10.
+                mask['feather'] = 3.
             _adjustments(values, mask['adjustments'])
             if not any(mask['adjustments'].values()):
                 continue

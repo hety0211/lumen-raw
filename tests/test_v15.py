@@ -663,3 +663,23 @@ def test_voice_instruction_is_recognized_and_sent(window, fake, tmp_path):
     wait_until(lambda: w.nl_plan is not None and not w.nl_busy, 30)
     assert '更暖' in w.nl_input.toPlainText() and w.edits['adjustments']['temperature'] == 15
     assert '更暖' in server.requests[-1][3]['messages'][-1]['content'][0]['text']
+
+
+def test_region_masks_are_found_on_the_lens_corrected_frame(window, fake, monkeypatch):
+    # Masks refer to the lens-corrected frame (1.5.1); the language path used the uncorrected
+    # one, so with corrections on its masks sat beside the subject's edges.
+    from lumen import engine, lens, selection
+    w = window
+    entry = lens.database().find('Nikon', 'Nikkor Z 14-24mm f/2.8 S')
+    w.edits['lens'] = {**lens.defaults(), 'enabled': True, 'profile': lens.solve(entry, 14, 4, 1000, 1.0)[0]}
+    seen = []
+    def automatic(rgb, kind, cuda=False):
+        seen.append(rgb.copy())
+        return np.ones(rgb.shape[:2], np.float32), 'stub'
+    monkeypatch.setattr(selection, 'automatic', automatic)
+    use_service(w, fake({'masks': [{'region': 'sky', 'adjustments': {'exposure': -.3}}]}))
+    w.nl_send('天空暗一点')
+    wait_until(lambda: not w.nl_busy and w.nl_plan is not None)
+    assert w.edits['masks'][-1]['kind'] == 'sky' and w.edits['masks'][-1]['feather'] == 3 and len(seen) == 1
+    np.testing.assert_allclose(seen[0], engine.develop_view(lens.correct(w.source, w.edits), w.edits), atol=1e-6)
+    assert not np.allclose(seen[0], engine.develop_view(w.source, w.edits), atol=1e-3)

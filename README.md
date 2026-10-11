@@ -6,7 +6,7 @@
 
 LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Opening, editing, lens corrections, AI denoising / super-resolution / masks and export all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing.
 
-Current version: Windows **1.6.0** (2026-10-10), macOS **1.5.2** (2026-10-08).
+Current version: Windows **1.6.1** (2026-10-12), macOS **1.5.2** (2026-10-08).
 
 ![LUMEN RAW 1.5.1 in English: the Crop · Lens panel has identified a Nikon Nikkor Z 14-24mm f/2.8 S from EXIF and corrects its distortion, vignetting and chromatic aberration](docs/screenshots/workspace-en.png)
 
@@ -16,14 +16,14 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 
 | System | Download | Requirements |
 |---|---|---|
-| Windows | [`LumenRAW-1.6.0-Setup.exe` (installer) or `LumenRAW-1.6.0-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.6.0) | Windows 10 22H2 / Windows 11, x64 |
+| Windows | [`LumenRAW-1.6.1-Setup.exe` (installer) or `LumenRAW-1.6.1-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.6.1) | Windows 10 22H2 / Windows 11, x64 |
 | macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
 
-1.6.0 is Windows only for now: process version 2, ratings and AI assistant access are not in the Mac build 1.5.2, and projects (`.lumen`) and albums (`.lumenalbum`) saved by 1.6.0 cannot be opened by 1.5.2; projects from 1.5.2 and earlier work on both. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+1.6 is Windows only for now: process version 2, ratings and AI assistant access are not in the Mac build 1.5.2, and projects (`.lumen`) and albums (`.lumenalbum`) saved by 1.6 cannot be opened by 1.5.2; projects from 1.5.2 and earlier work on both. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
-- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.5.2 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
+- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.6.0 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
 - **Portable:** extract and run `LumenRAW-Windows\LumenRAW.exe`. Keep the `_internal` folder next to the exe. The portable build follows the system language until you choose one.
 - Both include Python, ExifTool, fonts, the nine AI models, the speech model and the lensfun lens database, and work fully offline.
 
@@ -51,7 +51,7 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 - **Photo merging:** focus stacking, HDR stacking (Mertens exposure fusion with three deghosting levels) and panoramas up to 200 megapixels, from 2–32 photos.
 - **Culling and batches:** import many photos at once, multi-select in the filmstrip with Ctrl / Shift, copy the current edit to the selection, or batch-export JPEG / PNG / TIFF / DNG with an optional long-edge size.
 - **Large images:** 100% view of original pixels, rendering only what is on screen. Editing a zoomed 61-megapixel photo keeps GUI stalls to about 40 ms. Before / after, hold-for-original and clipping warnings.
-- **Watermarks and export:** four border styles with shooting information. Export JPEG / PNG (8-bit), TIFF (16-bit) and linear DNG (16-bit), up to 400 megapixels.
+- **Watermarks and export:** four border styles with shooting information. Export JPEG / PNG (8-bit), TIFF (16-bit) and linear DNG (16-bit), up to 400 megapixels, keeping the original's EXIF, IPTC and XMP (camera, lens, capture settings, copyright, keywords; GPS optional).
 
 ## Lens corrections
 
@@ -265,7 +265,7 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 1.6.0, 356 regression tests pass on Windows with 11 skipped (macOS-only and similar); for 1.5.2, 335 pass on macOS with 4 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 1.6.1, 363 regression tests pass on Windows with 11 skipped (macOS-only and similar); for 1.5.2, 335 pass on macOS with 4 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.

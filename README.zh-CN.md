@@ -6,7 +6,7 @@
 
 LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows 和 Apple 芯片 Mac，无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。打开、调色、镜头校正、AI 降噪 / 超分 / 蒙版和导出全部在本机离线完成；只有你主动使用云端大模型修图时，才会联网发送指令和参数。
 
-当前版本：Windows **1.6.0**（2026-10-10），macOS **1.5.2**（2026-10-08）。
+当前版本：Windows **1.6.1**（2026-10-12），macOS **1.5.2**（2026-10-08）。
 
 ![LUMEN RAW 1.5.1 界面：右侧「裁切·镜头」面板按 EXIF 识别出尼康 Z 14-24mm f/2.8 S，并校正了畸变、暗角和横向色差](docs/screenshots/lens.png)
 
@@ -16,14 +16,14 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 
 | 系统 | 下载 | 要求 |
 |---|---|---|
-| Windows | [`LumenRAW-1.6.0-Setup.exe`（安装版）或 `LumenRAW-1.6.0-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.6.0) | Windows 10 22H2 / Windows 11，x64 |
+| Windows | [`LumenRAW-1.6.1-Setup.exe`（安装版）或 `LumenRAW-1.6.1-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.6.1) | Windows 10 22H2 / Windows 11，x64 |
 | macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
 
-1.6.0 目前只有 Windows 版：处理版本 2、评级和 AI 助手接入暂不包含在 Mac 版 1.5.2 中，1.6.0 保存的工程（`.lumen`）和选片集（`.lumenalbum`）也无法在 1.5.2 中打开；1.5.2 及更早的工程两边通用。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
+1.6 目前只有 Windows 版：处理版本 2、评级和 AI 助手接入暂不包含在 Mac 版 1.5.2 中，1.6 保存的工程（`.lumen`）和选片集（`.lumenalbum`）也无法在 1.5.2 中打开；1.5.2 及更早的工程两边通用。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **Windows**
 
-- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 1.5.2。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
+- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 1.6.0。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
 - **便携版：** 解压后运行 `LumenRAW-Windows\LumenRAW.exe`。`_internal` 文件夹必须留在 exe 旁边。便携版的界面语言默认跟随系统。
 - 两种包都自带 Python 运行环境、ExifTool、字体、九个 AI 模型、语音识别模型和 lensfun 镜头数据库，可完全离线使用。
 
@@ -51,7 +51,7 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 - **照片合成：** 景深合成、HDR 堆栈（Mertens 曝光融合，三档去鬼影）、全景（最大 2 亿像素），每次 2–32 张。
 - **选片与批量：** 一次导入多张，底部图集 Ctrl / Shift 多选；可把当前调色套用到选中照片，或批量导出 JPEG / PNG / TIFF / DNG（可设长边尺寸）。
 - **大图查看：** 100% 显示原图像素，只渲染屏幕上看得见的部分；6100 万像素的照片放大调整时，界面最长停顿约 40 ms。支持前后对比、按住看原片和溢出提示。
-- **水印与导出：** 四种带拍摄参数的边框水印。导出 JPEG / PNG（8 位）、TIFF（16 位）、线性 DNG（16 位），最大 4 亿像素。
+- **水印与导出：** 四种带拍摄参数的边框水印。导出 JPEG / PNG（8 位）、TIFF（16 位）、线性 DNG（16 位），最大 4 亿像素，并保留原片的 EXIF、IPTC 与 XMP（相机、镜头、拍摄参数、版权、关键词；GPS 位置可选）。
 
 ## 镜头校正
 
@@ -265,7 +265,7 @@ cd lumen-raw
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **测试：** 1.6.0 的回归测试在 Windows 上 356 项通过、11 项跳过（macOS 专属等）；1.5.2 在 macOS 上 335 项通过、4 项跳过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
+- **测试：** 1.6.1 的回归测试在 Windows 上 363 项通过、11 项跳过（macOS 专属等）；1.5.2 在 macOS 上 335 项通过、4 项跳过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 - **界面翻译：** 代码中的界面文字为简体中文原文，经 `tr()` 查找 `lumen/locales/<语言>.json`；`python tools/i18n_catalog.py` 检查各语言的缺漏和占位符。新增界面文字后请同时补充各语言的译文。
 - **Windows 发布构建：** `build-release.cmd` 依次执行测试、DirectML 检查、便携版 ZIP 和 Inno Setup 安装包。
 - **macOS 发布构建：** `./build-macos.command` 依次执行测试、Metal / Core ML 自检、PyInstaller、临时签名、冒烟测试和 DMG，输出在 `.publish/v<版本>/macos/`。

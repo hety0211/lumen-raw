@@ -82,7 +82,8 @@ class AutoMaskMixin:
                 return
             self.commit()
             mask=model.new_mask(kind,len(self.edits['masks'])+1)
-            mask.update(raster=selection.encode(alpha),feather=10.)
+            # 1.6.1: network masks now follow the photo's edges; colour picks stay a hard flood fill.
+            mask.update(raster=selection.encode(alpha),feather=10. if kind=='color' else 3.)
             self.edits['masks'].append(mask)
             self.current_mask=len(self.edits['masks'])-1
             self.refresh()

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QFrame, QSplitter, QProgressDialog, QStatusBar, QSizePolicy)
 from . import engine, model, compute, host, i18n, __version__
 from .scheduler import Activity as A, Job, JobScheduler, JobSignals, WorkState, WorkStateAccess
-from .widgets import AdjustSlider, Canvas, CurveEditor, Histogram, TabStrip
+from .widgets import AdjustSlider, Canvas, CurveEditor, Histogram, TabStrip, WheelGuard
 from .studio import StudioMixin
 from .revision import RevisionMixin
 from .resolution import ResolutionMixin
@@ -233,6 +233,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.scheduler = JobScheduler(self.pool, self)
         self.scheduler.drained.connect(lambda: QTimer.singleShot(0, self.close))
         self.render_cache = engine.RenderCache()
+        # 1.6.1 (issue #6): the wheel scrolls panels without changing controls passing under the pointer.
+        WheelGuard.install(QApplication.instance())
         font =Path(__file__).resolve().parents[1] / 'assets' / 'NotoSansSC.ttf'
         if font.exists():
             QFontDatabase.addApplicationFont(str(font))
@@ -1201,9 +1203,10 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             path += ext
         if Path(path).resolve() == Path(self.source_path).resolve():
             return self.error(tr('请选择不同的文件名，以保留原片。'))
-        self.start_export(path, [1, 2, 4][dialog.scale.currentIndex()], dialog.model_choice(), dialog.quality.value())
+        self.start_export(path, [1, 2, 4][dialog.scale.currentIndex()], dialog.model_choice(), dialog.quality.value(),
+                          **dialog.metadata.options())
 
-    def start_export(self, path, scale=1, model_path='', quality=95):
+    def start_export(self, path, scale=1, model_path='', quality=95, metadata=True, location=True):
         if self.work.busy(A.AI):return
         if self.work.busy(A.SELECTION):
             self.statusBar().showMessage(tr('正在生成蒙版，请完成后再导出。'))
@@ -1227,6 +1230,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.statusBar().showMessage(tr('正在全尺寸导出… 大图或超分可能需要较长时间。'))
         edits, source_path = copy.deepcopy(self.edits), self.source_path
         photo = copy.deepcopy(self.info.get('photo', {}))
+        # 1.6.1 (issue #5): the original's EXIF, IPTC and XMP go into the exported file.
+        original = dict(source=source_path, location=location) if metadata else None
         use_cuda = self.backend_combo.currentIndex() == 0
         def work():
             self.export_progress.emit(2, tr('正在全尺寸解码…'))
@@ -1249,16 +1254,19 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
                 raise InterruptedError(tr('已取消导出'))
             self.export_progress.emit(98, tr('正在写入成片…'))
             result = watermark.apply(result, edits['watermark'], photo)
-            engine.export_image(path, result, quality, photo=photo)
-            return result.shape, backend
+            note = engine.export_image(path, result, quality, photo=photo, metadata=original)
+            return result.shape, backend, note
         def success(result):
             self.close_export_dialog()
             self.work.end(A.EXPORTING)
             self.open_button.setEnabled(True)
             self.export_button.setEnabled(True)
-            shape, backend = result
+            shape, backend, note = result
             self.statusBar().showMessage(tr('导出完成 · {width} × {height} · {backend} · {path}', width=shape[1], height=shape[0], backend=backend, path=path))
-            QMessageBox.information(self, tr('导出完成'), tr('已保存：\n{path}\n\n{width} × {height} 像素\n{backend}', path=path, width=shape[1], height=shape[0], backend=backend))
+            text = tr('已保存：\n{path}\n\n{width} × {height} 像素\n{backend}', path=path, width=shape[1], height=shape[0], backend=backend)
+            if note:
+                text += '\n\n' + tr('未能写入原片元数据：') + note
+            QMessageBox.information(self, tr('导出完成'), text)
         def failed(text):
             self.close_export_dialog()
             self.work.end(A.EXPORTING)

@@ -1272,8 +1272,12 @@ def onnx_super_resolve(rgb, scale, path, use_cuda, progress=None, cancel=None, n
     return np.clip(out, 0, 1, out=out), label + provider
 
 
-def export_image(path, rgb, quality=95, photo=None, provenance=None):
-    """Atomic export. All outputs are encoded sRGB; TIFF preserves 16-bit precision."""
+def export_image(path, rgb, quality=95, photo=None, provenance=None, metadata=None):
+    """Atomic export. All outputs are encoded sRGB; TIFF preserves 16-bit precision.
+
+    ``metadata = dict(source=<original photo>, location=bool)`` copies the original's EXIF,
+    IPTC and XMP into the file before it appears (1.6.1, GitHub issue #5).  Returns '' or why
+    that metadata could not be written; the picture is exported either way."""
     path = Path(path)
     ext = path.suffix.lower()
     if ext not in {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.dng'}:
@@ -1301,7 +1305,13 @@ def export_image(path, rgb, quality=95, photo=None, provenance=None):
             if ext in {'.jpg', '.jpeg'}:
                 options.update(quality=quality, subsampling=0)
             image.save(temp, **options)
+        note = ''
+        if metadata and metadata.get('source'):
+            note = photo_metadata.copy_from(metadata['source'], temp, metadata.get('location', True))
+            if note:
+                log.warning('metadata of %s not copied into %s: %s', metadata['source'], path.name, note)
         os.replace(temp, path)
+        return note
     finally:
         if temp.exists():
             temp.unlink()

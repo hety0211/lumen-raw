@@ -3,11 +3,89 @@ import copy
 import sys
 import numpy as np
 from .curves import evaluate
-from PySide6.QtCore import Qt, Signal, QEvent, QPointF, QRectF, QPoint, QRect, QSize
-from PySide6.QtGui import QColor, QImage, QPainter, QPen, QPainterPath, QConicalGradient, QRadialGradient
+from PySide6.QtCore import Qt, Signal, QEvent, QObject, QPointF, QRectF, QPoint, QRect, QSize, QTimer
+from PySide6.QtGui import QColor, QCursor, QImage, QPainter, QPen, QPainterPath, QConicalGradient, QRadialGradient
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSlider, QDoubleSpinBox, QLayout,
-                               QToolButton, QButtonGroup)
+                               QToolButton, QButtonGroup, QAbstractSlider, QAbstractSpinBox, QComboBox, QScrollArea,
+                               QScrollBar, QApplication, QCheckBox)
 from .i18n import tr
+
+
+class WheelGuard(QObject):
+    """Scrolling a long panel never changes the control that passes under the pointer (1.6.1).
+
+    GitHub issue #6: with the pointer resting on the panel, the wheel scrolled the page until a
+    slider or list box arrived under the pointer, and then changed its value.  Now, once the
+    wheel has scrolled a panel, it keeps scrolling it until the pointer moves (or a control is
+    clicked); a control under a pointer that was moved there on purpose still takes the wheel.
+    While the wheel scrolls, the pointer is an arrow; over a slider it can adjust, a ↔ cursor.
+    """
+    VALUES = (QAbstractSlider, QAbstractSpinBox, QComboBox)
+    MOVE = 6                                  # pixels the pointer must move to release the panel
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.anchor = None                    # global pointer position of the last panel scroll
+        self.override = False
+        self.timer = QTimer(self)
+        self.timer.setInterval(100)
+        self.timer.timeout.connect(self.watch)
+
+    @staticmethod
+    def install(app):
+        """One guard per application, shared by every window and dialog."""
+        guard = getattr(app, '_lumen_wheel_guard', None)
+        if guard is None:
+            guard = WheelGuard(app)
+            app.installEventFilter(guard)
+            app._lumen_wheel_guard = guard
+        return guard
+
+    def moved(self, position):
+        return (position - self.anchor).manhattanLength() > self.MOVE
+
+    def release(self):
+        self.anchor = None
+        self.timer.stop()
+        if self.override:
+            self.override = False
+            QApplication.restoreOverrideCursor()
+
+    def watch(self):
+        if self.anchor is None or self.moved(QPointF(QCursor.pos())):
+            self.release()
+
+    def eventFilter(self, obj, event):
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress and self.anchor is not None:
+            self.release()
+        if kind != QEvent.Type.Wheel or not isinstance(obj, QWidget):
+            return False
+        control, area = None, None
+        widget = obj
+        while widget is not None and not widget.isWindow():
+            if isinstance(widget, QScrollArea):
+                area = widget
+                break
+            if control is None and isinstance(widget, self.VALUES) and not isinstance(widget, QScrollBar):
+                control = widget
+            widget = widget.parentWidget()
+        if area is None:
+            return False
+        position = event.globalPosition()
+        if control is not None and (self.anchor is None or self.moved(position)):
+            self.release()                    # the pointer was put on the control: adjust it
+            return False
+        bar = area.verticalScrollBar()
+        self.anchor = position
+        if not self.override:
+            self.override = True
+            QApplication.setOverrideCursor(Qt.CursorShape.ArrowCursor)
+        self.timer.start()
+        if control is None:
+            return False                      # the page itself: the scroll area scrolls as usual
+        QApplication.sendEvent(bar, event)    # a control under a resting pointer: scroll the page
+        return True
 
 
 def qimage(rgb):
@@ -70,6 +148,36 @@ class FlowLayout(QLayout):
             x += hint.width()
             line = max(line, hint.height())
         return y + line - rect.y()
+
+
+class MetadataOptions(QWidget):
+    """Export choices for the original's metadata (1.6.1, GitHub issue #5), remembered."""
+    KEEP, LOCATION = 'export_metadata', 'export_location'
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        from .i18n import setting
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+        self.keep = QCheckBox(tr('保留原片元数据（拍摄参数、版权、关键词）'))
+        self.keep.setToolTip(tr('从原片复制 EXIF、IPTC 与 XMP：相机、镜头、拍摄时间与参数、版权、关键词与评级。'
+                                '原片的尺寸、方向、缩略图与 Lightroom 调整参数不复制。'))
+        self.location = QCheckBox(tr('包含拍摄地点（GPS）'))
+        self.keep.setChecked(setting(self.KEEP, '1') == '1')
+        self.location.setChecked(setting(self.LOCATION, '1') == '1')
+        self.keep.toggled.connect(self.location.setEnabled)
+        self.location.setEnabled(self.keep.isChecked())
+        layout.addWidget(self.keep)
+        layout.addWidget(self.location)
+
+    def save(self):
+        from .i18n import save_setting
+        save_setting(self.KEEP, '1' if self.keep.isChecked() else '0')
+        save_setting(self.LOCATION, '1' if self.location.isChecked() else '0')
+
+    def options(self):
+        return dict(metadata=self.keep.isChecked(), location=self.location.isChecked())
 
 
 class TabStrip(QWidget):
@@ -145,6 +253,7 @@ class AdjustSlider(QWidget):
         self.slider.sliderReleased.connect(self.committed)
         self.spin.editingFinished.connect(self.committed)
         self.slider.setToolTip(tr('拖动调整；双击数值可直接输入'))
+        self.slider.setCursor(Qt.CursorShape.SizeHorCursor)   # issue #6: this control takes drag and wheel
         self.slider.mouseDoubleClickEvent = self.reset_value
 
     def reset_value(self, _):

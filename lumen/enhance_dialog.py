@@ -8,7 +8,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFormLayout,
     QComboBox, QSpinBox, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox)
 from . import engine, host
-from .widgets import qimage
+from .widgets import MetadataOptions, qimage
 from .i18n import tr
 
 
@@ -53,6 +53,8 @@ class ExportDialog(QDialog):
             form.addRow(name, widget)
         form.addRow(tr('自定义模型'), row)
         root.addLayout(form)
+        self.metadata = MetadataOptions()
+        root.addWidget(self.metadata)
         self.preview_button = QPushButton(tr('预览中央细节 · 读取全尺寸原片'))
         self.preview_button.clicked.connect(self.preview)
         root.addWidget(self.preview_button)
@@ -117,6 +119,7 @@ class ExportDialog(QDialog):
         if self.scale.currentIndex() and self.method.currentIndex() == 2 and not self.model_path.text().strip():
             self.status.setText(tr('请先选择自定义 ONNX 模型。'))
             return
+        self.metadata.save()
         super().accept()
 
     def preview(self):

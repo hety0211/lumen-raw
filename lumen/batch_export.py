@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog
 
 from . import engine, lens, model, watermark
 from .i18n import tr
+from .widgets import MetadataOptions
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +59,8 @@ class BatchExportDialog(QDialog):
             form.addRow(name, widget)
         form.addRow(tr('保存到'), row)
         root.addLayout(form)
+        self.metadata = MetadataOptions()
+        root.addWidget(self.metadata)
         self.status = QLabel('')
         self.status.setObjectName('subtle')
         root.addWidget(self.status)
@@ -78,11 +81,12 @@ class BatchExportDialog(QDialog):
         if not Path(self.folder.text()).is_dir():
             self.status.setText(tr('请选择已存在的导出目录。'))
             return
+        self.metadata.save()
         self.accept()
 
     def options(self):
         return dict(extension=FORMATS[self.format.currentIndex()][1], long_edge=SIZES[self.size.currentIndex()][1],
-                    quality=self.quality.value(), folder=self.folder.text())
+                    quality=self.quality.value(), folder=self.folder.text(), **self.metadata.options())
 
 
 def target_path(folder, source, extension, taken):
@@ -106,7 +110,11 @@ def fit_long_edge(rgb, long_edge):
 
 
 def run(items, options, backend, progress, cancel):
-    """Worker: export ``items`` = [(path, edits, initialized)]; returns ``[(path, target or None, error)]``."""
+    """Worker: export ``items`` = [(path, edits, initialized)]; returns ``[(path, target or None, error)]``.
+
+    ``options['metadata']`` / ``['location']`` (default True) copy the original's EXIF, IPTC and XMP
+    (with or without GPS) into each file (1.6.1); for an exported photo whose metadata could not
+    be written, ``error`` holds why while ``target`` is set."""
     results, taken = [], set()
     total = len(items)
     for index, (path, edits, initialized) in enumerate(items):
@@ -134,8 +142,9 @@ def run(items, options, backend, progress, cancel):
             # 1.6.0: commands may name the output file themselves (photo.export).
             target = Path(options['names'][path]) if path in options.get('names', {}) else \
                 target_path(options['folder'], path, options['extension'], taken)
-            engine.export_image(target, result, options['quality'], photo=photo)
-            results.append((path, str(target), ''))
+            original = dict(source=path, location=options.get('location', True)) if options.get('metadata', True) else None
+            note = engine.export_image(target, result, options['quality'], photo=photo, metadata=original)
+            results.append((path, str(target), note))
         except Exception as exc:
             log.exception('batch export failed for %s', path)
             results.append((path, None, str(exc) or type(exc).__name__))

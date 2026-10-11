@@ -43,18 +43,37 @@ def session(kind, cuda=False):
     return compute.session(path,cuda)
 
 
-def refine(alpha, rgb):
-    # Guided filtering aligns coarse network boundaries to image luminance.
+def refine(alpha, rgb, sharpen=True):
+    """Align a coarse network mask (e.g. 320 × 320) with the edges of ``rgb``.
+
+    Upscaled to a 1600-pixel preview the network edge is a ramp of about ten pixels.  Up to
+    1.6.0 a 9 × 9 grey guided filter left most of that ramp outside the subject, so darkening
+    the sky or background left a light outline around people, trees and buildings.  The ramp
+    is now first narrowed around 0.5 (``sharpen``; not for depth, whose ramp is deliberate),
+    since a guided filter keeps the mask's average on each side of an edge; then a colour
+    guided filter whose window spans the ramp (two network pixels) moves the edge onto the
+    colour edge of the photograph (1.6.1)."""
     h,w = rgb.shape[:2]
-    p = cv2.resize(alpha,(w,h),interpolation=cv2.INTER_LINEAR)
-    guide = cv2.cvtColor(rgb.astype(np.float32),cv2.COLOR_RGB2GRAY)
-    box = lambda a: cv2.boxFilter(a,-1,(9,9),normalize=True,borderType=cv2.BORDER_REFLECT)
+    p = cv2.resize(np.asarray(alpha,np.float32),(w,h),interpolation=cv2.INTER_LINEAR)
+    if sharpen:
+        t = np.clip((p-.5)/.12+.5,0,1)
+        p = t*t*(3-2*t)
+    ratio = max(h/alpha.shape[0],w/alpha.shape[1])
+    radius = max(4,int(np.ceil(2*ratio)))
+    guide = np.ascontiguousarray(rgb,dtype=np.float32)
+    box = lambda a: cv2.boxFilter(a,-1,(2*radius+1,2*radius+1),normalize=True,borderType=cv2.BORDER_REFLECT)
     mean_i,mean_p = box(guide),box(p)
-    var = box(guide*guide)-mean_i*mean_i
-    cov = box(guide*p)-mean_i*mean_p
-    a = cov/(var+.002)
-    b = mean_p-a*mean_i
-    return np.clip(box(a)*guide+box(b),0,1)
+    cov = box(guide*p[...,None])-mean_i*mean_p[...,None]
+    s = {(i,j): box(guide[...,i]*guide[...,j])-mean_i[...,i]*mean_i[...,j]+(1e-3 if i==j else 0)
+         for i in range(3) for j in range(i,3)}
+    # a = Σ⁻¹ · cov per pixel, with the symmetric 3 × 3 inverse written out.
+    c00,c01,c02 = s[1,1]*s[2,2]-s[1,2]**2, s[0,2]*s[1,2]-s[0,1]*s[2,2], s[0,1]*s[1,2]-s[0,2]*s[1,1]
+    c11,c12,c22 = s[0,0]*s[2,2]-s[0,2]**2, s[0,1]*s[0,2]-s[0,0]*s[1,2], s[0,0]*s[1,1]-s[0,1]**2
+    det = s[0,0]*c00+s[0,1]*c01+s[0,2]*c02
+    x,y,z = cov[...,0],cov[...,1],cov[...,2]
+    a = np.dstack([c00*x+c01*y+c02*z, c01*x+c11*y+c12*z, c02*x+c12*y+c22*z])/det[...,None]
+    b = mean_p-(a*mean_i).sum(axis=2)
+    return np.clip((box(a)*guide).sum(axis=2)+box(b),0,1)
 
 
 def automatic(rgb, kind, cuda=False):
@@ -73,7 +92,7 @@ def automatic(rgb, kind, cuda=False):
         relative=np.clip((prediction-low)/max(float(high-low),1e-6),0,1)
         prediction=np.clip((relative-.48)/.22,0,1)
         prediction=prediction*prediction*(3-2*prediction)
-    alpha = refine(np.clip(prediction,0,1),rgb)
+    alpha = refine(np.clip(prediction,0,1),rgb,sharpen=kind!='foreground')
     if kind == 'background':
         alpha = 1-alpha
     return alpha, sess.get_providers()[0]
