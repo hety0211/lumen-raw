@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import colorsys
 from functools import lru_cache
+from typing import NamedTuple
 
 import numpy as np
 
@@ -50,6 +51,81 @@ LIGHTNESS = .66
 #: Grading strength 100 adds this much OkLab chroma (process 1 averages 0.098 on mid grey).
 GRADE_CHROMA = .1
 HUE_SAMPLES = 361
+
+
+def _rgb_to_xyz(primaries, white=(.3127, .3290)):
+    """3 × 3 linear RGB → XYZ of an RGB space from its xy primaries and white point."""
+    xy = np.asarray(primaries, np.float64)
+    columns = np.stack([xy[:, 0] / xy[:, 1], np.ones(3), (1 - xy.sum(axis=1)) / xy[:, 1]])
+    w = np.array([white[0] / white[1], 1, (1 - white[0] - white[1]) / white[1]])
+    return columns * np.linalg.solve(columns, w)
+
+
+class Space(NamedTuple):
+    """An output RGB space: linear sRGB ↔ linear target matrices and its transfer curve.
+
+    The pipeline keeps working in linear sRGB primaries (unclipped in process 2); only gamut
+    mapping and the display encoding use the output space."""
+    key: str
+    label: str
+    to_srgb: np.ndarray            # linear target → linear sRGB
+    from_srgb: np.ndarray          # linear sRGB → linear target
+    to_xyz: np.ndarray             # linear target → XYZ (D65)
+    gamma: float = 0.              # 0: the sRGB curve; otherwise a pure power law
+
+
+def _space(key, label, primaries, gamma=0.):
+    srgb = _rgb_to_xyz([(.64, .33), (.30, .60), (.15, .06)])
+    target = _rgb_to_xyz(primaries)
+    to_srgb = np.linalg.solve(srgb, target)
+    return Space(key, label, to_srgb.astype(np.float32), np.linalg.inv(to_srgb).astype(np.float32),
+                 target.astype(np.float32), gamma)
+
+
+#: Export colour spaces: Display P3 uses the sRGB curve, Adobe RGB (1998) a 563/256 gamma.
+SPACES = {
+    'srgb': _space('srgb', 'sRGB', [(.64, .33), (.30, .60), (.15, .06)]),
+    'p3': _space('p3', 'Display P3', [(.680, .320), (.265, .690), (.150, .060)]),
+    'adobe-rgb': _space('adobe-rgb', 'Adobe RGB (1998)', [(.64, .33), (.21, .71), (.15, .06)], 563 / 256),
+}
+
+
+def space(key):
+    """The output space for a key (None: sRGB)."""
+    return SPACES[key or 'srgb'] if not isinstance(key, Space) else key
+
+
+def wide(value):
+    """True for an output space other than sRGB."""
+    return value is not None and space(value).key != 'srgb'
+
+
+def encode(linear, value=None):
+    """Linear values of the output space → its display encoding (negatives clamp to 0)."""
+    if not wide(value) or not space(value).gamma:
+        return linear_to_srgb(linear)
+    return (np.maximum(np.asarray(linear, np.float32), 0) ** np.float32(1 / space(value).gamma)).astype(np.float32)
+
+
+def decode(encoded, value=None):
+    """Display encoding of the output space → its linear values."""
+    if not wide(value) or not space(value).gamma:
+        return srgb_to_linear(encoded)
+    return (np.maximum(np.asarray(encoded, np.float32), 0) ** np.float32(space(value).gamma)).astype(np.float32)
+
+
+def to_linear_srgb(encoded, value=None):
+    """Display encoding of the output space → linear sRGB primaries (unclipped)."""
+    linear = decode(encoded, value)
+    return linear if not wide(value) else (linear @ space(value).to_srgb.T).astype(np.float32)
+
+
+def reencode(srgb, value=None):
+    """Display sRGB → display values of the output space (sRGB fits inside P3 and Adobe RGB)."""
+    if not wide(value):
+        return srgb
+    linear = srgb_to_linear(np.clip(srgb, 0, 1)) @ space(value).from_srgb.T
+    return encode(np.clip(linear, 0, 1), value)
 
 
 def srgb_to_linear(x):
@@ -91,8 +167,9 @@ def anchor(lightness, chroma):
     return .5 * (1 + np.sign(offset) * (e1 - np.sqrt(np.maximum(e1 * e1 - 2 * np.abs(offset), 0))))
 
 
-def gamut_map(rgb):
-    """Linear sRGB → [0, 1]³: colours outside keep their OkLab hue and move in a straight line
+def gamut_map(rgb, value=None):
+    """Linear sRGB → [0, 1]³ of the output space ``value`` (default sRGB) in that space's linear
+    values: colours outside keep their OkLab hue and move in a straight line
     towards a grey of similar lightness (``anchor``) until they fit, so they lose chroma and,
     when too bright or too dark for their chroma, a little lightness.  Colours inside are
     returned unchanged.
@@ -102,9 +179,14 @@ def gamut_map(rgb):
     and the whole-frame render agree although float rounding may flip a bisection step."""
     rgb = np.asarray(rgb, np.float32)
     flat = rgb.reshape(-1, 3)
-    outside = ~_inside(flat)
+    if wide(value):
+        matrix = space(value).from_srgb.T
+        target = lambda v: v @ matrix
+    else:
+        target = lambda v: v
+    outside = ~_inside(target(flat))
     if not outside.any():
-        return np.clip(rgb, 0, 1)
+        return np.clip(target(rgb), 0, 1)
     result = flat.copy()
     lab = to_oklab(flat[outside])
     lightness, ab = lab[:, :1], lab[:, 1:]
@@ -115,16 +197,16 @@ def gamut_map(rgb):
         return from_oklab(np.concatenate([grey + span * t, ab * t], axis=1))
     low = np.zeros((len(lab), 1), np.float32)
     high = np.ones((len(lab), 1), np.float32)
-    excess_low, excess_high = _excess(at(low))[:, None], _excess(at(high))[:, None]
+    excess_low, excess_high = _excess(target(at(low)))[:, None], _excess(target(at(high)))[:, None]
     for _ in range(GAMUT_STEPS):
         middle = (low + high) * np.float32(.5)
-        excess = _excess(at(middle))[:, None]
+        excess = _excess(target(at(middle)))[:, None]
         fits = excess <= GAMUT_EPS
         low, excess_low = np.where(fits, middle, low), np.where(fits, excess, excess_low)
         high, excess_high = np.where(fits, high, middle), np.where(fits, excess_high, excess)
     step = np.clip(-excess_low / np.maximum(excess_high - excess_low, np.float32(1e-12)), 0, 1)
     result[outside] = at(low + (high - low) * step)
-    return np.clip(result.reshape(rgb.shape), 0, 1)
+    return np.clip(target(result).reshape(rgb.shape), 0, 1)
 
 
 def luminance(rgb):
@@ -214,9 +296,10 @@ def graded(grading):
     return any(grading.get(z, [0, 0])[1] for z in ('shadows', 'midtones', 'highlights'))
 
 
-def adjust(x, saturation=0., vibrance=0., hsl=(), mono=False, grading=None):
-    """Saturation, vibrance, the 8-colour mixer, monochrome and colour grading on display sRGB
-    (0–1, gamma encoded), in one OkLCh pass followed by one gamut mapping.
+def adjust(x, saturation=0., vibrance=0., hsl=(), mono=False, grading=None, value=None):
+    """Saturation, vibrance, the 8-colour mixer, monochrome and colour grading on display values
+    (0–1, gamma encoded in the output space ``value``, default sRGB), in one OkLCh pass followed
+    by one gamut mapping into that space.
 
     Monochrome keeps OkLab lightness (a perceptual grey), grading adds its tint in OkLab (a, b)
     after it, so toned black and white works and lightness never changes."""
@@ -225,7 +308,7 @@ def adjust(x, saturation=0., vibrance=0., hsl=(), mono=False, grading=None):
     tint = graded(grading)
     if not (saturation or vibrance or mixer or mono or tint):
         return x
-    lab = to_oklab(srgb_to_linear(x))
+    lab = to_oklab(to_linear_srgb(x, value))
     lightness, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
     if saturation or vibrance or mixer:
         chroma = np.sqrt(a * a + b * b)
@@ -251,4 +334,4 @@ def adjust(x, saturation=0., vibrance=0., hsl=(), mono=False, grading=None):
         offset = sum((w * protection)[..., None] * v for w, v in zip(weights, grade_vectors(grading)))
         a, b = a + offset[..., 0], b + offset[..., 1]
     lab = np.stack([lightness, a, b], axis=-1).astype(np.float32)
-    return linear_to_srgb(gamut_map(from_oklab(lab)))
+    return encode(gamut_map(from_oklab(lab), value), value)

@@ -41,13 +41,16 @@ def strips(image):
 def finite(image):
     return all(np.isfinite(block).all() for _,block in strips(image))
 
-def encode_strips(image,linear=False,bits=16):
+def encode_strips(image,linear=False,bits=16,space=None):
+    """Integer strips of display values; ``linear`` decodes them first with the transfer curve
+    of the output colour space ``space`` (sRGB by default)."""
     from .engine import to_linear
+    from . import color
     maximum=(1<<bits)-1
     dtype=np.uint16 if bits==16 else np.uint8
     for _,block in strips(image):
         if not np.isfinite(block).all():raise ValueError(tr('图像包含无效像素。'))
-        if linear:block=to_linear(block)
+        if linear:block=color.decode(block,space) if color.wide(space) else to_linear(block)
         yield np.round(np.clip(block,0,1)*maximum).astype(dtype).tobytes()
 
 def transform(image,edits):
@@ -110,7 +113,7 @@ def fits_in_memory(shape):
     available=available_memory()
     return available is None or shape[0]*shape[1]*100<=available*.85
 
-def process(source,edits,backend,apply_crop,detail_scale,cache=None):
+def process(source,edits,backend,apply_crop,detail_scale,cache=None,space=None):
     """Stream point operations. Spatial edits retain the original whole-image math."""
     from . import engine,lens,tone
     if lens.active(edits.get('lens')):
@@ -126,7 +129,7 @@ def process(source,edits,backend,apply_crop,detail_scale,cache=None):
         available=available_memory();required=source.shape[0]*source.shape[1]*100
         if available is not None and required>available*.85:
             raise ValueError(tr('当前空间类编辑预计需要约 {v:.1f} GB 可用内存。可先裁切、关闭质感／蒙版／修复，或在内存更大的电脑处理。4 亿像素的基础调色、AI 副本和 DNG 导出使用分块缓存。', v=required/2**30))
-        return engine.process(source,edits,backend,apply_crop,detail_scale,_stream=False,cache=cache)
+        return engine.process(source,edits,backend,apply_crop,detail_scale,_stream=False,cache=cache,space=space)
     output=allocate(source.shape)
     if engine.process_version(edits)==2 and tone.needs_context(a):
         # 1.6.0: local tone mapping reads the whole frame once, at its low resolution.
@@ -134,8 +137,8 @@ def process(source,edits,backend,apply_crop,detail_scale,cache=None):
         small=cv2.resize(source,(max(1,round(w*ratio)),max(1,round(h*ratio))),interpolation=cv2.INTER_AREA) if ratio<1 else np.asarray(source)
         context=tone.context(small*engine._gain(edits),a)
         for y in range(0,h,STRIP_ROWS):
-            output[y:y+STRIP_ROWS]=engine.process_region(source,edits,backend,(0,y,w,min(h,y+STRIP_ROWS)),detail_scale,tone_context=context)
+            output[y:y+STRIP_ROWS]=engine.process_region(source,edits,backend,(0,y,w,min(h,y+STRIP_ROWS)),detail_scale,tone_context=context,space=space)
     else:
         for y,block in strips(source):
-            output[y:y+len(block)]=engine.process(block,edits,backend,False,detail_scale,_stream=False)
+            output[y:y+len(block)]=engine.process(block,edits,backend,False,detail_scale,_stream=False,space=space)
     return transform(output,edits) if apply_crop else output

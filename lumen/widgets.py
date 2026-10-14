@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, Signal, QEvent, QObject, QPointF, QRectF, QPoint,
 from PySide6.QtGui import QColor, QCursor, QImage, QPainter, QPen, QPainterPath, QConicalGradient, QRadialGradient
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSlider, QDoubleSpinBox, QLayout,
                                QToolButton, QButtonGroup, QAbstractSlider, QAbstractSpinBox, QComboBox, QScrollArea,
-                               QScrollBar, QApplication, QCheckBox)
+                               QScrollBar, QApplication, QCheckBox, QSpinBox)
 from .i18n import tr
 
 
@@ -148,6 +148,54 @@ class FlowLayout(QLayout):
             x += hint.width()
             line = max(line, hint.height())
         return y + line - rect.y()
+
+
+class OutputOptions:
+    """Export choices beside format and quality: the output colour space and a JPEG file-size
+    limit in KB (0: none), remembered.  ``add_rows`` puts them into an export dialog's form."""
+    SPACE, LIMIT = 'export_space', 'export_max_kb'
+    KEYS = ('srgb', 'p3', 'adobe-rgb')
+
+    def __init__(self):
+        from .i18n import setting
+        self.space = QComboBox()
+        self.space.addItems(['sRGB', 'Display P3', 'Adobe RGB (1998)'])
+        self.space.setToolTip(tr('sRGB 适合网页与大多数屏幕；Display P3 适合新款手机与广色域显示器；Adobe RGB 适合印刷。'
+                                 '处理版本 2 的照片保留超出 sRGB 的颜色，处理版本 1 只转换编码。'))
+        saved = setting(self.SPACE, 'srgb')
+        self.space.setCurrentIndex(self.KEYS.index(saved) if saved in self.KEYS else 0)
+        self.limit = QSpinBox()
+        self.limit.setRange(0, 500000)
+        self.limit.setSingleStep(100)
+        self.limit.setSuffix(' KB')
+        self.limit.setSpecialValueText(tr('不限'))
+        self.limit.setToolTip(tr('JPEG 超过这个大小时自动降低质量（最低 10），含元数据；0 为不限。'))
+        try:
+            self.limit.setValue(int(setting(self.LIMIT, '0')))
+        except ValueError:
+            self.limit.setValue(0)
+
+    def add_rows(self, form, after=None):
+        """Insert the rows below ``after`` (a field widget of ``form``), or at the end."""
+        rows = [(tr('色彩空间'), self.space), (tr('JPEG 文件上限'), self.limit)]
+        if after is None:
+            for label, widget in rows:
+                form.addRow(label, widget)
+            return
+        row = form.getWidgetPosition(after)[0] + 1
+        for offset, (label, widget) in enumerate(rows):
+            form.insertRow(row + offset, label, widget)
+
+    def set_format(self, extension):
+        self.limit.setEnabled(extension in ('.jpg', '.jpeg'))
+
+    def save(self):
+        from .i18n import save_setting
+        save_setting(self.SPACE, self.KEYS[self.space.currentIndex()])
+        save_setting(self.LIMIT, str(self.limit.value()))
+
+    def options(self):
+        return dict(space=self.KEYS[self.space.currentIndex()], max_kb=self.limit.value() or None)
 
 
 class MetadataOptions(QWidget):

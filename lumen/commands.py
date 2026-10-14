@@ -23,6 +23,7 @@ from typing import Callable
 import numpy as np
 
 from . import __version__, catalog, engine, model, nl_edit
+from .i18n import tr
 
 SUPPORTED = engine.RAW_EXTENSIONS | {'.jpg', '.jpeg', '.png', '.tif', '.tiff'}
 
@@ -116,6 +117,8 @@ def arguments(cmd, args):
     unknown = set(args) - set(cmd.params)
     if unknown:
         raise CommandError(f'unknown argument(s) for {cmd.id}: {", ".join(sorted(unknown))}')
+    # null for an optional parameter means "not given" (lumen-cli passes unset options as None).
+    args = {k: v for k, v in args.items() if v is not None or k in cmd.required}
     missing = [k for k in cmd.required if k not in args]
     if missing:
         raise CommandError(f'missing argument(s) for {cmd.id}: {", ".join(missing)}')
@@ -542,15 +545,20 @@ FORMATS = {'.jpg': '.jpg', '.jpeg': '.jpg', '.png': '.png', '.tif': '.tif', '.ti
 METADATA = dict(type='boolean', description="Copy the original's EXIF, IPTC and XMP (camera, lens, date, "
                 "exposure, copyright, keywords, rating) into the file. Default true.")
 LOCATION = dict(type='boolean', description='With metadata: include the GPS position. Default true.')
+SPACE = dict(type='string', enum=['srgb', 'p3', 'adobe-rgb'],
+             description='Output colour space: srgb (default), p3 (Display P3) or adobe-rgb (Adobe RGB 1998).')
+MAX_KB = dict(type='integer', minimum=10, maximum=500000,
+              description='JPEG only: keep the file under this many KB (metadata included) by lowering the quality.')
 
 
 @command('photo.export', 'Export the edited photo at full resolution (JPEG, PNG, 16-bit TIFF or linear DNG).',
          dict(output=dict(type='string', description='Output file; the extension picks the format.'), path=PATH,
               quality=dict(type='integer', minimum=50, maximum=100), long_edge=dict(type='integer', minimum=16, maximum=20000),
               overwrite=dict(type='boolean', description='Replace an existing output file (never the original).'),
-              metadata=METADATA, location=LOCATION),
+              metadata=METADATA, location=LOCATION, space=SPACE, max_kb=MAX_KB),
          required=('output',), tool='export_photo')
-def photo_export(context, output, path=None, quality=92, long_edge=None, overwrite=False, metadata=True, location=True):
+def photo_export(context, output, path=None, quality=92, long_edge=None, overwrite=False, metadata=True, location=True,
+                 space='srgb', max_kb=None):
     from . import batch_export
     path = _target(context, path)
     output = Path(output).expanduser().resolve()
@@ -567,15 +575,24 @@ def photo_export(context, output, path=None, quality=92, long_edge=None, overwri
     results = batch_export.run([(path, edits, context.initialized(path))],
                                dict(extension=FORMATS[output.suffix.lower()], long_edge=long_edge, quality=quality,
                                     folder=str(output.parent), names={path: str(output)}, metadata=metadata,
-                                    location=location),
+                                    location=location, space=space, max_kb=max_kb),
                                context.backend(), lambda *_: None, _Never())
     _, target, error = results[0]
     if not target:
         raise CommandError(error)
-    result = dict(path=path, output=target)
-    if error:
-        result['metadata_error'] = error
+    result = dict(path=path, output=target, bytes=Path(target).stat().st_size)
+    result.update(_notes(error))
     return result
+
+
+def _notes(text):
+    """``note`` for any export note, plus ``metadata_error`` (the 1.6.1 field) when the original's
+    metadata could not be written."""
+    if not text:
+        return {}
+    prefix = tr('未能写入原片元数据：')
+    metadata = [line[len(prefix):] for line in text.splitlines() if line.startswith(prefix)]
+    return dict(note=text, **({'metadata_error': metadata[0]} if metadata else {}))
 
 
 class _Never:
@@ -586,10 +603,11 @@ class _Never:
 @command('photo.export_batch', 'Export several photos with their own edits into a folder (names <photo>-Lumen.<ext>, never overwriting).',
          dict(folder=dict(type='string'), paths=PATHS, query=dict(type='string', description='Library filter instead of paths.'),
               format=dict(type='string', enum=['jpg', 'png', 'tif', 'dng']), quality=dict(type='integer', minimum=50, maximum=100),
-              long_edge=dict(type='integer', minimum=16, maximum=20000), metadata=METADATA, location=LOCATION),
+              long_edge=dict(type='integer', minimum=16, maximum=20000), metadata=METADATA, location=LOCATION,
+              space=SPACE, max_kb=MAX_KB),
          required=('folder',), tool='export_photos')
 def photo_export_batch(context, folder, paths=None, query=None, format='jpg', quality=92, long_edge=None,
-                       metadata=True, location=True):
+                       metadata=True, location=True, space='srgb', max_kb=None):
     from . import batch_export
     if not Path(folder).expanduser().is_dir():
         raise CommandError(f'folder not found: {folder}')
@@ -603,9 +621,9 @@ def photo_export_batch(context, folder, paths=None, query=None, format='jpg', qu
     items = [(p, context.edits(p), context.initialized(p)) for p in targets]
     results = batch_export.run(items, dict(extension='.' + format, long_edge=long_edge, quality=quality,
                                            folder=str(Path(folder).expanduser().resolve()), metadata=metadata,
-                                           location=location),
+                                           location=location, space=space, max_kb=max_kb),
                                context.backend(), lambda *_: None, _Never())
-    return dict(exported=[dict(path=p, output=t, **({'metadata_error': e} if e else {})) for p, t, e in results if t],
+    return dict(exported=[dict(path=p, output=t, **_notes(e)) for p, t, e in results if t],
                 failed=[dict(path=p, error=e) for p, t, e in results if not t])
 
 

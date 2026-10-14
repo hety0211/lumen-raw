@@ -1,11 +1,9 @@
 """Watermark settings with a live export preview; no image coordinates are changed."""
-import base64
 import copy
-from pathlib import Path
 from PySide6.QtCore import Qt,Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QWidget,QLabel,
-    QCheckBox,QComboBox,QSpinBox,QPushButton,QFileDialog,QDialogButtonBox)
+    QCheckBox,QComboBox,QSpinBox,QDialogButtonBox)
 from . import watermark,engine
 from .widgets import qimage
 from .i18n import tr
@@ -42,24 +40,26 @@ class WatermarkEditor(QWidget):
                 if i%2==0:field_row=QHBoxLayout();form.addRow(field_row)
                 field_row.addWidget(control,1)
             else:form.addRow(control)
+        # Built-in brand logos picked from the EXIF (a PNG imported by 1.6.1 or earlier stays until unticked).
+        self.logos={}
         for key,title in [('camera_logo',tr('机身标志')),('lens_logo',tr('镜头标志'))]:
-            row=QHBoxLayout();add=QPushButton(tr('导入 PNG'));clear=QPushButton(tr('清除'))
-            add.clicked.connect(lambda checked=False,k=key:self.choose_logo(k));clear.clicked.connect(lambda checked=False,k=key:self.clear_logo(k))
-            row.addWidget(add);row.addWidget(clear);form.addRow(title,row)
-        helptext=QLabel(tr('内置通用字体品牌名称；图形标志请导入自己有权使用的 PNG。\n缺失 EXIF 会显示“未记录”，不采用文件修改时间。\n水印仅在最终导出时添加，AI 副本保留无边框图像。'))
+            control=QCheckBox(tr('按 EXIF 自动显示'));control.setChecked(bool(self.settings.get(key)))
+            self.logos[key]=control;form.addRow(title,control)
+        helptext=QLabel(tr('机身与镜头标志按照片 EXIF 自动选择，标志为各品牌所有者的商标；没有内置标志的品牌显示品牌文字。\n缺失 EXIF 会显示“未记录”，不采用文件修改时间。\n水印仅在最终导出时添加，AI 副本保留无边框图像。'))
         helptext.setWordWrap(True);form.addRow(helptext)
         self.status=QLabel();self.status.setWordWrap(True);root.addWidget(self.status)
         if compact:columns.addWidget(self.preview)
-        for c in [self.enabled,*self.sides.values(),*self.fields.values()]:c.toggled.connect(self.update_preview)
+        for c in [self.enabled,*self.sides.values(),*self.fields.values(),*self.logos.values()]:c.toggled.connect(self.update_preview)
         self.preset.currentIndexChanged.connect(self.update_preview);self.size.valueChanged.connect(self.update_preview)
         active=owner.source is not None
         self.form_box.setEnabled(active)
         self.refreshing=False;self.update_preview()
 
     def values(self):
+        logos={k:(self.settings.get(k) or watermark.AUTO) if c.isChecked() else '' for k,c in self.logos.items()}
         return dict(self.settings,enabled=self.enabled.isChecked(),preset=self.preset.currentData(),
                     sides=[k for k,c in self.sides.items() if c.isChecked()],size=self.size.value(),
-                    fields=[k for k,c in self.fields.items() if c.isChecked()])
+                    fields=[k for k,c in self.fields.items() if c.isChecked()],**logos)
 
     def update_preview(self,*_):
         if self.refreshing:return
@@ -76,19 +76,6 @@ class WatermarkEditor(QWidget):
             self.status.setText(tr('只在保留画面之外添加边框，照片内容不会被遮挡。'))
         except Exception as e:self.status.setText(str(e))
 
-    def choose_logo(self,key):
-        path,_=QFileDialog.getOpenFileName(self,tr('选择有权使用的标志'),'',tr('PNG 标志 (*.png)'))
-        if not path:return
-        try:
-            p=Path(path)
-            if p.stat().st_size>2_000_000:raise ValueError(tr('标志请使用小于 2MB 的 PNG。'))
-            data=base64.b64encode(p.read_bytes()).decode('ascii');watermark.logo(data)
-            self.settings[key]=data;self.changed.emit(self.values());self.update_preview()
-        except Exception as e:self.status.setText(str(e))
-
-    def clear_logo(self,key):
-        self.settings[key]='';self.changed.emit(self.values());self.update_preview()
-
     def set_settings(self,settings):
         self.refreshing=True;self.settings=copy.deepcopy(settings)
         self.enabled.setChecked(settings['enabled'])
@@ -96,6 +83,7 @@ class WatermarkEditor(QWidget):
         self.size.setValue(round(settings['size']))
         for key,control in self.sides.items():control.setChecked(key in settings['sides'])
         for key,control in self.fields.items():control.setChecked(key in settings['fields'])
+        for key,control in self.logos.items():control.setChecked(bool(settings.get(key)))
         self.form_box.setEnabled(self.owner.source is not None)
         self.refreshing=False;self.update_preview()
 

@@ -50,6 +50,7 @@ class Spec(NamedTuple):
     table: np.ndarray
     context: Context | None = None
     area: object = None           # engine.Area of the block, None for a whole frame
+    space: object = None          # output colour space (``color.SPACES``), None for sRGB
 
 
 def _curve_key(develop):
@@ -93,13 +94,13 @@ def identity():
     return _table(None)
 
 
-def spec(edits, context=None, area=None):
-    return Spec(table(edits.get('develop', {})), context, area)
+def spec(edits, context=None, area=None, space=None):
+    return Spec(table(edits.get('develop', {})), context, area, space)
 
 
-def mask_spec():
+def mask_spec(space=None):
     """Masks adjust the already tone-mapped picture: no tone curve, no local context."""
-    return Spec(identity())
+    return Spec(identity(), space=space)
 
 
 def lookup(table_, x):
@@ -190,7 +191,8 @@ def _signed_linear(x):
 
 
 def tonal(image, a, spec_):
-    """NumPy reference of the process-2 tone stage: scene-linear in, display sRGB 0–1 out."""
+    """NumPy reference of the process-2 tone stage: scene-linear sRGB primaries in, display values
+    0–1 of the output space (``spec_.space``, sRGB by default) out."""
     x = np.asarray(image, np.float32) * (white_balance_gains(a) * np.float32(2 ** a['exposure']))
     t = spec_.table
     y = color.luminance(x)
@@ -213,7 +215,7 @@ def tonal(image, a, spec_):
     x *= (lookup(t, y) / np.maximum(y, 1e-7))[..., None]
     if a['contrast']:
         x = _signed_linear((_signed_srgb(x) - .5) * np.float32(1 + a['contrast'] / 125) + .5)
-    return color.linear_to_srgb(color.gamut_map(x))
+    return color.encode(color.gamut_map(x, spec_.space), spec_.space)
 
 
 def develop_view(source, develop):

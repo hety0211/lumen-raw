@@ -182,9 +182,16 @@ def load_image(path, preview_limit=1600, develop_reference=False, clip=False):
         if arr.dtype == np.uint16:
             if arr.ndim == 2:
                 arr = np.repeat(arr[..., None], 3, axis=2)
-            rgb = to_linear(arr[..., :3][..., ::-1].astype(np.float32) / 65535)
-            info.update(width=rgb.shape[1], height=rgb.shape[0], raw=False,
-                        note=tr('16-bit 输入按 sRGB 解读（建议先转换非 sRGB 文件）'))
+            from . import icc
+            own = icc.identify(embedded_profile(path))
+            if own:
+                # A LUMEN RAW export in Display P3 / Adobe RGB: back to linear sRGB primaries, unclipped.
+                rgb = color.to_linear_srgb(arr[..., :3][..., ::-1].astype(np.float32) / 65535, own)
+                note = tr('{space} · 16-bit · 保留广色域', space=color.space(own).label)
+            else:
+                rgb = to_linear(arr[..., :3][..., ::-1].astype(np.float32) / 65535)
+                note = tr('16-bit 输入按 sRGB 解读（建议先转换非 sRGB 文件）')
+            info.update(width=rgb.shape[1], height=rgb.shape[0], raw=False, note=note)
             embedded = photo_metadata.embedded(path)
             tags = {} if embedded else white_balance.metadata(path)[0]
             info['photo'] = embedded or photo_metadata.from_tags(tags)
@@ -298,24 +305,45 @@ def load_embedded(path, limit, info, metadata=None, known=True):
     return to_linear(rgb), info
 
 
+def embedded_profile(path):
+    """ICC profile bytes embedded in a TIFF or PNG / JPEG, or None."""
+    try:
+        if Path(path).suffix.lower() in ('.tif', '.tiff'):
+            import tifffile
+            with tifffile.TiffFile(path) as f:
+                tag = f.pages[0].tags.get(34675)
+                return bytes(tag.value) if tag else None
+        with Image.open(path) as src:
+            return src.info.get('icc_profile')
+    except (OSError, ValueError):
+        return None
+
+
 def load_pillow(path, limit):
+    from . import icc
     with Image.open(path) as src:
         large_image.validate_size((src.height,src.width))
         img = ImageOps.exif_transpose(src)
         profile = src.info.get('icc_profile')
-        if profile:
+        own = icc.identify(profile)
+        if own:
+            img = img.convert('RGB')        # a LUMEN RAW export in Display P3 / Adobe RGB: decoded below
+        elif profile:
             import io
             img = ImageCms.profileToProfile(img.convert('RGB'), ImageCms.ImageCmsProfile(io.BytesIO(profile)),
                                            ImageCms.createProfile('sRGB'), outputMode='RGB')
         else:
             img = img.convert('RGB')
         info = dict(name=path.name, width=img.width, height=img.height, raw=False,
-                    format=path.suffix[1:].upper(), path=str(path.resolve()), note=tr('sRGB · EXIF 方向已应用'))
+                    format=path.suffix[1:].upper(), path=str(path.resolve()),
+                    note=tr('{space} · EXIF 方向已应用', space=color.space(own).label) if own else tr('sRGB · EXIF 方向已应用'))
         tags = white_balance.metadata(path)[0]
         info['photo'] = photo_metadata.from_tags(tags)
         _lens_info(info, tags)
         if limit:
             img.thumbnail((limit, limit), Image.Resampling.LANCZOS)
+        if own:
+            return color.to_linear_srgb(np.asarray(img).astype(np.float32) / 255, own), info
         return to_linear(np.asarray(img).astype(np.float32) / 255), info
 
 
@@ -474,15 +502,18 @@ class Backend:
             return self._tonal(image, a, np)
 
     def _tonal2(self, image, a, spec):
-        if self.gpu_version2:
+        if self.gpu_version2 and not color.wide(spec.space):
             result = self._gpu('tonal2', image, gpu_graphs.tonal2_inputs(a, spec, image.shape))
             if result is not None:
                 return result
         compute.state.report('CPUExecutionProvider', detail=tr('{threads} 线程 · NumPy 光影显影', threads=performance.THREADS))
         return tone.tonal(image, a, spec)
 
-    def color(self, image, edits):
-        """Saturation / vibrance, HSL, curves, monochrome and grading."""
+    def color(self, image, edits, space=None):
+        """Saturation / vibrance, HSL, curves, monochrome and grading (``space``: output colour
+        space of process 2; the GPU graphs map into sRGB, other spaces use NumPy)."""
+        if color.wide(space):
+            return color_stage(image, edits, space)
         if process_version(edits) == 2:
             if self.gpu_version2:
                 kind = 'color2lab' if gpu_graphs.lab_stage(edits) else 'color2'
@@ -628,10 +659,10 @@ def saturation(x, a):
     return np.clip(lum + (x - lum) * amount, 0, 1)
 
 
-def details(rgb, a, detail_scale=1., reference_shape=None, version=1):
+def details(rgb, a, detail_scale=1., reference_shape=None, version=1, space=None):
     x = spatial_details(rgb, a, detail_scale, reference_shape)
     if version == 2:
-        return color.adjust(x, a.get('saturation', 0), a.get('vibrance', 0))
+        return color.adjust(x, a.get('saturation', 0), a.get('vibrance', 0), value=space)
     return saturation(x, a)
 
 
@@ -640,14 +671,15 @@ def monochrome(x):
     return np.repeat(lum[..., None], 3, axis=2)
 
 
-def color_stage(x, edits):
-    """CPU reference for the pointwise color graph (after spatial details)."""
+def color_stage(x, edits, space=None):
+    """CPU reference for the pointwise color graph (after spatial details); process 2 maps into
+    the output colour space ``space`` (sRGB by default)."""
     if process_version(edits) == 2:
         # Process 2: curves, then one OkLCh pass (saturation, mixer, monochrome, grading).
         a = edits['adjustments']
         x = apply_curves(x, edits['curves'], edits.get('curve_mode', 'linear'), edits.get('tone_curve'))
         x = color.adjust(x, a['saturation'], a['vibrance'], edits['hsl'], edits.get('monochrome', False),
-                         edits.get('grading', {}))
+                         edits.get('grading', {}), space)
         return np.clip(x, 0, 1).astype(np.float32)
     x = saturation(x, edits['adjustments'])
     x = apply_hsl(x, edits['hsl'])
@@ -855,7 +887,7 @@ def _mask_bounds(alpha):
     return rows[0], rows[-1] + 1, cols[0], cols[-1] + 1
 
 
-def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None, version=1):
+def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None, version=1, space=None):
     """Blend one local adjustment in place, computing only the mask's padded bounding box.
 
     ``reference_shape`` is the whole frame when ``x`` is a block of it (1.4.0).  Process 2
@@ -874,8 +906,9 @@ def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None, ver
         py0, py1 = max(0, y0 - margin), min(h, y1 + margin)
         px0, px1 = max(0, x0 - margin), min(w, x1 + margin)
     patch = x[py0:py1, px0:px1]
-    spec = tone.mask_spec() if version == 2 else None
-    local = details(backend.tonal(to_linear(patch), a, spec), a, detail_scale, reference_shape, version)
+    spec = tone.mask_spec(space) if version == 2 else None
+    linear = color.to_linear_srgb(patch, space) if version == 2 else to_linear(patch)
+    local = details(backend.tonal(linear, a, spec), a, detail_scale, reference_shape, version, space)
     local = local[y0 - py0:y1 - py0, x0 - px0:x1 - px0]
     weight = alpha[y0:y1, x0:x1, None]
     region = x[y0:y1, x0:x1]
@@ -894,10 +927,13 @@ def _base(corrected, edits, rect=None):
 
 
 def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stream=True, cache=None,
-            tone_context=None):
-    """The edited photograph as display sRGB 0–1.  ``tone_context`` (process 2) supplies the local
+            tone_context=None, space=None):
+    """The edited photograph as display values 0–1 of the output colour space ``space`` (a key of
+    ``color.SPACES``; sRGB by default).  Process 2 maps its unclipped colours into that space;
+    process 1 is rendered in sRGB and converted.  ``tone_context`` (process 2) supplies the local
     tone-mapping coefficients of the whole frame when ``source`` is a strip of it."""
     backend = backend or Backend('cpu')
+    space = color.space(space) if color.wide(space) else None
     large_image.validate_size(source.shape)
     if _stream and source.nbytes>large_image.MAP_BYTES:
         # 1.3.1: a cached original-resolution render (e.g. 24 MP) keeps its stages when about
@@ -905,7 +941,7 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
         cached = (cache is not None and source.nbytes * 4 <= cache.max_bytes
                   and large_image.fits_in_memory(source.shape))
         if not cached:
-            return large_image.process(source,edits,backend,apply_crop,detail_scale,cache)
+            return large_image.process(source,edits,backend,apply_crop,detail_scale,cache,space)
     cache = cache if cache is not None else _UNCACHED
     cache.bind(source, detail_scale)
     a = edits['adjustments']
@@ -923,19 +959,20 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
         context = tone_context
         if context is None and tone.needs_context(a):
             context = cache.get('context', _key(base_key, a['temperature'], a['tint']), lambda: tone.context(balanced, a))
-        spec = tone.spec(edits, context)
-    tonal_key = _key(base_key, {k: a.get(k, 0) for k in TONAL_KEYS}, tone_context is not None)
+        spec = tone.spec(edits, context, space=space)
+    output = space.key if space is not None else 'srgb'
+    tonal_key = _key(base_key, {k: a.get(k, 0) for k in TONAL_KEYS}, tone_context is not None, output)
     color_key = _key(a.get('saturation', 0), a.get('vibrance', 0), edits['hsl'], edits['curves'],
                      edits.get('tone_curve'), edits.get('curve_mode', 'linear'), edits.get('monochrome', False),
                      edits.get('grading', {}), backend.gpu_pointwise, backend.gpu_version2)
-    if (backend.gpu_version2 if version == 2 else backend.gpu_pointwise) and not has_spatial(a):
+    if (backend.gpu_version2 if version == 2 else backend.gpu_pointwise) and not has_spatial(a) and space is None:
         x = cache.get('global', _key(tonal_key, 'fused', color_key), lambda: backend.fused(balanced, edits, spec))
     else:
         tonal = cache.get('tonal', tonal_key, lambda: backend.tonal(balanced, a, spec))
         detail_key = _key(tonal_key, {k: a.get(k, 0) for k in SPATIAL_KEYS}, detail_scale)
         if has_spatial(a):
             tonal = cache.get('detail', detail_key, lambda: spatial_details(tonal, a, detail_scale))
-        x = cache.get('global', _key(detail_key, color_key), lambda: backend.color(tonal, edits))
+        x = cache.get('global', _key(detail_key, color_key), lambda: backend.color(tonal, edits, space if version == 2 else None))
     masks = [m for m in edits['masks'] if m['enabled'] and any(m['adjustments'].values())]
     if masks:
         reference_key = _key(develop_settings, lens_key, version)
@@ -946,11 +983,20 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
             geometry = {k: v for k, v in mask.items() if k not in ('adjustments', 'name', 'enabled')}
             alpha_key = _key(geometry, x.shape, reference_key if mask['kind'] == 'luminance' else '')
             alpha = cache.alpha(alpha_key, lambda: mask_alpha(mask, x.shape, mask_reference))
-            apply_local(x, alpha, mask['adjustments'], backend, detail_scale, version=version)
+            apply_local(x, alpha, mask['adjustments'], backend, detail_scale, version=version,
+                        space=space if version == 2 else None)
     x = finishing(x, edits.get('effects', {}), edits.get('crop'))
     if apply_crop:
         x = crop_rotate(x, edits)
+    if space is not None and version == 1:
+        x = convert_display(x, space)
     return np.ascontiguousarray(np.clip(x, 0, 1), dtype=np.float32)
+
+
+def convert_display(srgb, space):
+    """Display sRGB → display values of the output colour space (sRGB fits inside P3 and Adobe
+    RGB, so nothing clips): process 1 renders in sRGB and is only re-encoded."""
+    return color.reencode(srgb, space)
 
 
 def _gain(edits):
@@ -981,7 +1027,7 @@ def dehaze_context_for(source, edits, backend=None, detail_scale=1., tone_contex
 
 
 def process_region(source, edits, backend=None, rect=None, detail_scale=1., dehaze_context=None, check=None,
-                   tone_context=None):
+                   tone_context=None, space=None):
     """``process(source, edits, apply_crop=False)[y0:y1, x0:x1]`` for ``rect = (x0, y0, x1, y1)`` (1.4.0).
 
     Neighbourhood tools read a margin around the block; retouching, masks, vignette and grain are
@@ -991,6 +1037,7 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
     abandon a stale render.
     """
     backend = backend or Backend('cpu')
+    space = color.space(space) if color.wide(space) else None
     check = check or (lambda: None)
     h, w = source.shape[:2]
     target = Area(w, h, *(rect or (0, 0, w, h)))
@@ -1006,9 +1053,9 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
         dehaze_context = dehaze_context_for(source, edits, backend, detail_scale, tone_context)
     corrected = lens.view(source, edits)  # blocks of the lens-corrected frame on demand (1.5.1)
     balanced = _base(corrected, edits, (area.x0, area.y0, area.x1, area.y1))
-    spec = tone.spec(edits, tone_context, area) if version == 2 else None
+    spec = tone.spec(edits, tone_context, area, space) if version == 2 else None
     check()
-    if (backend.gpu_version2 if version == 2 else backend.gpu_pointwise) and not has_spatial(a):
+    if (backend.gpu_version2 if version == 2 else backend.gpu_pointwise) and not has_spatial(a) and space is None:
         x = backend.fused(balanced, edits, spec)
     else:
         x = backend.tonal(balanced, a, spec)
@@ -1016,7 +1063,7 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
             check()
             x = spatial_details(x, a, detail_scale, (h, w), dehaze_context, area)
         check()
-        x = backend.color(x, edits)
+        x = backend.color(x, edits, space if version == 2 else None)
     if masks:
         reference = develop_view(corrected[area.y0:area.y1, area.x0:area.x1], edits) \
             if any(m['kind'] == 'luminance' for m in masks) else None
@@ -1024,9 +1071,12 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
         for mask in masks:
             check()
             apply_local(x, mask_alpha(mask, (h, w), reference, area), mask['adjustments'], backend, detail_scale, (h, w),
-                        version)
+                        version, space if version == 2 else None)
     x = finishing(x, edits.get('effects', {}), edits.get('crop'), area)
-    return np.ascontiguousarray(np.clip(x[area.inner(target)], 0, 1), dtype=np.float32)
+    x = x[area.inner(target)]
+    if space is not None and version == 1:
+        x = convert_display(x, space)
+    return np.ascontiguousarray(np.clip(x, 0, 1), dtype=np.float32)
 
 
 def crop_bounds(edits, width, height):
@@ -1272,12 +1322,58 @@ def onnx_super_resolve(rgb, scale, path, use_cuda, progress=None, cancel=None, n
     return np.clip(out, 0, 1, out=out), label + provider
 
 
-def export_image(path, rgb, quality=95, photo=None, provenance=None, metadata=None):
-    """Atomic export. All outputs are encoded sRGB; TIFF preserves 16-bit precision.
+class Exported(NamedTuple):
+    """What ``export_image`` wrote: problems worth telling the user, the JPEG quality used and
+    the file size in bytes."""
+    notes: tuple = ()
+    quality: int | None = None
+    size: int = 0
 
+
+#: Lowest JPEG quality the file-size limit may choose.
+JPEG_MIN_QUALITY = 10
+
+
+def _jpeg(image, quality, options, subsampling=0):
+    import io
+    buffer = io.BytesIO()
+    image.save(buffer, 'JPEG', quality=quality, subsampling=subsampling, **options)
+    return buffer.getvalue()
+
+
+def _fit_jpeg(image, quality, budget, options):
+    """The highest JPEG quality ≤ ``quality`` whose file fits ``budget`` bytes (binary search),
+    as ``(encoded bytes, quality, fits)``; the lowest quality's bytes when none fits.
+
+    A file that fits at the requested quality keeps LUMEN's 4:4:4 chroma; once the limit has to
+    lower the quality, chroma is subsampled 4:2:0, which at the same size leaves far more
+    quality for the detail the eye sees."""
+    data = _jpeg(image, quality, options)
+    if len(data) <= budget:
+        return data, quality, True
+    low, high, best = JPEG_MIN_QUALITY, quality, None
+    while low <= high:
+        middle = (low + high) // 2
+        candidate = _jpeg(image, middle, options, 2)
+        if len(candidate) <= budget:
+            best, low = (candidate, middle), middle + 1
+        else:
+            high = middle - 1
+    if best is not None:
+        return best[0], best[1], True
+    return _jpeg(image, JPEG_MIN_QUALITY, options, 2), JPEG_MIN_QUALITY, False
+
+
+def export_image(path, rgb, quality=95, photo=None, provenance=None, metadata=None, space=None, max_kb=None):
+    """Atomic export; TIFF and DNG keep 16-bit precision.  Returns an ``Exported``.
+
+    ``rgb`` holds display values of the output colour space ``space`` (``color.SPACES``; sRGB by
+    default), whose ICC profile is embedded (DNG: its primaries in ColorMatrix1).
     ``metadata = dict(source=<original photo>, location=bool)`` copies the original's EXIF,
-    IPTC and XMP into the file before it appears (1.6.1, GitHub issue #5).  Returns '' or why
-    that metadata could not be written; the picture is exported either way."""
+    IPTC and XMP into the file before it appears (1.6.1, GitHub issue #5).  ``max_kb`` limits a
+    JPEG to that many KB, metadata included, by lowering the quality (never below
+    ``JPEG_MIN_QUALITY``).  The picture is exported even when the metadata or the size limit
+    cannot be honoured; ``notes`` says why."""
     path = Path(path)
     ext = path.suffix.lower()
     if ext not in {'.jpg', '.jpeg', '.png', '.tif', '.tiff', '.dng'}:
@@ -1285,13 +1381,25 @@ def export_image(path, rgb, quality=95, photo=None, provenance=None, metadata=No
     large_image.validate_size(rgb.shape)
     if not large_image.finite(rgb):
         raise ValueError(tr('图像包含无效像素。'))
+    from . import icc
     temp = path.with_name(path.stem + '.lumen-tmp' + ext)
+    notes, used = [], None
+    jpeg = ext in {'.jpg', '.jpeg'}
+    limit = int(max_kb) * 1024 if jpeg and max_kb else 0
+
+    def copy_metadata():
+        if not (metadata and metadata.get('source')):
+            return ''
+        note = photo_metadata.copy_from(metadata['source'], temp, metadata.get('location', True))
+        if note:
+            log.warning('metadata of %s not copied into %s: %s', metadata['source'], path.name, note)
+        return note
     try:
         if ext == '.dng':
-            dng.write(temp,rgb,photo,provenance)
+            dng.write(temp, rgb, photo, provenance, space)
         elif ext in {'.tif', '.tiff'}:
             import tifffile
-            profile = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
+            profile = icc.profile(space)
             tifffile.imwrite(str(temp), large_image.encode_strips(rgb),shape=rgb.shape,dtype=np.uint16,
                              rowsperstrip=large_image.STRIP_ROWS,photometric='rgb', metadata=None,
                              description=photo_metadata.description(photo,provenance) if photo is not None else None,
@@ -1300,18 +1408,30 @@ def export_image(path, rgb, quality=95, photo=None, provenance=None, metadata=No
             data=large_image.allocate(rgb.shape,np.uint8)
             for y,block in large_image.strips(rgb):data[y:y+len(block)]=np.round(np.clip(block,0,1)*255).astype(np.uint8)
             image = Image.fromarray(data)
-            profile = ImageCms.ImageCmsProfile(ImageCms.createProfile('sRGB')).tobytes()
-            options = dict(icc_profile=profile)
-            if ext in {'.jpg', '.jpeg'}:
-                options.update(quality=quality, subsampling=0)
-            image.save(temp, **options)
-        note = ''
-        if metadata and metadata.get('source'):
-            note = photo_metadata.copy_from(metadata['source'], temp, metadata.get('location', True))
-            if note:
-                log.warning('metadata of %s not copied into %s: %s', metadata['source'], path.name, note)
+            options = dict(icc_profile=icc.profile(space))
+            if limit:
+                encoded, used, fits = _fit_jpeg(image, quality, limit, options)
+                temp.write_bytes(encoded)
+            elif jpeg:
+                used = quality
+                image.save(temp, quality=quality, subsampling=0, **options)
+            else:
+                image.save(temp, **options)
+        note = copy_metadata()
+        if limit and not note and temp.stat().st_size > limit and used > JPEG_MIN_QUALITY:
+            # The copied metadata pushed the file over: fit the picture into what is left.
+            overhead = temp.stat().st_size - len(encoded)
+            encoded, used, fits = _fit_jpeg(image, used, max(1, limit - overhead), options)
+            temp.write_bytes(encoded)
+            note = copy_metadata()
+        if note:
+            notes.append(tr('未能写入原片元数据：') + note)
+        size = temp.stat().st_size
+        if limit and size > limit:
+            notes.append(tr('无法压缩到 {limit} KB 以内：最低质量 {quality} 时为 {size} KB，可缩小尺寸后再导出。',
+                            limit=int(max_kb), quality=used, size=-(-size // 1024)))
         os.replace(temp, path)
-        return note
+        return Exported(tuple(notes), used, size)
     finally:
         if temp.exists():
             temp.unlink()

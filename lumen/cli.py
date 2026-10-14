@@ -111,8 +111,9 @@ def render(args):
         target[key] = _value(value)
     if changes:
         run('edit.apply', changes=changes)
+    limit = dict(max_kb=args.max_kb) if args.max_kb else {}
     result = run('photo.export', output=args.output, quality=args.quality, long_edge=args.size, overwrite=args.overwrite,
-                 metadata=not args.no_metadata, location=not args.no_location)
+                 metadata=not args.no_metadata, location=not args.no_location, space=args.space, **limit)
     return result
 
 
@@ -139,6 +140,8 @@ def main(argv=None):
     p.add_argument('--overwrite', action='store_true')
     p.add_argument('--no-metadata', action='store_true', help="don't copy the original's EXIF / IPTC / XMP")
     p.add_argument('--no-location', action='store_true', help='copy metadata without the GPS position')
+    p.add_argument('--space', choices=('srgb', 'p3', 'adobe-rgb'), default='srgb', help='output colour space')
+    p.add_argument('--max-kb', type=int, help='JPEG: largest file size in KB (lowers the quality)')
     p = sub.add_parser('info', help='size, format and shooting data of a photo')
     p.add_argument('photo')
     p = sub.add_parser('list', help='library photos (editor open) or rated photos in the catalog')

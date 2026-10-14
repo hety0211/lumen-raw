@@ -57,6 +57,9 @@ QComboBox QAbstractItemView { background: #222a36; selection-background-color: #
 QCheckBox { spacing: 7px; padding: 4px 0; }
 QCheckBox::indicator { width: 13px; height: 13px; background: #171c24; border: 1px solid #56647b; border-radius: 3px; }
 QCheckBox::indicator:checked { background: #aab9f1; }
+QCheckBox:disabled { color: #5e6878; }
+QCheckBox::indicator:disabled { background: #1a1f27; border-color: #353e4c; }
+QCheckBox::indicator:checked:disabled { background: #4a5468; border-color: #4a5468; }
 QScrollArea { border: 0; }
 QScrollBar:vertical { background: #1b2028; width: 7px; }
 QScrollBar::handle:vertical { background: #485366; border-radius: 3px; min-height: 30px; }
@@ -100,6 +103,9 @@ QDoubleSpinBox { border: 0; background: #1c221d; }
 QComboBox QAbstractItemView { background: #252e26; selection-background-color: #46543b; }
 QCheckBox::indicator { background: #171d18; border-color: #62735b; }
 QCheckBox::indicator:checked { background: #b1c498; border-color: #b1c498; }
+QCheckBox:disabled { color: #64705f; }
+QCheckBox::indicator:disabled { background: #1a1f1b; border-color: #363f33; }
+QCheckBox::indicator:checked:disabled { background: #4f5a46; border-color: #4f5a46; }
 QScrollBar:vertical { background: #202422; width: 6px; }
 QScrollBar::handle:vertical { background: #4b5947; }
 QListWidget { background: #181d19; border-color: #343e33; }
@@ -1195,7 +1201,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         dialog = ExportDialog(self, self.source_path, enhance)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
-        ext = ['.jpg', '.png', '.tif', '.dng'][dialog.format.currentIndex()]
+        ext = dialog.extension()
         path, _ = QFileDialog.getSaveFileName(self, tr('导出成片'), str(Path(self.source_path).with_name(Path(self.source_path).stem + '-Lumen' + ext)), tr('图片 (*{ext})', ext=ext))
         if not path:
             return
@@ -1204,9 +1210,10 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         if Path(path).resolve() == Path(self.source_path).resolve():
             return self.error(tr('请选择不同的文件名，以保留原片。'))
         self.start_export(path, [1, 2, 4][dialog.scale.currentIndex()], dialog.model_choice(), dialog.quality.value(),
-                          **dialog.metadata.options())
+                          **dialog.metadata.options(), **dialog.output.options(), long_edge=dialog.long_edge())
 
-    def start_export(self, path, scale=1, model_path='', quality=95, metadata=True, location=True):
+    def start_export(self, path, scale=1, model_path='', quality=95, metadata=True, location=True, space=None,
+                     max_kb=None, long_edge=None):
         if self.work.busy(A.AI):return
         if self.work.busy(A.SELECTION):
             self.statusBar().showMessage(tr('正在生成蒙版，请完成后再导出。'))
@@ -1244,7 +1251,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             pixels = h * w * (crop[2] - crop[0]) * (crop[3] - crop[1]) * scale * scale
             if pixels > engine.MAX_EXPORT_PIXELS:
                 raise ValueError(tr('输出超过 4 亿像素，请先裁切或降低超分倍数。'))
-            result = engine.process(source, edits, engine.Backend('auto' if use_cuda else 'cpu'))
+            result = engine.process(source, edits, engine.Backend('auto' if use_cuda else 'cpu'), space=space)
             del source
             self.export_progress.emit(30, tr('正在增强…'))
             def progress(done, total):
@@ -1253,19 +1260,24 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             if self.export_cancel.is_set():
                 raise InterruptedError(tr('已取消导出'))
             self.export_progress.emit(98, tr('正在写入成片…'))
-            result = watermark.apply(result, edits['watermark'], photo)
-            note = engine.export_image(path, result, quality, photo=photo, metadata=original)
-            return result.shape, backend, note
+            from .batch_export import fit_long_edge
+            result = watermark.apply(fit_long_edge(result, long_edge), edits['watermark'], photo, space)
+            exported = engine.export_image(path, result, quality, photo=photo, metadata=original, space=space,
+                                           max_kb=max_kb)
+            return result.shape, backend, exported
         def success(result):
             self.close_export_dialog()
             self.work.end(A.EXPORTING)
             self.open_button.setEnabled(True)
             self.export_button.setEnabled(True)
-            shape, backend, note = result
+            shape, backend, exported = result
             self.statusBar().showMessage(tr('导出完成 · {width} × {height} · {backend} · {path}', width=shape[1], height=shape[0], backend=backend, path=path))
             text = tr('已保存：\n{path}\n\n{width} × {height} 像素\n{backend}', path=path, width=shape[1], height=shape[0], backend=backend)
-            if note:
-                text += '\n\n' + tr('未能写入原片元数据：') + note
+            if max_kb and exported.quality is not None and exported.quality < quality:
+                text += '\n' + tr('按 {limit} KB 上限，JPEG 质量为 {quality}（{size} KB）',
+                                   limit=max_kb, quality=exported.quality, size=-(-exported.size // 1024))
+            if exported.notes:
+                text += '\n\n' + '\n'.join(exported.notes)
             QMessageBox.information(self, tr('导出完成'), text)
         def failed(text):
             self.close_export_dialog()

@@ -17,11 +17,11 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFileDialog
 
 from . import engine, lens, model, watermark
 from .i18n import tr
-from .widgets import MetadataOptions
+from .widgets import MetadataOptions, OutputOptions
 
 log = logging.getLogger(__name__)
 
-FORMATS = (('JPEG · 8-bit sRGB', '.jpg'), ('PNG · 8-bit sRGB', '.png'), ('TIFF · 16-bit sRGB', '.tif'),
+FORMATS = (('JPEG · 8-bit', '.jpg'), ('PNG · 8-bit', '.png'), ('TIFF · 16-bit', '.tif'),
            (tr('DNG · 16-bit 线性成片'), '.dng'))
 #: Output sizes: None keeps the full size, otherwise the long edge in pixels (never enlarged).
 SIZES = ((tr('原始尺寸'), None), (tr('长边 4000 像素'), 4000), (tr('长边 2560 像素'), 2560), (tr('长边 1600 像素'), 1600))
@@ -58,6 +58,8 @@ class BatchExportDialog(QDialog):
         for name, widget in ((tr('输出格式'), self.format), (tr('输出尺寸'), self.size), (tr('JPEG 质量'), self.quality)):
             form.addRow(name, widget)
         form.addRow(tr('保存到'), row)
+        self.output = OutputOptions()
+        self.output.add_rows(form, after=self.quality)
         root.addLayout(form)
         self.metadata = MetadataOptions()
         root.addWidget(self.metadata)
@@ -70,7 +72,13 @@ class BatchExportDialog(QDialog):
         buttons.accepted.connect(self.confirm)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
-        self.format.currentIndexChanged.connect(lambda i: self.quality.setEnabled(FORMATS[i][1] == '.jpg'))
+        self.format.currentIndexChanged.connect(self.refresh_format)
+        self.refresh_format()
+
+    def refresh_format(self, *_):
+        extension = FORMATS[self.format.currentIndex()][1]
+        self.quality.setEnabled(extension == '.jpg')
+        self.output.set_format(extension)
 
     def choose_folder(self):
         folder = QFileDialog.getExistingDirectory(self, tr('选择导出目录'), self.folder.text())
@@ -82,11 +90,13 @@ class BatchExportDialog(QDialog):
             self.status.setText(tr('请选择已存在的导出目录。'))
             return
         self.metadata.save()
+        self.output.save()
         self.accept()
 
     def options(self):
         return dict(extension=FORMATS[self.format.currentIndex()][1], long_edge=SIZES[self.size.currentIndex()][1],
-                    quality=self.quality.value(), folder=self.folder.text(), **self.metadata.options())
+                    quality=self.quality.value(), folder=self.folder.text(), **self.metadata.options(),
+                    **self.output.options())
 
 
 def target_path(folder, source, extension, taken):
@@ -113,8 +123,9 @@ def run(items, options, backend, progress, cancel):
     """Worker: export ``items`` = [(path, edits, initialized)]; returns ``[(path, target or None, error)]``.
 
     ``options['metadata']`` / ``['location']`` (default True) copy the original's EXIF, IPTC and XMP
-    (with or without GPS) into each file (1.6.1); for an exported photo whose metadata could not
-    be written, ``error`` holds why while ``target`` is set."""
+    (with or without GPS) into each file (1.6.1); ``options['space']`` is the output colour space
+    and ``options['max_kb']`` a JPEG size limit.  For an exported photo ``error`` holds the notes
+    of ``engine.export_image`` (metadata not written, size limit not met), or ''."""
     results, taken = [], set()
     total = len(items)
     for index, (path, edits, initialized) in enumerate(items):
@@ -134,17 +145,18 @@ def run(items, options, backend, progress, cancel):
             edits['lens'] = lens.prepare(edits['lens'], info.get('lens_match'))[0]
             if cancel.is_set():
                 break
-            result = engine.process(source, edits, backend)
+            result = engine.process(source, edits, backend, space=options.get('space'))
             del source
             result = fit_long_edge(result, options['long_edge'])
             photo = info.get('photo', {})
-            result = watermark.apply(result, edits['watermark'], photo)
+            result = watermark.apply(result, edits['watermark'], photo, options.get('space'))
             # 1.6.0: commands may name the output file themselves (photo.export).
             target = Path(options['names'][path]) if path in options.get('names', {}) else \
                 target_path(options['folder'], path, options['extension'], taken)
             original = dict(source=path, location=options.get('location', True)) if options.get('metadata', True) else None
-            note = engine.export_image(target, result, options['quality'], photo=photo, metadata=original)
-            results.append((path, str(target), note))
+            exported = engine.export_image(target, result, options['quality'], photo=photo, metadata=original,
+                                           space=options.get('space'), max_kb=options.get('max_kb'))
+            results.append((path, str(target), '\n'.join(exported.notes)))
         except Exception as exc:
             log.exception('batch export failed for %s', path)
             results.append((path, None, str(exc) or type(exc).__name__))

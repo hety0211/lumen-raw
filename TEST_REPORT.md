@@ -1,5 +1,17 @@
 # LUMEN RAW 验证记录
 
+## 1.6.2 验证 · 2026-10-14
+
+同一台 Windows 主机（AMD Radeon RX 9070 XT，DirectML）。
+
+- **广色域导出：** 合成场景中色域内的颜色，P3／Adobe RGB 渲染与 sRGB 成片换算后完全一致（无调整时差 0）；曝光、色调、饱和度等逐项为 0，清晰度、纹理、锐化、去薄雾、RGB 曲线在显示编码上计算，平均差 0.02–0.6/255。佳能 R5 II 静物（饱和度 +25）导出 P3 时 4.6% 的像素在 sRGB 之外，Adobe RGB 为 3.6%（其红色原色与 sRGB 相同，主要扩展绿／青）。四种格式内嵌对应配置文件（DNG 为色彩矩阵），LUMEN 重新打开：16 位 TIFF 与 DNG 与导出前的线性值逐像素一致（含 sRGB 外的负值），8 位 PNG 差 ≤ 0.007，JPEG 为压缩误差。程序生成的 ICC 由 LittleCMS 读取，sRGB → P3／Adobe RGB 与内部矩阵相差 ≤ 1/255；8 位往返的最大误差（7、10 级）出现在 sRGB 色域边缘的近零通道，NumPy 纯计算同样如此，属于 8 位量化。冻结版 `lumen-cli.exe render … --space p3 --max-kb 500` 导出的 JPEG 内嵌 Display P3 并保留原片元数据。
+- **JPEG 文件上限：** 24 MP 人像（含元数据）：4000 KB → 质量 85（3829 KB），1500 KB → 55，600 KB → 20（599 KB），300 KB → 质量 10 仍为 481 KB，照常导出并提示。只用 4:4:4 时这三档的质量为 76、38、放不下。上限不起作用时文件与不设上限逐字节相同。每张多用 1–2 秒。
+- **内置标志：** 19 个 SVG 来自 Wikimedia Commons，下载时逐个核对许可（均为 “Public domain”，标注 “trademarked”）、大小与 SHA-256，并检查不含脚本或外部引用；未采用 CC BY／CC BY-SA 的版本（TAMRON 新标志、富士旧标志）。15 组常见机身／镜头组合在浅色与深色边框上逐一目视检查；真实样片 Sony A7 III + SIGMA 100-400、尼康 Z8 + NIKKOR Z 14-24 的全尺寸导出边框正确，品牌名不重复。
+- **其他：** 发布前发现 `lumen-cli render 照片 输出` 不加 `--size` 时报 “long_edge must be integer”（1.6.0 起的问题，冒烟测试总是带 `--size` 所以没发现），已修复并加入测试。
+- **自动检查：** 完整回归 **401 项通过、11 项跳过（macOS 专属等）**；新增 `tests/test_output_space.py` 与 `tests/test_watermark_logos.py`。
+- **打包：** `LumenRAW-1.6.2-Windows.zip` 950,465,719 字节、2886 个文件，ZIP CRC 通过；`LumenRAW-1.6.2-Setup.exe` 879,233,892 字节，解包后与冻结版逐个一致；冻结版冒烟测试为 DirectML。
+- **未覆盖：** 面板滚轮防误调（1.6.1）仍只有离屏测试；P3／Adobe RGB 成片只在色彩管理的看图软件中确认了嵌入的配置文件，未在广色域显示器上目视比较；Mac 版未构建。
+
 ## 1.6.1 验证 · 2026-10-12
 
 同一台 Windows 主机（AMD Radeon RX 9070 XT，DirectML）。起因是一条 B 站用户反馈：“生成”之后人和物品的轮廓有一层高光，看起来不在一个图层。没有拿到用户的照片和操作步骤，按描述推测是自然语言修图生成的 AI 区域蒙版；以下复现用的是本机的 24 MP Sony 人像和 raw.pixls.us 的 CC0 样片（Sony RX100 VA 建筑、Nikon D40 枯枝、Nikon D800 树叶、Canon R5 II 静物）。

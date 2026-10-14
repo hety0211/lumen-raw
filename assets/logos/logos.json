@@ -1,0 +1,259 @@
+{
+ "sony": {
+  "name": "SONY",
+  "role": "camera",
+  "colour": "ink",
+  "height": 0.34,
+  "patterns": [
+   "SONY"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Sony_logo.svg",
+  "file": "File:Sony logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "f6191bc69f8df259c86a13dc9582ba9ed2e0101d4452ba3f1d33ec8e907ddda0"
+ },
+ "canon": {
+  "name": "Canon",
+  "role": "camera",
+  "colour": "colour",
+  "height": 0.36,
+  "patterns": [
+   "CANON"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Canon_wordmark.svg",
+  "file": "File:Canon wordmark.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "9b6acea0a1a760992b23754c0be41eaaa2fdac8d9b75ae3cc5218a1ade278192"
+ },
+ "nikon": {
+  "name": "Nikon",
+  "role": "camera",
+  "colour": "badge",
+  "height": 0.62,
+  "patterns": [
+   "NIKON"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Nikon_Logo.svg",
+  "file": "File:Nikon Logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "449bab29e259c46b7264ed19886e5a0e2ef567250d01163c8e2cd1bbce486c53"
+ },
+ "fujifilm": {
+  "name": "FUJIFILM",
+  "role": "camera",
+  "colour": "ink",
+  "height": 0.32,
+  "patterns": [
+   "FUJIFILM",
+   "FUJI "
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Fujifilm_logo.svg",
+  "file": "File:Fujifilm logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "d86cf1e0208b9898846f9ccd93bc514be3130fcb64492e5fc915a4e08d7dd8f2"
+ },
+ "lumix": {
+  "name": "LUMIX",
+  "role": "both",
+  "colour": "ink",
+  "height": 0.32,
+  "patterns": [
+   "LUMIX",
+   "PANASONIC"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Lumix_logo.svg",
+  "file": "File:Lumix logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "affd3d5e35050c3a48c8060656a6f0e299349a90b25e8e8d19fd34ef1b936446"
+ },
+ "leica": {
+  "name": "Leica",
+  "role": "both",
+  "colour": "badge",
+  "height": 0.62,
+  "patterns": [
+   "LEICA",
+   "LEITZ"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Leica_Camera.svg",
+  "file": "File:Leica Camera.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "6f03a57db7b98ffaee1c67d940b415340aa65c115c44adf6a3864e17c4cb42d5"
+ },
+ "om-system": {
+  "name": "OM SYSTEM",
+  "role": "camera",
+  "colour": "badge",
+  "height": 0.58,
+  "patterns": [
+   "OM DIGITAL",
+   "OM SYSTEM",
+   "OM-SYSTEM"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:OM-System-Logo.svg",
+  "file": "File:OM-System-Logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "ee746d4ec956e3dab3e3054722ff78a9e9157b8116696c08d660397ab1ae458b"
+ },
+ "olympus": {
+  "name": "OLYMPUS",
+  "role": "both",
+  "colour": "colour",
+  "height": 0.4,
+  "patterns": [
+   "OLYMPUS",
+   "ZUIKO"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Olympus_Corporation_logo.svg",
+  "file": "File:Olympus Corporation logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "c9af41e756dba5c54b28bc8cdf17f8188ecd862cf315b2935290d1892a213ab4"
+ },
+ "pentax": {
+  "name": "PENTAX",
+  "role": "both",
+  "colour": "colour",
+  "height": 0.34,
+  "patterns": [
+   "PENTAX"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Pentax_Logo.svg",
+  "file": "File:Pentax Logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "c2a4761c9a69d04bfd987b352b370b8e05cec9bf7bac5f7036ffbd185f165cc5"
+ },
+ "ricoh": {
+  "name": "RICOH",
+  "role": "camera",
+  "colour": "colour",
+  "height": 0.34,
+  "patterns": [
+   "RICOH"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Ricoh_logo_2012.svg",
+  "file": "File:Ricoh logo 2012.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "be0ae0727d7d94dd19c583f7fef7900ea3035f18d20f85f16526b3e0d566a56a"
+ },
+ "hasselblad": {
+  "name": "HASSELBLAD",
+  "role": "both",
+  "colour": "ink",
+  "height": 0.3,
+  "patterns": [
+   "HASSELBLAD",
+   "XCD"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Hasselblad_logo.svg",
+  "file": "File:Hasselblad logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "e5e6db04ea5b880d6ce89235623e508e9286248893173f7e189eb49be402c2cd"
+ },
+ "dji": {
+  "name": "DJI",
+  "role": "camera",
+  "colour": "colour",
+  "height": 0.44,
+  "patterns": [
+   "DJI"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:DJI_Innovations_logo.svg",
+  "file": "File:DJI Innovations logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "dccc86206e06963c557d9d167cf31459b6d3814614cac2db7dd49f09b62acb7e"
+ },
+ "apple": {
+  "name": "Apple",
+  "role": "camera",
+  "colour": "ink",
+  "height": 0.58,
+  "patterns": [
+   "APPLE",
+   "IPHONE"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Apple_logo_black.svg",
+  "file": "File:Apple logo black.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "9d00ea77a3240f291356c36261c5f45d7fa456f29c97a2f060caf0ed4b9c3231"
+ },
+ "sigma": {
+  "name": "SIGMA",
+  "role": "both",
+  "colour": "colour",
+  "height": 0.34,
+  "patterns": [
+   "SIGMA"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Sigma_Logo.svg",
+  "file": "File:Sigma Logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "b5aebea30d72f02b3c1d94edbd3f04012a90913eb81856da2762ab9311b662a8"
+ },
+ "tamron": {
+  "name": "TAMRON",
+  "role": "lens",
+  "colour": "colour",
+  "height": 0.32,
+  "patterns": [
+   "TAMRON"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Tamron_Logo_2019.svg",
+  "file": "File:Tamron Logo 2019.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "f737e372208a6ef1c6ab4bd40737d997be5e804a4aa39265913b713b0fb683fb"
+ },
+ "zeiss": {
+  "name": "ZEISS",
+  "role": "lens",
+  "colour": "badge",
+  "height": 0.62,
+  "patterns": [
+   "ZEISS"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Zeiss_logo.svg",
+  "file": "File:Zeiss logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "990ae10139ecc961697aed54493a827b756786acfeafdf0291b6ab4d2a9ded1b"
+ },
+ "tokina": {
+  "name": "Tokina",
+  "role": "lens",
+  "colour": "colour",
+  "height": 0.36,
+  "patterns": [
+   "TOKINA"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Tokina_Logo.svg",
+  "file": "File:Tokina Logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "9ce0f0f437f20980b2eea1bbbbb7c1d3fc4b56ecb06456491de1e9f71c573ffc"
+ },
+ "laowa": {
+  "name": "LAOWA",
+  "role": "lens",
+  "colour": "colour",
+  "height": 0.36,
+  "patterns": [
+   "LAOWA",
+   "VENUS OPTICS"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Laowa_logo.svg",
+  "file": "File:Laowa logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "cf8c5e5384122cfc9e9ab32a37f2011ea040a03492d7fe5bea5f570fa3c9b217"
+ },
+ "nikkor": {
+  "name": "NIKKOR",
+  "role": "lens",
+  "colour": "ink",
+  "height": 0.32,
+  "patterns": [
+   "NIKKOR",
+   "NIKON"
+  ],
+  "source": "https://commons.wikimedia.org/wiki/File:Nikkor_logo.svg",
+  "file": "File:Nikkor logo.svg",
+  "licence": "Public domain (text logo); trademark of its owner",
+  "sha256": "d79a98f73ccc90bb0181c76f13499a5f81602273ff06aac87d8298b17545d0dc"
+ }
+}

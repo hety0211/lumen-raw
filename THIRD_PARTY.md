@@ -28,6 +28,7 @@ LUMEN RAW 的源码许可不替代依赖许可。便携包保留动态库，Qt /
 | NAFNet SIDD | MIT，Megvii，https://github.com/megvii-research/NAFNet；assets/NAFNet-LICENSE.txt |
 | lensfun 镜头数据库（1.5.1，镜头校正：畸变、横向色差、暗角） | CC BY-SA 3.0，lensfun 项目，https://lensfun.github.io/ ；原样收录于 assets/lensfun/db（提交 bbd4332），许可见 assets/lensfun/COPYING.CC_BY-SA_3.0；未包含或链接 lensfun 程序库（LGPL-3.0），校正模型由 lumen/lens.py 实现 |
 | SenseVoice-Small 语音识别模型（1.5.0） | FunASR 模型开源协议 1.1，FunAudioLLM / 阿里巴巴集团，https://huggingface.co/FunAudioLLM/SenseVoiceSmall；ONNX 导出 k2-fsa / sherpa-onnx（Apache-2.0），https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17；assets/SenseVoice-LICENSE.txt |
+| 相机与镜头品牌标志（1.6.2，水印边框） | 来自 Wikimedia Commons，均标为公有领域（简单字形的文字标志不受著作权保护），同时是各品牌所有者的注册商标；仅用于在照片边框上按 EXIF 标注拍摄所用的机身与镜头，不表示与这些公司有任何关联或获得认可；原始 SVG、文件名、来源页面与 SHA-256 见 assets/logos/src、assets/logos/README.txt 与 assets/logos/logos.json |
 | 可选 CuPy | MIT，https://cupy.dev/ |
 | PyObjC（macOS 版，调用 Metal） | MIT，https://github.com/ronaldoussoren/pyobjc |
 | ExifTool 13.59 Perl 发行版（macOS 版） | 与 Perl 相同条款（Artistic / GPL），https://exiftool.org/；许可说明见随包 assets/exiftool/unix/README，由系统自带 Perl 运行 |
@@ -37,4 +38,4 @@ LUMEN RAW 的源码许可不替代依赖许可。便携包保留动态库，Qt /
 
 安装依赖附带的许可证文本收集在便携目录 `licenses/`。字体许可证在 `assets/OFL.txt`。测试用的 Sony ARW 样片来自 https://raw.pixls.us/，记录为 CC0，仅用于验证，未将大体积原始样片加入便携包。
 
-水印的内置品牌名称使用 Noto 通用字体排印，并非官方图形标志。没有随包再分发相机或镜头品牌图形 LOGO；自定义标志由用户提供。新增真实 RAW 测试照片来自 raw.pixls.us 的 CC0 样片库，不随包分发。
+自 1.6.2 起，水印边框内置上表所列的相机与镜头品牌标志（商标归各自所有者）；没有内置标志的品牌仍以 Noto 字体排印品牌名称。1.6.1 及更早由用户导入的标志 PNG 保存在各自工程中，继续按原样显示。新增真实 RAW 测试照片来自 raw.pixls.us 的 CC0 样片库，不随包分发。

@@ -134,7 +134,7 @@ def test_exports_keep_the_originals_metadata_but_not_what_no_longer_applies(tmp_
     photo = dict(body='ILCE-7M3')
     for ext in ('.jpg', '.png', '.tif', '.dng'):
         target = tmp_path / f'成片{ext}'
-        assert engine.export_image(target, picture, 90, photo=photo, metadata=dict(source=original)) == ''
+        assert engine.export_image(target, picture, 90, photo=photo, metadata=dict(source=original)).notes == ()
         tags = _tags(target, '-all')
         assert tags['IFD0:Make'] == 'SONY' and tags['IFD0:Model'] == 'ILCE-7M3' and tags['IFD0:Copyright'] == 'Example'
         assert tags['ExifIFD:DateTimeOriginal'] == '2025:10:01 08:30:00' and tags['ExifIFD:ISO'] == 200

@@ -225,10 +225,10 @@ class LibraryMixin:
             text=tr('已导出 {n_done} 张到：\n{folder}', n_done=len(done), folder=options["folder"])
             if failed:
                 text+=tr('\n\n{n_failed} 张未能导出：\n', n_failed=len(failed))+'\n'.join(tr('{name}：{e}', name=Path(p).name, e=e) for p,_,e in failed[:8])
-            unwritten=[r for r in done if r[2]]
-            if unwritten:
-                text+='\n\n'+tr('{n} 张未能写入原片元数据（成片已导出）：', n=len(unwritten))+'\n'+'\n'.join(
-                    tr('{name}：{e}', name=Path(p).name, e=e) for p,_,e in unwritten[:4])
+            noted=[r for r in done if r[2]]
+            if noted:
+                text+='\n\n'+tr('{n} 张已导出，但有提示：', n=len(noted))+'\n'+'\n'.join(
+                    tr('{name}：{e}', name=Path(p).name, e=e) for p,_,e in noted[:4])
             if skipped:
                 text+=tr('\n\n已取消，其余 {skipped} 张未导出。', skipped=skipped)
             self.statusBar().showMessage(tr('批量导出完成 · {n_done} 张成功', n_done=len(done))+(tr(' · {n_failed} 张失败', n_failed=len(failed)) if failed else '')+(tr(' · {skipped} 张已取消', skipped=skipped) if skipped else ''))

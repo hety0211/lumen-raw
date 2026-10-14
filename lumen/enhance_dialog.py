@@ -8,7 +8,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFormLayout,
     QComboBox, QSpinBox, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox)
 from . import engine, host
-from .widgets import MetadataOptions, qimage
+from .widgets import MetadataOptions, OutputOptions, qimage
 from .i18n import tr
 
 
@@ -34,7 +34,7 @@ class ExportDialog(QDialog):
         root.addWidget(dng_note)
         form = QFormLayout()
         self.format = QComboBox()
-        self.format.addItems(['JPEG · 8-bit sRGB', 'PNG · 8-bit sRGB', 'TIFF · 16-bit sRGB', tr('DNG · 16-bit 线性成片')])
+        self.format.addItems(['JPEG · 8-bit', 'PNG · 8-bit', 'TIFF · 16-bit', tr('DNG · 16-bit 线性成片')])
         self.scale = QComboBox()
         self.scale.addItems([tr('原始尺寸'), tr('2× 超分辨率'), tr('4× 超分辨率')])
         self.method = QComboBox()
@@ -52,6 +52,16 @@ class ExportDialog(QDialog):
         for name, widget in [(tr('输出格式'), self.format), (tr('输出尺寸'), self.scale), (tr('增强算法'), self.method), (tr('JPEG 质量'), self.quality)]:
             form.addRow(name, widget)
         form.addRow(tr('自定义模型'), row)
+        self.model_row = row
+        # Long edge of the exported photo (as batch export); never enlarges.
+        from .batch_export import SIZES
+        self.size = QComboBox()
+        self.size.addItems([name for name, _ in SIZES])
+        form.insertRow(1, tr('输出尺寸'), self.size)
+        self.output = OutputOptions()
+        self.output.add_rows(form)
+        self.format.currentIndexChanged.connect(self.refresh_format)
+        self.refresh_format()
         root.addLayout(form)
         self.metadata = MetadataOptions()
         root.addWidget(self.metadata)
@@ -85,6 +95,7 @@ class ExportDialog(QDialog):
         if enhance:
             self.scale.setCurrentIndex(1)
             self.format.setCurrentIndex(2)
+            form.setRowVisible(self.size, False)
         self.refresh_options()
         if not enhance:
             self.setWindowTitle(tr('导出成片'))
@@ -92,9 +103,16 @@ class ExportDialog(QDialog):
             title.setText(tr('导出成片  /  EXPORT'))
             text.setText(tr('输出当前成片。AI 超分和 AI 去杂色请在「照片」菜单中单独处理。'))
             dng_note.setText(tr('可输出 JPEG、PNG、16 位 TIFF 或线性 DNG。水印设置会在这里应用。'))
-            for row_index in (1,2,4):form.setRowVisible(row_index,False)
+            for widget in (self.scale, self.method, self.model_row):form.setRowVisible(widget,False)
             for widget in (self.preview_button,self.before,self.after,self.status,note):widget.hide()
             self.adjustSize()
+
+    def extension(self):
+        return ['.jpg', '.png', '.tif', '.dng'][self.format.currentIndex()]
+
+    def refresh_format(self, *_):
+        self.quality.setEnabled(self.extension() == '.jpg')
+        self.output.set_format(self.extension())
 
     def refresh_options(self, *_):
         active = self.scale.currentIndex() > 0
@@ -106,6 +124,10 @@ class ExportDialog(QDialog):
         self.before.setText(tr('增强前'))
         self.after.setText(tr('增强后'))
         self.status.setText(tr('点击预览，检查当前倍率和算法的中央细节。'))
+
+    def long_edge(self):
+        from .batch_export import SIZES
+        return SIZES[self.size.currentIndex()][1] if self.size.isVisibleTo(self) else None
 
     def model_choice(self):
         return [':builtin:', '', self.model_path.text().strip()][self.method.currentIndex()]
@@ -120,6 +142,7 @@ class ExportDialog(QDialog):
             self.status.setText(tr('请先选择自定义 ONNX 模型。'))
             return
         self.metadata.save()
+        self.output.save()
         super().accept()
 
     def preview(self):
