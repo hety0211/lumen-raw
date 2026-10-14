@@ -12,3 +12,4 @@
 *.ico binary
 assets/*.txt -text -whitespace
 assets/models/*.json -text -whitespace
+assets/logos/src/*.svg -text
