@@ -114,9 +114,10 @@ def preferred_adapter():
     return max(adapters, key=lambda item: item[2]) if adapters else None
 
 
-MODES = ('auto', 'cpu', 'dml', 'cuda', 'trt', 'metal')
+MODES = ('auto', 'cpu', 'dml', 'cuda', 'trt', 'metal', 'openvino')
 NVIDIA = 0x10DE
 COREML = 'CoreMLExecutionProvider'
+OPENVINO = 'OpenVINOExecutionProvider'
 COREML_UNITS = ('CPUAndGPU', 'ALL', 'CPUAndNeuralEngine', 'CPUOnly')
 
 
@@ -286,7 +287,10 @@ def provider_plan(available, adapter, accelerated=True, models=False, excluded=(
     Neural models (``models=True``) on an NVIDIA GeForce RTX GPU first try TensorRT
     for RTX from the Windows ML catalog (Windows 11 24H2+); DirectML itself is in
     maintenance mode upstream.  On macOS they run through Core ML on the Apple GPU
-    (Metal).  Providers in ``excluded`` crashed before on this GPU and driver and
+    (Metal).  On Linux an integrated Intel GPU is used through ONNX Runtime's
+    OpenVINO provider when the ``onnxruntime-openvino`` wheel is installed; the
+    plain wheel has no GPU provider, so the attempt is simply absent there.
+    Providers in ``excluded`` crashed before on this GPU and driver and
     are skipped (see ai_worker.CompatRecord).
     """
     mode = requested_mode()
@@ -307,6 +311,21 @@ def provider_plan(available, adapter, accelerated=True, models=False, excluded=(
     if mode in ('auto', 'dml') and adapter is not None and 'DmlExecutionProvider' in available:
         attempts.append(([('DmlExecutionProvider', {'device_id': adapter[0]}), 'CPUExecutionProvider'],
                          'DmlExecutionProvider', adapter[1]))
+    # Linux: an integrated Intel GPU through ONNX Runtime's OpenVINO provider.
+    # Kept last so the Windows and macOS providers above keep their priority; on
+    # a machine without the OpenVINO wheel the provider is simply not offered.
+    if mode in ('auto', 'openvino') and OPENVINO in available and OPENVINO not in excluded:
+        device = adapter[1] if adapter is not None and len(adapter) > 1 else 'OpenVINO GPU'
+        # The OpenVINO GPU plugin defaults to FP16, which quantises its output by
+        # about 1.5e-3 (up to 6e-2 through the deeper networks).  The in-memory
+        # pointwise graphs are checked against the NumPy reference implementation,
+        # so they always run in FP32 — there it costs nothing (1024² tonal tile:
+        # 12.4 ms against 12.7 ms in FP16).  Neural models of a photo keep the
+        # same accuracy trade: FP32 (2e-6 against the CPU) is the default and
+        # LUMEN_OPENVINO_FP16=1 opts into FP16, which is about 1.8× faster.
+        precision = 'FP16' if models and os.environ.get('LUMEN_OPENVINO_FP16') == '1' else 'FP32'
+        attempts.append(([(OPENVINO, {'device_type': 'GPU', 'precision': precision}),
+                          'CPUExecutionProvider'], OPENVINO, device))
     return [a for a in attempts if a[1] not in excluded]
 
 
