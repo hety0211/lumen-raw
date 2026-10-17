@@ -414,6 +414,9 @@ def _parameter_table():
         'curve（RGB 色调曲线，可选）：3–8 个 [输入, 输出] 点，0…255 整数，必须包含 [0, y] 和 [255, y]；'
         '例如 [[0,20],[64,60],[192,200],[255,245]] 是黑位抬起、高光略压的胶片感。不需要时不要输出。',
         '',
+        'lut（创意 LUT，可选）：当前参数里有 lut 时，可用 {"lut": {"amount": 0…100}} 调整强度，'
+        '{"lut": null} 移除；不能载入新的 LUT 文件。',
+        '',
         f'masks（局部调整，可选，最多 {MAX_NEW_MASKS} 个新蒙版）：区域 region 可选 {regions}。'
         '天空、主体、人物、背景、近景由本地 AI 自动识别；top/bottom 是从画面上方/下方向中间过渡的渐变，'
         'center 是中心椭圆，edges 是中心以外的四周。每个蒙版写 {"region": "sky", "adjustments": {…}}，'
@@ -524,6 +527,9 @@ def current_state(edits):
     curve = edits['curves']['RGB']
     if curve != [[0., 0.], [1., 1.]]:
         state['curve'] = [[round(x * 255), round(y * 255)] for x, y in curve]
+    if edits.get('lut'):
+        from . import lut
+        state['lut'] = lut.summary(edits['lut'])
     masks = []
     for index, mask in enumerate(edits['masks']):
         masks.append(dict(index=index, name=mask['name'], kind=mask['kind'], enabled=mask['enabled'],
@@ -878,12 +884,43 @@ class Plan:
         self.explanation, self.notes = explanation, notes
 
 
-def plan(edits, reply):
+def _lut(request, target, notes, files):
+    """``lut``: null removes the LUT, ``{"amount": …}`` sets its strength and, from the command
+    layer (``files``), ``{"path": "….cube", "amount": …}`` loads one (1.7.0)."""
+    from . import lut
+    if request is None:
+        target['lut'] = None
+        return
+    if isinstance(request, str):
+        request = dict(path=request)
+    if not isinstance(request, dict):
+        notes.append(tr('LUT 格式无效，已忽略'))
+        return
+    amount = _number(request.get('amount'))
+    if request.get('path'):
+        if not files:
+            notes.append(tr('自然语言输入不能载入 LUT 文件，请在预设面板中载入'))
+            return
+        try:
+            setting, extra = lut.load_cube(Path(str(request['path'])).expanduser())
+        except (OSError, ValueError) as exc:
+            raise ServiceError(tr('无法载入 LUT：') + str(exc))
+        notes.extend(extra)
+        target['lut'] = lut.with_amount(setting, 100 if amount is None else amount)
+    elif amount is not None:
+        if target.get('lut'):
+            target['lut'] = lut.with_amount(target['lut'], amount)
+        else:
+            notes.append(tr('当前没有套用 LUT'))
+
+
+def plan(edits, reply, files=False):
     """Apply a parsed reply to a copy of ``edits``.
 
     Returns a ``Plan`` whose ``target`` contains everything except AI-selected
     masks; those are listed in ``regions`` as ``(kind, mask)`` and are attached with
-    ``attach_regions`` once their coverage has been computed.
+    ``attach_regions`` once their coverage has been computed.  ``files`` lets the reply load
+    a LUT file (the command layer; never a language model's reply).
     """
     if not isinstance(reply, dict):
         raise ServiceError(tr('模型回复的格式不正确。'))
@@ -893,7 +930,7 @@ def plan(edits, reply):
     # Some models nest the other sections inside "adjustments"; lift them to the top level.
     if isinstance(reply.get('adjustments'), dict):
         nested = {k: v for k, v in reply['adjustments'].items()
-                  if k in ('hsl', 'grading', 'effects', 'masks', 'curve', 'monochrome') and k not in reply}
+                  if k in ('hsl', 'grading', 'effects', 'masks', 'curve', 'monochrome', 'lut') and k not in reply}
         if nested:
             reply = dict(reply, **nested, adjustments={k: v for k, v in reply['adjustments'].items() if k not in nested})
     if reply.get('reset') is True:
@@ -948,6 +985,8 @@ def plan(edits, reply):
             target['curve_mode'] = 'smooth'
         else:
             notes.append(tr('曲线格式无效，已忽略'))
+    if 'lut' in reply:
+        _lut(reply['lut'], target, notes, files)
     regions = []
     masks = reply.get('masks')
     if isinstance(masks, list):
@@ -1036,6 +1075,14 @@ def blend(base, target, amount):
         tone = [[x, _clip(lerp(float(np.interp(x, xs, ys)), y), 0, 1)] for x, y in target['tone_curve']]
         result['tone_curve'] = [[x, max(y, tone[i - 1][1]) if i else y] for i, (x, y) in enumerate(tone)]
     result['monochrome'] = target['monochrome'] if t >= .5 else base['monochrome']
+    if target.get('lut') != base.get('lut'):
+        from . import lut
+        new, old = target.get('lut'), base.get('lut')
+        if new is None:
+            result['lut'] = None if t >= .5 else old
+        else:
+            start = old['amount'] if old and lut.digest(old) == lut.digest(new) else 0.
+            result['lut'] = lut.with_amount(new, lerp(start, new['amount']))
     for index, mask in enumerate(result['masks']):
         before = base['masks'][index]['adjustments'] if index < len(base['masks']) else model.adjustments()
         for key, (_, low, high, _) in PARAMS.items():
@@ -1077,6 +1124,15 @@ def changes(base, target):
         lines.append(tr('RGB 曲线  已调整'))
     if base['tone_curve'] != target['tone_curve']:
         lines.append(tr('曝光曲线  已还原') if target['tone_curve'] == [[0., 0.], [1., 1.]] else tr('曝光曲线  已调整'))
+    before, after = base.get('lut'), target.get('lut')
+    if before != after:
+        from . import lut
+        if after is None:
+            lines.append(tr('LUT  已移除'))
+        elif before and lut.digest(before) == lut.digest(after) and before['name'] == after['name']:
+            lines.append(tr('LUT 强度  {before} → {after}', before=f'{before["amount"]:g}', after=f'{round(after["amount"], 1):g}'))
+        else:
+            lines.append(tr('LUT  {name} · 强度 {amount}', name=after['name'], amount=f'{round(after["amount"], 1):g}'))
     for index, mask in enumerate(target['masks']):
         values = tr('，').join(f'{tr(PARAMS[k][0])} {_signed(v, 2 if k == "exposure" else 0)}'
                           for k, v in mask['adjustments'].items() if abs(v) > 1e-6)

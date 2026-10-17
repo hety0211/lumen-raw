@@ -206,7 +206,8 @@ def test_large_frames_stream_with_one_tone_context(monkeypatch):
 
 def test_recipes_carry_a_process_version():
     fresh = model.recipe()
-    assert fresh['version'] == model.VERSION == 6 and fresh['process'] == 2
+    # Format 6 added the process version; 1.7.0's format 7 (``lut``) keeps it.
+    assert fresh['version'] == model.VERSION >= 6 and fresh['process'] == 2
     old = model.recipe()
     old['version'] = 5
     old.pop('process')

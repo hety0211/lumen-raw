@@ -22,9 +22,11 @@ TITLES = {
     'library.write_xmp': N_('评级写入 XMP 附属文件'), 'library.import_lightroom': N_('导入 Lightroom 目录中的评级'),
     'photo.open': N_('打开照片'), 'photo.info': N_('照片信息'), 'edit.get': N_('查看当前调整'),
     'edit.apply': N_('应用调整（JSON）'), 'edit.reset': N_('重置全部调整'), 'edit.undo': N_('撤销'), 'edit.redo': N_('重做'),
-    'edit.auto': N_('自动色调'), 'edit.presets': N_('列出内置预设'), 'edit.preset': N_('套用内置预设'),
+    'edit.auto': N_('自动色调'), 'edit.presets': N_('列出预设'), 'edit.preset': N_('套用预设'),
     'edit.copy': N_('将调色复制到其他照片'), 'edit.process': N_('设置处理版本'), 'render.preview': N_('渲染预览'),
     'photo.export': N_('导出成片'), 'photo.export_batch': N_('批量导出'), 'project.save': N_('保存工程'),
+    'preset.import': N_('导入预设或 LUT'),
+    'mask.refine': N_('精细化 AI 蒙版边缘'),
 }
 
 

@@ -16,6 +16,9 @@ from .scheduler import Activity as A
 from .widgets import qimage
 from .i18n import tr
 
+#: Largest album file (1.7.0: fine AI masks; 128 MB before).
+ALBUM_BYTES=512*1024*1024
+
 
 def new_document(path):
     edits=model.recipe()
@@ -308,7 +311,7 @@ class LibraryMixin:
         if self.source is None or self.loading:return
         self.commit()
         self.stash_document()
-        look=model.extract_look(self.edits)
+        look=model.copy_look(self.edits)
         count=0
         for item in self.filmstrip.selectedItems():
             path=item.data(Qt.ItemDataRole.UserRole)
@@ -333,15 +336,22 @@ class LibraryMixin:
         path=Path(path)
         if path.suffix.lower()!='.lumenalbum':path=path.with_suffix('.lumenalbum')
         try:
-            documents=[]
+            documents=[];recipes=[]
             for document in self.documents.values():
                 try:source=os.path.relpath(document['path'],path.parent.resolve())
                 except ValueError:source=document['path']
-                documents.append(dict(source=source,edits=model.validate(document['edits']),
-                    snapshots=model.validate_snapshots(document['snapshots']),initialized=document['initialized'],
+                snapshots=model.validate_snapshots(document['snapshots'])
+                recipes+=[model.validate(document['edits'])]+[s['edits'] for s in snapshots]
+                documents.append(dict(source=source,snapshots=snapshots,initialized=document['initialized'],
                     **self.album_ratings(document['path'])))
-            data=json.dumps(dict(application='Lumen album',version=1,documents=documents),ensure_ascii=False)
-            if len(data.encode('utf-8'))>128*1024*1024:raise ValueError(tr('选片集过大，请拆分保存。'))
+            # 1.7.0: LUT tables and mask rasters are stored once for the whole album.
+            recipes,tables=model.pack(recipes);recipes=iter(recipes)
+            for document in documents:
+                document['edits']=next(recipes)
+                document['snapshots']=[dict(s,edits=next(recipes)) for s in document['snapshots']]
+            album=dict(application='Lumen album',version=1,documents=documents,**tables)
+            data=json.dumps(album,ensure_ascii=False)
+            if len(data.encode('utf-8'))>ALBUM_BYTES:raise ValueError(tr('选片集过大，请拆分保存。'))
             temp=path.with_suffix('.lumenalbum.tmp');temp.write_text(data,encoding='utf-8');temp.replace(path)
             self.album_path=str(path)
             self.library_structure_dirty=False
@@ -360,17 +370,17 @@ class LibraryMixin:
         if not self.confirm_close_library():return
         try:
             path=Path(path)
-            if path.stat().st_size>128*1024*1024:raise ValueError(tr('选片集过大。'))
+            if path.stat().st_size>ALBUM_BYTES:raise ValueError(tr('选片集过大。'))
             data=json.loads(path.read_text(encoding='utf-8'))
             if data.get('application')!='Lumen album' or not 0<=len(data['documents'])<=2000:
                 raise ValueError(tr('无效选片集。'))
-            records={};ratings={}
+            records={};ratings={};tables=model.stored_tables(data)
             for item in data['documents']:
                 source=str((path.parent/item['source']).resolve())
                 try:ratings[source]=catalog.validate({k:item[k] for k in ('rating','flag','label') if k in item})
                 except ValueError:pass
                 record=new_document(source)
-                record.update(edits=model.validate(item['edits']),snapshots=model.validate_snapshots(item.get('snapshots',[])),initialized=bool(item.get('initialized',True)))
+                record.update(edits=model.validate(model.unpack(item['edits'],tables)),snapshots=model.validate_snapshots(item.get('snapshots',[]),tables),initialized=bool(item.get('initialized',True)))
                 record['saved_edits']=copy.deepcopy(record['edits']);record['saved_snapshots']=copy.deepcopy(record['snapshots'])
                 records[source]=record
             available=[p for p in records if Path(p).exists()]

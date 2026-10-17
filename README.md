@@ -6,7 +6,7 @@
 
 LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Opening, editing, lens corrections, AI denoising / super-resolution / masks and export all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing.
 
-Current version: Windows **1.6.2** (2026-10-14), macOS **1.5.2** (2026-10-08).
+Current version: Windows **1.7.0** (2026-10-17), macOS **1.5.2** (2026-10-08).
 
 ![LUMEN RAW 1.5.1 in English: the Crop · Lens panel has identified a Nikon Nikkor Z 14-24mm f/2.8 S from EXIF and corrects its distortion, vignetting and chromatic aberration](docs/screenshots/workspace-en.png)
 
@@ -16,14 +16,14 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 
 | System | Download | Requirements |
 |---|---|---|
-| Windows | [`LumenRAW-1.6.2-Setup.exe` (installer) or `LumenRAW-1.6.2-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.6.2) | Windows 10 22H2 / Windows 11, x64 |
+| Windows | [`LumenRAW-1.7.0-Setup.exe` (installer) or `LumenRAW-1.7.0-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0) | Windows 10 22H2 / Windows 11, x64 |
 | macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
 
-1.6 is Windows only for now: process version 2, ratings and AI assistant access are not in the Mac build 1.5.2, and projects (`.lumen`) and albums (`.lumenalbum`) saved by 1.6 cannot be opened by 1.5.2; projects from 1.5.2 and earlier work on both. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+1.6 and 1.7 are Windows only for now: process version 2, ratings, AI assistant access, preset import, LUTs and fine masks are not in the Mac build 1.5.2. Projects (`.lumen`) and albums (`.lumenalbum`) saved by 1.6 cannot be opened by 1.5.2, nor those saved by 1.7 by 1.6.x; projects from 1.5.2 and earlier work everywhere. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
-- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.6.1 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
+- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.6.2 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
 - **Portable:** extract and run `LumenRAW-Windows\LumenRAW.exe`. Keep the `_internal` folder next to the exe. The portable build follows the system language until you choose one.
 - Both include Python, ExifTool, fonts, the nine AI models, the speech model and the lensfun lens database, and work fully offline.
 
@@ -37,6 +37,9 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 
 ## Features
 
+- **Presets (1.7.0):** import Lightroom Classic / Camera Raw presets (`.xmp`, `.lrtemplate` or whole `.zip` packs), converted approximately to LUMEN settings with a list of what has no counterpart; `.cube` 3D LUTs as a new adjustment with a strength, saved in projects; presets in groups, applied to many photos at once; 12 built-in looks. See [Presets, Lightroom presets and LUTs](#presets-lightroom-presets-and-luts).
+- **Fine AI mask edges (1.7.0):** sky, people, subject and background masks appear at once, then their edges are refined on the original at up to 4096 pixels: foliage, needles and building outlines without light halos. See [Fine AI mask edges](#fine-ai-mask-edges).
+- **Histogram dragging and a grading eyedropper (1.7.0):** drag in the histogram to change blacks, shadows, exposure, highlights and whites, as in Lightroom; pick a color from the photo as a color-grading hue. See [Histogram dragging and the grading eyedropper](#histogram-dragging-and-the-grading-eyedropper).
 - **Scene-referred color (1.6.0):** process version 2 keeps colors outside sRGB through the RAW decode, computes exposure, white balance and highlights / shadows in linear light (highlights / shadows as halo-free local tone mapping), works saturation, the color mixer and grading in OkLCh, and maps colors beyond sRGB keeping hue and lightness. Older projects look unchanged. See [Color and process versions](#color-and-process-versions).
 - **Ratings (1.6.0):** stars, pick / reject flags and color labels with Lightroom's shortcuts and a field search; saved automatically, interchanged with XMP, importable from Lightroom catalogs. See [Ratings and filters](#ratings-and-filters).
 - **AI assistants and command line (1.6.0):** Claude Code, Codex, WorkBuddy and other local assistants drive LUMEN RAW over MCP (visible in the window, undoable); `lumen-cli` renders from scripts. See [AI assistants (MCP) and the command line](#ai-assistants-mcp-and-the-command-line).
@@ -44,7 +47,7 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 - **Nine interface languages (1.5.1):** switch any time from the **Language** menu; the installer offers the same languages.
 - **Edit in one sentence (1.5):** type or say the look you want; a local or cloud language model of your choice returns the parameters, applied as one undoable step. See [Natural-language editing](#natural-language-editing).
 - **RAW formats:** Sony ARW / SR2 / SRF, Canon CRW / CR2 / CR3, Nikon NEF / NRW, Fujifilm RAF (including X-Trans), Panasonic RW2, DNG and other formats supported by the bundled LibRaw, plus JPEG / PNG / TIFF. Nikon "High Efficiency" NEFs that LibRaw cannot decode open from their full-size embedded JPEG. For the Nikon Z50 II and Z5 II, which the bundled LibRaw does not list, LUMEN RAW supplies the colour matrix of their lossless NEFs.
-- **Non-destructive development:** exposure, contrast, highlights / shadows / whites / blacks, an exposure curve you can bend anywhere, white balance (camera-recorded temperature and an eyedropper), 8-color HSL, RGB and per-channel curves, three-way color grading, monochrome, vignette and grain. Landscape and travel presets with adjustable strength (importable and exportable), auto adjust, snapshots, undo / redo.
+- **Non-destructive development:** exposure, contrast, highlights / shadows / whites / blacks, an exposure curve you can bend anywhere, white balance (camera-recorded temperature and an eyedropper), 8-color HSL, RGB and per-channel curves, three-way color grading, monochrome, vignette and grain. 12 built-in looks with adjustable strength (importable and exportable), Lightroom preset and LUT import, auto adjust, snapshots, undo / redo.
 - **Detail and retouching:** dehaze, clarity, texture, sharpening, luminance and color noise reduction; spot healing and clone stamp.
 - **Masks:** brush, linear and radial gradients, luminance range, similar-color selection, and local AI models for sky, people, subject, background and foreground. Invert, feather, opacity and brush refinement; up to 32 masks per photo.
 - **AI enhancement:** Real-ESRGAN 2× / 4× super-resolution and DRUNet / NAFNet / FFDNet denoising, each with its own preview dialog. Results are saved as editable DNG copies.
@@ -52,6 +55,38 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 - **Culling and batches:** import many photos at once, multi-select in the filmstrip with Ctrl / Shift, copy the current edit to the selection, or batch-export JPEG / PNG / TIFF / DNG with an optional long-edge size.
 - **Large images:** 100% view of original pixels, rendering only what is on screen. Editing a zoomed 61-megapixel photo keeps GUI stalls to about 40 ms. Before / after, hold-for-original and clipping warnings.
 - **Watermarks and export:** four border styles with shooting information and the camera and lens brand logos picked from EXIF. Export JPEG / PNG (8-bit), TIFF (16-bit) and linear DNG (16-bit), up to 400 megapixels, in sRGB, Display P3 or Adobe RGB, optionally with a JPEG size limit in KB, keeping the original's EXIF, IPTC and XMP (camera, lens, capture settings, copyright, keywords; GPS optional).
+
+## Presets, Lightroom presets and LUTs
+
+![LUMEN RAW 1.7.0: the Presets panel lists imported Lightroom presets by group ("Film Looks") with "Amber Film 01" applied, and the strength slider of the LUT "Teal Orange Film" below](docs/screenshots/presets-en.png)
+
+In the left-hand **Presets** panel:
+
+1. **Import:** click **Import…** and choose Lightroom presets (`.xmp`, `.lrtemplate`), preset packs (`.zip`), LUTs (`.cube`) or Lumen presets (`.lumenpreset`), several at once if you like. A report lists the settings that have no counterpart in LUMEN and were not applied. Imported presets are kept in the `presets` folder of the data folder.
+2. **Apply:** the drop-down above filters by group (all, built-in looks, each pack or folder). Click a preset to apply it and set **Preset strength** from 0 to 100. Right-click to apply it to the selected photos (batch), export it, show its import notes or delete it.
+3. **LUT:** the **LUT** button next to the group filter loads a `.cube` file; a strength slider named after the LUT appears below, and **Remove LUT** takes it off.
+
+- **The conversion is approximate:** LUMEN's sliders are not Adobe's, so the result is close to Lightroom but not identical. The mapping table, the Adobe behavior that cannot be reproduced (camera profiles and creative looks, the calibration panel, local masks …) and how the factors were calibrated are in [docs/LIGHTROOM_PRESETS.md](docs/LIGHTROOM_PRESETS.md) (Chinese).
+- **Only what a preset holds changes:** as in Lightroom, a grain or vignette preset leaves the other sliders alone. An absolute white balance in a preset applies to RAW photos with a camera temperature only (Lightroom does not apply it to JPEGs either).
+- **Packs:** Chinese file names written as GBK by Windows zip tools are read correctly; a preset shipped as both `.xmp` and `.lrtemplate` is imported once; DNGs (Lightroom mobile presets) are skipped with a note; importing a pack again replaces it rather than duplicating it.
+- **LUTs** act on display sRGB after tone mapping, color (curves, HSL, grading) and local masks, before vignette and grain, with tetrahedral interpolation (greys stay neutral), 1D / 3D tables, `DOMAIN_MIN` / `DOMAIN_MAX` and DaVinci Resolve's 1D shaper. The LUT data is saved with projects, snapshots and albums, so they open on a computer without the `.cube` file.
+- **Save and share:** **Save Preset** adds the current look to the list ("My presets"); right-click → **Export preset file…** gives a `.lumenpreset` to share, including its LUT.
+- There are 12 built-in looks, six of them new in 1.7.0.
+
+## Fine AI mask edges
+
+![The same CC0 sample with the sky darkened through a sky mask: left, the quick mask of 1.6, with a light halo around the needles and the building and the sky seen through the arches left out; right, the fine edges of 1.7](docs/screenshots/fine-masks-en.jpg)
+
+- In the **Masks** panel, sky, people, subject and background masks appear at once from the preview (about 1 s). The original is then read in the background (sharing the decode with the zoomed view), the edges are refined at up to 4096 pixels, and the fine mask replaces the quick one as an undoable step: about 7 s for a 33 MP photo, while you keep editing. Earlier versions stored masks at the 1600-pixel preview size and enlarged them on export, so edges were soft.
+- No new model is involved: in the band where the quick mask is unsure, each pixel's color is explained as a mix of the nearby foreground and background colors, and the mix is the mask value. Broad transitions such as haze stay as the quick mask had them, and sky masks do not take glass that reflects the sky for sky, while twigs and wires are cut out of it.
+- **Fine edges (reads the original, slower)** is on by default; AI masks of older projects can be refined with **Refine selected mask**. Region masks from natural-language editing are refined too. Foreground (depth) and similar-color masks are not.
+
+## Histogram dragging and the grading eyedropper
+
+![LUMEN RAW 1.7.0: the histogram's Shadows zone is shaded and reads +38; in the Grading panel the Pick color button sits next to the zone selector, and the hue 41 was picked from the photo](docs/screenshots/tools-en.png)
+
+- **Drag the histogram:** as in Lightroom, the histogram has five zones (blacks, shadows, exposure, highlights, whites). The zone under the pointer is shaded and named with its value; drag left or right to change it (the full width is 200 points, 4 EV for exposure). Each drag is one undo step; double-click resets the zone.
+- **Grading eyedropper:** in the **Grading** panel choose shadows, midtones or highlights, click **Pick color**, then click a color in the photo to use its hue for that zone; a zone without a tint also gets a strength from how vivid the color is. Grey spots are ignored.
 
 ## Lens corrections
 
@@ -137,13 +172,15 @@ WorkBuddy, Claude Desktop and other clients take a JSON entry (`"command"`: the 
 
 - **With LUMEN RAW open:** the assistant works in the window through a local control channel (a named pipe only your user can open); every step is visible and `Ctrl+Z` undoes it. The status bar and the AI Assistants window list recent actions; window control can be switched off there.
 - **With LUMEN RAW closed:** the assistant opens, edits, renders and exports photos in the background, continuing from a `.lumen` project next to a photo; nothing is written until it saves a project or exports.
-- **Tools (25):** open photos, read / apply edits (the natural-language editing vocabulary, including AI region masks such as sky and subject), undo / redo, auto tone, presets, copy edits, stars / flags / labels, render a preview (a JPEG image the assistant can look at), export, batch export, save projects, and more.
+- **Tools (27):** open photos, read / apply edits (the natural-language editing vocabulary, including AI region masks such as sky and subject, and LUTs), refine AI mask edges, undo / redo, auto tone, presets (built-in and imported), import Lightroom presets and LUTs, copy edits, stars / flags / labels, render a preview (a JPEG image the assistant can look at), export, batch export, save projects, and more.
 - **Protocol:** stdio; MCP 2026-07-28 (no handshake) and 2024-11-05 to 2025-11-25 (`initialize`).
 
 **Command line:**
 
 ```
 lumen-cli render DSC0001.ARW out.jpg --size 2560 --preset Golden --set exposure=0.3 --set hsl.blue.saturation=20
+lumen-cli render DSC0001.ARW out.jpg --preset "Amber Film 01" --lut film.cube --lut-amount 70
+lumen-cli import-presets presets.zip
 lumen-cli render trip.lumen out.tif
 lumen-cli rate *.ARW 4
 lumen-cli list "rating>=3 -flag:reject"
@@ -175,7 +212,7 @@ lumen-cli commands
 | Fit to window | `Ctrl+0` | `⌘0` |
 | Voice instruction | `Ctrl+Shift+Space` | `⌘⇧Space` |
 | Before / after, clipping | `Y` / `J` | `Y` / `J` |
-| Confirm crop, leave the white-balance picker | `Enter` / `Esc` | `Enter` / `Esc` |
+| Confirm crop, leave an eyedropper | `Enter` / `Esc` | `Enter` / `Esc` |
 | Clone source | `Alt`-click | `Option`-click |
 | Pan / zoom | middle-drag / wheel | two-finger scroll / pinch or wheel |
 | Stars / flags / labels | `0`–`5` / `P` `X` `U` / `6`–`9` | same |
@@ -203,6 +240,7 @@ lumen-cli commands
 | Interface language and lens defaults (`settings.ini`), natural-language settings, GPU compatibility record | `%LOCALAPPDATA%\LUMEN RAW` | `~/Library/Application Support/LUMEN RAW` |
 | API keys | in the settings file, DPAPI-encrypted | login keychain ("LUMEN RAW") |
 | Rating catalog (`catalog.jsonl`), command-line log | `%LOCALAPPDATA%\LUMEN RAW` | `~/Library/Application Support/LUMEN RAW` |
+| Imported and saved presets (`.lumenpreset`) | `%LOCALAPPDATA%\LUMEN RAW\presets` | `~/Library/Application Support/LUMEN RAW/presets` |
 
 - Originals are read-only. Edits live in `.lumen` / `.lumenalbum` files; AI and merge results are saved as new DNG files. Removing a photo from the filmstrip does not delete it from disk.
 - The app goes online only when you edit with a cloud model, and when Windows downloads TensorRT for RTX the first time. Running from source also downloads the runtime assets once. The lens database is bundled; identifying lenses needs no network.
@@ -213,7 +251,7 @@ lumen-cli commands
 - **Lens corrections:** only lenses with calibration data in the lensfun database can be corrected; some profiles contain distortion but no vignetting or chromatic aberration, which the panel notes. Zoom lenses need a recorded focal length, and vignetting interpolation needs the aperture. Fisheye lenses are corrected within their own projection, not converted to rectilinear. There is no perspective (keystone) correction. Embedded camera JPEGs and photos already corrected in camera may be corrected twice — turn corrections on only where needed.
 - **AI scope:** AI super-resolution and denoising work on developed RGB, not on sensor data, and are not Adobe's RAW enhancement. Super-resolution can invent texture, so preview first.
 - **DNG output:** exported DNGs contain edited 16-bit linear RGB, not a lossless copy of the sensor mosaic. Keep your originals and projects.
-- **Automatic masks:** hair, branches and translucent objects are not segmented precisely, and "background" needs a clear subject. Check the purple overlay and refine with the brush.
+- **Automatic masks:** since 1.7.0 sky, people, subject and background masks are refined by color on the original at up to 4096 pixels, so foliage, pine needles and building outlines are much finer; hair on a similar-colored background, glass reflecting the sky and translucent objects still cannot be separated, and regions the network gets wrong are not corrected. "Background" needs a clear subject. Check the purple overlay and refine with the brush.
 - **Merging:** panoramas need about 30 % overlap, shot around one viewpoint; parallax, motion or repeating texture can leave seams. HDR is Mertens exposure fusion, not radiance HDR. Merging has so far been tested with controlled views derived from single photos; real captured sequences still need more validation.
 - **Size and resources:**
   - Exports, including watermark borders and 2× / 4× super-resolution, are capped at 400 megapixels.
@@ -221,7 +259,8 @@ lumen-cli commands
   - Up to 32 masks and 500 retouch strokes per photo.
 - **Color:** 8-bit input is converted to sRGB via its ICC profile; 16-bit PNG / TIFF are treated as sRGB. There are no camera color profiles or display soft-proofing, and fully clipped highlights cannot always be recovered.
 - **Languages:** changing the interface language needs a restart. Translations other than Simplified Chinese were made by the developers; corrections from native speakers are welcome.
-- **Not supported:** Lightroom develop settings and XMP presets are not read (only ratings, flags and labels are imported). Exports do not copy the original's full EXIF / GPS.
+- **Lightroom presets:** Lightroom Classic / Camera Raw presets (.xmp, .lrtemplate, .zip packs) are imported approximately; profiles, masks, the calibration panel and other settings without a counterpart are listed, not applied (see [docs/LIGHTROOM_PRESETS.md](docs/LIGHTROOM_PRESETS.md)). Develop settings in a photo's own XMP sidecar are not read automatically.
+- **Not supported:** Exports do not copy the original's full EXIF / GPS.
 - **Tested cameras:** Sony A7 III, A7R V; Canon EOS R, R5 Mark II, Rebel SL1; Nikon Z 6, Z8, Z50 II, Z5 II; Fujifilm X-T2; Panasonic DC-S1. Other models and compressions depend on LibRaw.
 
 ## Run from source
@@ -265,7 +304,7 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 1.6.2, 401 regression tests pass on Windows with 11 skipped (macOS-only and similar); for 1.5.2, 335 pass on macOS with 4 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 1.7.0, 451 regression tests pass on Windows with 11 skipped (macOS-only and similar); for 1.5.2, 335 pass on macOS with 4 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.

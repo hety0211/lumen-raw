@@ -24,8 +24,8 @@ def effects():
     return dict(vignette=0., midpoint=50., feather=70., grain=0., grain_size=30.)
 
 
-#: Recipe format written by this version; 6 adds ``process`` (1.6.0).
-VERSION = 6
+#: Recipe format written by this version; 6 adds ``process`` (1.6.0), 7 ``lut`` (1.7.0).
+VERSION = 7
 #: Process version of new photos: 2 is the scene-referred pipeline of 1.6.0 (see engine).
 PROCESS = 2
 
@@ -38,7 +38,8 @@ def recipe():
                 tone_curve=[[0., 0.], [1., 1.]],
                 masks=[], crop=None, rotation=0, straighten=0., monochrome=False,
                 wb_gain=[1., 1., 1.], grading=grading(), effects=effects(), retouch=[],
-                white_balance=dict(camera_kelvin=None, kelvin=None, estimated=False), lens=lens_defaults())
+                white_balance=dict(camera_kelvin=None, kelvin=None, estimated=False), lens=lens_defaults(),
+                lut=None)
 
 
 def lens_defaults():
@@ -72,7 +73,7 @@ def validate(data):
             base[k] = number(a.get(k, 0), -5 if k == 'exposure' else -100,
                              5 if k == 'exposure' else 100)
         return base
-    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5, 6):
+    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5, 6, 7):
         raise ValueError(tr('不支持的工程版本。'))
     r = recipe()
     # Projects before 1.6.0 have no process version: they keep rendering as they always did.
@@ -157,6 +158,12 @@ def validate(data):
         r['lens'] = validate_lens(data.get('lens'))
     except (ValueError, TypeError, KeyError):
         raise ValueError(tr('无效的镜头校正数据。'))
+    # 1.7.0: a creative LUT with its tables (absent in older projects: none).
+    from . import lut
+    try:
+        r['lut'] = lut.validate(data.get('lut'))
+    except (TypeError, KeyError):
+        raise ValueError(tr('无效的 LUT 数据。'))
     masks = data.get('masks', [])
     if len(masks) > 32:
         raise ValueError(tr('最多支持 32 个蒙版。'))
@@ -190,6 +197,10 @@ def validate(data):
     return r
 
 
+#: Largest project file read (1.7.0: fine AI masks are up to 4096 pixels; 32 MB before).
+PROJECT_BYTES = 128 * 1024 * 1024
+
+
 def save_project(path, source, edits, snapshots=None):
     import os
     path = Path(path)
@@ -198,8 +209,11 @@ def save_project(path, source, edits, snapshots=None):
         relative = os.path.relpath(source, path.parent.resolve())
     except ValueError:
         relative = str(source)
-    payload = dict(application='LUMEN RAW', source=relative, edits=validate(edits),
-                   snapshots=validate_snapshots(snapshots or []))
+    snapshots = validate_snapshots(snapshots or [])
+    # 1.7.0: LUT tables and mask rasters are stored once, however many snapshots use them.
+    recipes, tables = pack([validate(edits)] + [s['edits'] for s in snapshots])
+    payload = dict(application='LUMEN RAW', source=relative, edits=recipes[0],
+                   snapshots=[dict(s, edits=e) for s, e in zip(snapshots, recipes[1:])], **tables)
     tmp = path.with_suffix(path.suffix + '.tmp')
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     tmp.replace(path)
@@ -207,71 +221,244 @@ def save_project(path, source, edits, snapshots=None):
 
 def load_project(path, include_snapshots=False):
     path = Path(path)
-    if path.stat().st_size > 32 * 1024 * 1024:
+    if path.stat().st_size > PROJECT_BYTES:
         raise ValueError(tr('工程文件过大。'))
     data = json.loads(path.read_text(encoding='utf-8'))
     if data.get('application') not in ('LUMEN RAW', 'Lumen ARW'):
         raise ValueError(tr('这不是 LUMEN RAW 工程。'))
+    tables = stored_tables(data)
     source = (path.parent / data['source']).resolve()
-    result = (str(source), validate(data['edits']))
-    return (*result, validate_snapshots(data.get('snapshots', []))) if include_snapshots else result
+    result = (str(source), validate(unpack(data['edits'], tables)))
+    return (*result, validate_snapshots(data.get('snapshots', []), tables)) if include_snapshots else result
 
 
-def validate_snapshots(snapshots):
+def pack(recipes):
+    """Recipes as project and album files store them (1.7.0): LUT tables in ``luts`` and mask
+    rasters in ``rasters``, each once, referenced by digest.  Returns ``(recipes, tables)``;
+    the recipes given are not changed."""
+    import hashlib
+    from . import lut
+    recipes, luts_ = lut.pack(recipes)
+    rasters, result = {}, []
+    for edits in recipes:
+        masks = edits.get('masks', []) if isinstance(edits, dict) else []
+        if any(isinstance(m.get('raster'), str) for m in masks):
+            packed = []
+            for m in masks:
+                if isinstance(m.get('raster'), str):
+                    ref = hashlib.blake2b(m['raster'].encode('ascii'), digest_size=12).hexdigest()
+                    rasters[ref] = m['raster']
+                    m = {k: v for k, v in m.items() if k != 'raster'} | dict(raster_ref=ref)
+                packed.append(m)
+            edits = dict(edits, masks=packed)
+        result.append(edits)
+    tables = {}
+    if luts_:
+        tables['luts'] = luts_
+    if rasters:
+        tables['rasters'] = rasters
+    return result, tables
+
+
+def stored_tables(data):
+    """The ``luts`` and ``rasters`` storage of a project or album file (see ``pack``)."""
+    tables = {}
+    for key in ('luts', 'rasters'):
+        value = data.get(key, {})
+        if not isinstance(value, dict) or not all(isinstance(v, str) for v in value.values()):
+            raise ValueError(tr('工程中的 LUT 数据缺失或已损坏。') if key == 'luts' else tr('工程中的蒙版数据缺失或已损坏。'))
+        tables[key] = value
+    return tables
+
+
+def unpack(edits, tables):
+    """A stored recipe with its LUT tables and mask rasters taken back from ``tables``."""
+    import hashlib
+    from . import lut
+    tables = tables or {}
+    edits = lut.unpack(edits, tables.get('luts', {}))
+    masks = edits.get('masks', []) if isinstance(edits, dict) else []
+    if any(isinstance(m, dict) and 'raster_ref' in m for m in masks):
+        rasters = tables.get('rasters', {})
+        restored = []
+        for m in masks:
+            if isinstance(m, dict) and 'raster_ref' in m:
+                raster = rasters.get(m['raster_ref'])
+                digest = hashlib.blake2b(raster.encode('ascii'), digest_size=12).hexdigest() if isinstance(raster, str) else None
+                if digest != m['raster_ref']:
+                    raise ValueError(tr('工程中的蒙版数据缺失或已损坏。'))
+                m = {k: v for k, v in m.items() if k != 'raster_ref'} | dict(raster=raster)
+            restored.append(m)
+        edits = dict(edits, masks=restored)
+    return edits
+
+
+def luts(data):
+    """The ``{digest: table}`` LUT storage of a project or album file (1.7.0)."""
+    return stored_tables(data)['luts']
+
+
+def validate_snapshots(snapshots, tables=None):
     if not isinstance(snapshots, list) or len(snapshots) > 20:
         raise ValueError(tr('最多支持 20 个快照。'))
-    return [dict(name=str(s['name'])[:80], edits=validate(s['edits'])) for s in snapshots]
+    return [dict(name=str(s['name'])[:80], edits=validate(unpack(s['edits'], tables))) for s in snapshots]
 
 
-LOOK_KEYS = ('adjustments', 'hsl', 'curves', 'tone_curve', 'curve_mode', 'grading', 'effects', 'monochrome')
+#: What a look (preset, copied edits) carries; ``lut`` since 1.7.0.
+LOOK_KEYS = ('adjustments', 'hsl', 'curves', 'tone_curve', 'curve_mode', 'grading', 'effects', 'monochrome', 'lut')
+
+
+def look_fields(look):
+    """What applying a look changes: its ``fields`` (a partial look, 1.7.0), else the keys it holds.
+
+    Fields are ``LOOK_KEYS``, single sliders (``adjustments.exposure``, ``effects.grain``) and
+    ``white_balance`` (a target Kelvin, applied to photos with a camera Kelvin)."""
+    if 'fields' in look:
+        return set(look['fields'])
+    return {k for k in LOOK_KEYS + ('white_balance',) if k in look}
+
+
+def _all_fields():
+    return set(LOOK_KEYS) | {'white_balance'} | {f'adjustments.{k}' for k in adjustments()} | \
+        {f'effects.{k}' for k in effects()}
+
+
+def clean_look(look):
+    """A validated copy of a look that holds only what it changes."""
+    if not isinstance(look, dict):
+        raise ValueError(tr('无效的预设数据。'))
+    fields = look_fields(look)
+    if not isinstance(look.get('fields', []), list) or not fields or fields - _all_fields():
+        raise ValueError(tr('无效的预设数据。'))
+    full = recipe()
+    full['curve_mode'] = look.get('curve_mode', 'linear')
+    full.update({k: copy.deepcopy(look[k]) for k in LOOK_KEYS if k in look})
+    full = validate(full)
+    groups = {f.split('.')[0] for f in fields}
+    result = {k: full[k] for k in LOOK_KEYS if k in groups or (k == 'curve_mode' and 'curves' in groups)}
+    if 'white_balance' in fields:
+        kelvin = (look.get('white_balance') or {}).get('kelvin')
+        if isinstance(kelvin, bool) or not isinstance(kelvin, (int, float)) or not 1500 <= kelvin <= 25000:
+            raise ValueError(tr('无效的预设数据。'))
+        result['white_balance'] = dict(kelvin=float(kelvin))
+    if 'fields' in look:
+        result['fields'] = sorted(fields)
+    return result
 
 
 def extract_look(edits):
+    """The look of a recipe, for a preset: one without a LUT leaves a photo's LUT alone."""
+    look = copy_look(edits)
+    if look['lut'] is None:
+        del look['lut']
+    return look
+
+
+def copy_look(edits):
+    """The whole look of a recipe, for copying it to other photos (removes their LUT if it has none)."""
     clean = validate(edits)
     return {key: copy.deepcopy(clean[key]) for key in LOOK_KEYS}
 
 
 def apply_look(edits, look, amount=100):
-    """Blend a look against neutral; preserve WB sampling, masks and framing."""
-    if not isinstance(amount, (int, float)) or not 0 <= amount <= 100:
+    """Blend a look against neutral; preserve WB sampling, masks and framing.
+
+    Only what the look holds changes (``look_fields``): a partial look (1.7.0) such as a grain
+    or LUT preset leaves the other settings of the photo as they are."""
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or not 0 <= amount <= 100:
         raise ValueError(tr('预设强度需介于 0–100。'))
+    from . import lut
+    look = clean_look(look)
+    fields = look_fields(look)
     base = recipe()
-    selected = recipe()
-    selected['curve_mode'] = look.get('curve_mode', 'linear')
-    selected.update({k: copy.deepcopy(look[k]) for k in LOOK_KEYS if k in look})
-    selected = validate(selected)
     result = copy.deepcopy(edits)
     t = amount / 100
-    for key in ('adjustments', 'effects'):
-        result[key] = {k: base[key][k] + (v - base[key][k]) * t for k, v in selected[key].items()}
-    result['hsl'] = [[v * t for v in row] for row in selected['hsl']]
-    result['curves'] = {c: [[x, x + (y - x) * t] for x, y in points] for c, points in selected['curves'].items()}
-    result['tone_curve'] = [[x, x + (y - x) * t] for x, y in selected['tone_curve']]
-    result['curve_mode'] = selected['curve_mode']
-    result['grading'] = {z: [selected['grading'][z][0], selected['grading'][z][1] * t]
-                         for z in ('shadows', 'midtones', 'highlights')}
-    result['grading']['balance'] = selected['grading']['balance'] * t
-    result['monochrome'] = selected['monochrome'] if t > 0 else False
+    for group in ('adjustments', 'effects'):
+        for k, v in look.get(group, {}).items():
+            if group in fields or f'{group}.{k}' in fields:
+                result[group][k] = base[group][k] + (v - base[group][k]) * t
+    if 'hsl' in fields:
+        result['hsl'] = [[v * t for v in row] for row in look['hsl']]
+    if 'curves' in fields:
+        result['curves'] = {c: [[x, x + (y - x) * t] for x, y in points] for c, points in look['curves'].items()}
+    if 'curves' in fields or 'curve_mode' in fields:
+        result['curve_mode'] = look['curve_mode']
+    if 'tone_curve' in fields:
+        result['tone_curve'] = [[x, x + (y - x) * t] for x, y in look['tone_curve']]
+    if 'grading' in fields:
+        result['grading'] = {z: [look['grading'][z][0], look['grading'][z][1] * t]
+                             for z in ('shadows', 'midtones', 'highlights')}
+        result['grading']['balance'] = look['grading']['balance'] * t
+    if 'monochrome' in fields:
+        result['monochrome'] = look['monochrome'] if t > 0 else False
+    if 'lut' in fields:
+        result['lut'] = lut.with_amount(look['lut'], look['lut']['amount'] * t) if look['lut'] else None
+    if 'white_balance' in fields:
+        camera = (result.get('white_balance') or {}).get('camera_kelvin')
+        if camera:
+            # An absolute white balance (Lightroom's Temperature), interpolated in mired.
+            mired = 1e6 / camera + (1e6 / look['white_balance']['kelvin'] - 1e6 / camera) * t
+            result['white_balance'] = dict(result['white_balance'], kelvin=float(min(25000., max(1500., 1e6 / mired))))
+            result['wb_gain'] = [1., 1., 1.]
     return result
 
 
-def save_preset(path, name, edits):
+#: Preset files with a partial look, a LUT or a white balance are format 2 (1.7.0).
+PRESET_VERSION = 2
+#: Largest preset file read (a LUT is embedded in it).
+PRESET_BYTES = 32 * 1024 * 1024
+
+
+def write_preset(path, name, look, group='', notes=(), source='lumen'):
+    """Write a .lumenpreset file; ``notes`` are (label, detail) pairs of settings an imported
+    preset could not carry over (labels are source-language interface texts)."""
     path = Path(path)
-    payload = dict(application='Lumen preset', version=1, name=str(name)[:80], look=extract_look(edits))
+    look = clean_look(look)
+    modern = 'fields' in look or 'lut' in look or 'white_balance' in look
+    payload = dict(application='Lumen preset', version=PRESET_VERSION if modern else 1, name=str(name)[:80], look=look)
+    if group:
+        payload['group'] = str(group)[:80]
+    if source != 'lumen':
+        payload['source'] = str(source)[:20]
+    if notes:
+        payload['notes'] = [[str(a)[:200], str(b)[:400]] for a, b in notes][:200]
     tmp = path.with_suffix(path.suffix + '.tmp')
     tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
     tmp.replace(path)
 
 
+def save_preset(path, name, edits):
+    write_preset(path, name, extract_look(edits))
+
+
+def read_preset(data):
+    """A preset (``name``, ``look``, ``subtitle``, ``group``, ``notes``, ``source``) from the
+    parsed JSON of a .lumenpreset file."""
+    if not isinstance(data, dict) or data.get('application') != 'Lumen preset' or data.get('version') not in (1, 2):
+        raise ValueError(tr('请选择 Lumen 的 .lumenpreset 预设文件。'))
+    look = data.get('look')
+    if data['version'] == 1 and isinstance(look, dict):
+        # Format 1 holds a whole look of the 1.x settings; keys an older version did not write are neutral.
+        neutral = recipe()
+        legacy = [k for k in LOOK_KEYS if k != 'lut']
+        look = dict({k: neutral[k] for k in legacy}, curve_mode='linear') | {k: look[k] for k in legacy if k in look}
+    notes = data.get('notes', [])
+    if not isinstance(notes, list) or any(not isinstance(n, list) or len(n) != 2 for n in notes):
+        raise ValueError(tr('无效的预设数据。'))
+    return dict(name=str(data['name'])[:80], look=clean_look(look), subtitle=tr('自定义风格'),
+                group=str(data.get('group', ''))[:80], notes=[[str(a), str(b)] for a, b in notes],
+                source=str(data.get('source', 'lumen'))[:20])
+
+
 def load_preset(path):
     path = Path(path)
-    if path.stat().st_size > 1024 * 1024:
+    if path.stat().st_size > PRESET_BYTES:
         raise ValueError(tr('预设文件过大。'))
-    data = json.loads(path.read_text(encoding='utf-8'))
-    if data.get('application') != 'Lumen preset' or data.get('version') != 1:
+    try:
+        data = json.loads(path.read_text(encoding='utf-8-sig'))
+    except (ValueError, UnicodeDecodeError):
         raise ValueError(tr('请选择 Lumen 的 .lumenpreset 预设文件。'))
-    clean = apply_look(recipe(), data['look'])
-    return dict(name=str(data['name'])[:80], look=extract_look(clean), subtitle=tr('自定义风格'))
+    return read_preset(data)
 
 
 def builtin_presets():
@@ -284,7 +471,7 @@ def builtin_presets():
         if curves: r['curves']['RGB'] = curves
         if hsl: r['hsl'] = hsl
         r['monochrome'] = mono
-        presets.append(dict(name=name, subtitle=subtitle, look=extract_look(r)))
+        presets.append(dict(name=name, subtitle=subtitle, look=extract_look(r), group='', notes=[], source='builtin'))
     add(tr('自然风光'), tr('NATURAL · 通透而克制'), dict(shadows=20, highlights=-25, vibrance=12, texture=15, dehaze=8))
     add(tr('海岸微风'), tr('COASTAL · 清冷蓝绿'), dict(temperature=-9, shadows=22, highlights=-20, saturation=-5),
         dict(shadows=[195, 18], highlights=[40, 8]))
@@ -297,6 +484,33 @@ def builtin_presets():
         dict(shadows=[220, 22], highlights=[28, 20]), dict(vignette=-20))
     add(tr('黑白纪行'), tr('MONO · 光影与纹理'), dict(contrast=20, highlights=-22, shadows=16, texture=22),
         e=dict(grain=16, vignette=-16), mono=True)
+    # 1.7.0: more looks.  The mixer rows follow COLORS: red, orange, yellow, green, aqua, blue, purple, magenta.
+    def mixer(**rows):
+        names = ('red', 'orange', 'yellow', 'green', 'aqua', 'blue', 'purple', 'magenta')
+        return [list(map(float, rows.get(n, (0, 0, 0)))) for n in names]
+    add(tr('日系清新'), tr('AIRY · 明亮通透'),
+        dict(exposure=.3, contrast=-12, highlights=-20, shadows=25, blacks=12, saturation=-10, vibrance=8, temperature=-4, tint=3),
+        dict(shadows=[210, 8]), curves=[[0., .06], [.25, .29], [.75, .8], [1., .98]],
+        hsl=mixer(orange=(0, 0, 8), green=(15, -15, 0), aqua=(0, -5, 0), blue=(0, 0, 10)))
+    add(tr('青橙电影'), tr('CINEMA · 青橙对比'), dict(contrast=14, highlights=-30, shadows=10, saturation=-6, vibrance=10),
+        dict(shadows=[195, 22], highlights=[35, 18], balance=-10), dict(vignette=-10),
+        hsl=mixer(orange=(-5, 8, 0), yellow=(-20, -20, 0), green=(40, -35, 0), aqua=(10, 0, 0), blue=(-10, 5, 0)))
+    add(tr('复古胶片'), tr('VINTAGE · 褪色暖调'),
+        dict(contrast=-8, highlights=-25, shadows=12, whites=-10, blacks=15, saturation=-15, temperature=10),
+        dict(shadows=[200, 10], highlights=[42, 16]), dict(grain=22, grain_size=35, vignette=-12),
+        [[0., .08], [.3, .3], [.7, .72], [1., .93]])
+    add(tr('柔和人像'), tr('PORTRAIT · 温润肤色'),
+        dict(exposure=.15, contrast=-6, highlights=-20, shadows=15, texture=-15, clarity=-8, vibrance=6, temperature=5),
+        dict(highlights=[40, 8]), hsl=mixer(red=(0, -5, 0), orange=(0, -8, 12), yellow=(0, 0, 5)))
+    add(tr('中画幅影调'), tr('MEDIUM FORMAT · 细腻层次'),
+        dict(contrast=-5, highlights=-30, shadows=18, whites=8, blacks=-6, saturation=-4, vibrance=6, texture=6),
+        dict(shadows=[215, 6], highlights=[45, 6]), curves=[[0., 0.], [.22, .2], [.5, .505], [.78, .8], [1., 1.]],
+        hsl=mixer(orange=(-3, 4, 0), yellow=(0, -8, 0), green=(0, -12, -5), blue=(0, -6, -6)))
+    add(tr('暗调情绪'), tr('MOODY · 低调深沉'),
+        dict(exposure=-.3, contrast=18, highlights=-35, shadows=-5, whites=-12, blacks=-12, saturation=-22, vibrance=5,
+             clarity=10, dehaze=6),
+        dict(shadows=[205, 15], highlights=[35, 10]), dict(vignette=-22),
+        hsl=mixer(yellow=(0, -20, 0), green=(0, -30, -15), blue=(0, -20, -15)))
     return presets
 
 

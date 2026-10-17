@@ -353,6 +353,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.canvas.geometry_changed.connect(self.geometry_changed)
         self.canvas.stroke_finished.connect(self.stroke_finished)
         self.canvas.sampled.connect(self.pick_wb)
+        self.canvas.picked.connect(self.pick_grade_color)
         l.addWidget(self.canvas, 1)
         footer = QHBoxLayout()
         footer.setContentsMargins(18, 12, 18, 12)
@@ -379,6 +380,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         r.addLayout(heading_row)
         self.histogram = Histogram()
         r.addWidget(self.histogram)
+        # 1.7.0: drag in the histogram to change blacks / shadows / exposure / highlights / whites.
+        self.histogram.dragged.connect(self.histogram_drag)
+        self.histogram.committed.connect(self.commit)
         warning_row = QHBoxLayout()
         self.shadow_warning = QCheckBox(tr('暗部溢出'))
         self.highlight_warning = QCheckBox(tr('高光溢出'))
@@ -558,6 +562,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.edits['adjustments'][key]=values[key]
             self.controls[key].setValue(values[key])
         self.edits['tone_curve']=points
+        self.histogram.set_values(self.edits['adjustments'])
         self.clear_preset_selection();self.changed()
 
     def build_details(self):
@@ -664,7 +669,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
                              ('Ctrl+0', self.canvas.fit), ('J', self.toggle_clipping),
                              ('Return', self.confirm_crop), ('Enter', self.confirm_crop),
                              ('Y', lambda: self.split_check.setChecked(not self.split_check.isChecked())),
-                             ('Esc', lambda: self.wb_button.setChecked(False)),
+                             ('Esc', lambda: (self.wb_button.setChecked(False), self.grade_pick_button.setChecked(False))),
                              ('Ctrl+K', self.open_palette)]:
             action = QAction(self)
             action.setShortcut(QKeySequence(shortcut))
@@ -902,6 +907,18 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.edits['adjustments'][key] = value
             self.clear_preset_selection()
             self.exposure_curve.set_values(self.edits['adjustments'],self.edits.get('tone_curve'))
+            self.histogram.set_values(self.edits['adjustments'])
+        self.changed()
+
+    def histogram_drag(self, key, value):
+        if self.source is None or self.refreshing:
+            return
+        self.edits['adjustments'][key] = value
+        old, self.refreshing = self.refreshing, True
+        self.controls[key].setValue(value)
+        self.refreshing = old
+        self.clear_preset_selection()
+        self.exposure_curve.set_values(self.edits['adjustments'], self.edits.get('tone_curve'))
         self.changed()
 
     def change_hsl(self, index, value):
@@ -1008,6 +1025,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             for key, control in self.local_controls.items():
                 control.setValue(mask['adjustments'][key])
         self.refreshing = old
+        self.refresh_fine_button()
 
     def update_overlay(self, *_):
         mask = self.selected_mask()
@@ -1025,6 +1043,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.canvas.tool = 'color'
         elif self.wb_sampling:
             self.canvas.tool = 'sample'
+        elif hasattr(self, 'grade_pick_button') and self.grade_pick_button.isChecked() and self.tabs.currentIndex() == 6:
+            self.canvas.tool = 'pick'
         elif self.tabs.currentIndex() == 8:
             self.canvas.tool = 'heal' if self.retouch_tool.currentIndex() == 0 else 'clone'
             self.canvas.brush_radius = self.retouch_controls['size'].spin.value() / 200
@@ -1037,7 +1057,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.canvas.mask_geometry = [mask['start'], mask['end']]
         else:
             self.canvas.tool = 'view'
-        self.canvas.setCursor(Qt.CursorShape.CrossCursor if self.canvas.tool in ('sample','color') else Qt.CursorShape.ArrowCursor)
+        self.canvas.setCursor(Qt.CursorShape.CrossCursor if self.canvas.tool in ('sample','color','pick') else Qt.CursorShape.ArrowCursor)
         self.canvas.update()
 
     def tab_changed(self, *_):
@@ -1049,6 +1069,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.split_check.setChecked(False)
         if self.wb_sampling and self.tabs.currentIndex() != 0:
             self.wb_button.setChecked(False)
+        if hasattr(self, 'grade_pick_button') and self.tabs.currentIndex() != 6:
+            self.grade_pick_button.setChecked(False)
         if self.tabs.currentIndex()==2:self.watermark_editor.update_preview()
         self.update_tool()
         self.update_overlay()
@@ -1142,6 +1164,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.refreshing = True
         for key, control in self.controls.items():
             control.setValue(self.edits['adjustments'][key])
+        self.histogram.set_values(self.edits['adjustments'])
         self.refresh_hsl()
         self.refresh_curve()
         self.exposure_curve.set_values(self.edits['adjustments'],self.edits.get('tone_curve'))

@@ -667,6 +667,9 @@ class NaturalLanguageMixin:
         self.nl_status.setToolTip(tr('输入 {v:,} · 输出 {v2:,} token', v=self.nl_usage.get("input", 0), v2=self.nl_usage.get("output", 0)) if tokens else '')
         self.statusBar().showMessage(tr('自然语言修图：') + (plan.explanation[:80] or tr('{n_lines} 项调整', n_lines=len(lines))))
         self.refresh_natural_language()
+        # 1.7.0: the AI region masks of this result get fine edges in the background.
+        if self.fine_mask_check.isChecked():
+            self.refine_masks_later([(m['kind'], m.get('raster')) for m in plan.target['masks'][len(plan.base['masks']):]])
 
     def nl_strength(self, value):
         if self.refreshing or self.nl_plan is None:

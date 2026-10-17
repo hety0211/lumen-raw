@@ -79,6 +79,9 @@ class Context:
     def notify(self, text):
         pass
 
+    def presets_changed(self):
+        """The preset library changed (1.7.0): the window reloads its list."""
+
 
 # --------------------------------------------------------------------------- arguments
 
@@ -362,8 +365,10 @@ def edit_get(context, path=None, full=False):
     edits = context.edits(path)
     result = _summary(path, edits)
     if full:
+        from . import lut
         result['recipe'] = {k: v for k, v in model.validate(edits).items() if k != 'masks'} | dict(
-            masks=[{k: v for k, v in m.items() if k not in ('raster', 'strokes')} for m in edits['masks']])
+            masks=[{k: v for k, v in m.items() if k not in ('raster', 'strokes')} for m in edits['masks']],
+            lut=lut.summary(edits.get('lut')))
     return result
 
 
@@ -375,12 +380,33 @@ CHANGES = dict(type='object', description=(
     'grading {shadows|midtones|highlights: {hue 0…360, saturation 0…100}, balance -100…100}; '
     'effects {vignette -100…100, midpoint, feather, grain, grain_size 0…100}; monochrome true/false; '
     'curve [[input, output] 0…255, 3–8 points incl. 0 and 255]; '
+    'lut {path: ".cube file (1D or 3D LUT)", amount 0…100} to apply a creative LUT, {amount} to change its strength, '
+    'null to remove it; '
     'masks [{region: sky|subject|person|background|foreground|top|bottom|center|edges, adjustments {…}}] '
     '(sky…foreground are detected locally by AI; at most 4 new masks; existing masks: {index, adjustments}).'))
 
 
-def _regions(context, path, plan):
-    """Compute the AI-selected regions a plan asks for, on the photo's developed preview."""
+def _original(context, path):
+    """The photo's original-resolution pixels for fine masks (1.7.0), decoded for this call."""
+    full = getattr(context, 'original', None)
+    if full is not None:
+        return full(path)
+    return engine.load_image(path, None)[0]
+
+
+def _fine(context, path, edits, items):
+    """Fine versions of quick AI masks ``[(kind, alpha)]`` (None where a kind is not refined),
+    computed on the photo's original."""
+    from . import selection
+    if not any(kind in selection.FINE_KINDS for kind, _ in items):
+        return [None] * len(items)
+    guide = selection.fine_guide(_original(context, path), edits)
+    return [selection.refine_fine(kind, alpha, guide) for kind, alpha in items]
+
+
+def _regions(context, path, plan, fine=True):
+    """Compute the AI-selected regions a plan asks for, on the photo's developed preview, and
+    with ``fine`` refine their edges on the original (1.7.0)."""
     if not plan.regions:
         return nl_edit.attach_regions(plan, [])
     from . import lens, selection
@@ -391,26 +417,38 @@ def _regions(context, path, plan):
     for kind, _ in plan.regions:
         try:
             alpha, _ = selection.automatic(rgb, kind, True)
-            alphas.append(selection.encode(alpha) if float((alpha > .5).mean()) >= .0003 else None)
+            alphas.append(alpha if float((alpha > .5).mean()) >= .0003 else None)
         except Exception as exc:
             plan.notes.append(f'{kind}: {exc}')
             alphas.append(None)
-    return nl_edit.attach_regions(plan, alphas)
+    if fine and any(a is not None for a in alphas):
+        try:
+            context.notify('fine mask edges')
+            present = [(i, kind, a) for i, ((kind, _), a) in enumerate(zip(plan.regions, alphas)) if a is not None]
+            for (i, _, _), better in zip(present, _fine(context, path, edits, [(k, a) for _, k, a in present])):
+                if better is not None:
+                    alphas[i] = better
+        except Exception as exc:
+            plan.notes.append(f'fine edges: {exc}')
+    return nl_edit.attach_regions(plan, [selection.encode(a) if a is not None else None for a in alphas])
 
 
 @command('edit.apply', 'Apply edit values to a photo as one undoable step (same vocabulary as edit.get).',
          dict(changes=CHANGES, path=PATH, reset=dict(type='boolean', description='Reset the global look first.'),
               amount=dict(type='number', minimum=0, maximum=150, description='Strength in percent of the change (default 100).'),
-              label=dict(type='string', description='Short description shown in the editor.')),
+              label=dict(type='string', description='Short description shown in the editor.'),
+              fine=dict(type='boolean', description='Refine the edges of new AI region masks (sky, subject, person, '
+                                                    'background) on the original photo: hair, fur, branches. A few '
+                                                    'seconds slower. Default true.')),
          required=('changes',), tool='apply_edits')
-def edit_apply(context, changes, path=None, reset=False, amount=100, label=''):
+def edit_apply(context, changes, path=None, reset=False, amount=100, label='', fine=True):
     path = _target(context, path)
     before = context.edits(path)
     try:
-        plan = nl_edit.plan(before, dict(changes, reset=bool(reset)))
+        plan = nl_edit.plan(before, dict(changes, reset=bool(reset)), files=True)
     except nl_edit.ServiceError as exc:
         raise CommandError(str(exc))
-    plan = _regions(context, path, plan)
+    plan = _regions(context, path, plan, fine)
     target = nl_edit.blend(plan.base, plan.target, amount / 100) if amount != 100 else plan.target
     target = model.validate(target)
     lines = nl_edit.changes(before, target)
@@ -418,7 +456,33 @@ def edit_apply(context, changes, path=None, reset=False, amount=100, label=''):
     return dict(path=path, applied=lines, notes=plan.notes, state=nl_edit.current_state(target))
 
 
-@command('edit.reset', 'Reset every edit of a photo (keeps its camera white balance and develop reference).',
+@command('mask.refine', 'Refine the edges of a photo\'s AI masks (sky, subject, person, background) on the original '
+                       'photo, e.g. masks made before 1.7.0 or with fine edges off. One undoable step.',
+         dict(path=PATH, index=dict(type='integer', minimum=0, maximum=31,
+                                    description='Mask number (see edit.get); omit for every AI mask.')),
+         tool='refine_masks')
+def mask_refine(context, path=None, index=None):
+    from . import selection
+    path = _target(context, path)
+    edits = context.edits(path)
+    masks = edits['masks']
+    if index is not None and index >= len(masks):
+        raise CommandError(f'no mask {index}; the photo has {len(masks)}')
+    chosen = [i for i in ([index] if index is not None else range(len(masks)))
+              if masks[i]['kind'] in selection.FINE_KINDS and masks[i].get('raster')]
+    if not chosen:
+        raise CommandError('no AI mask (sky, subject, person, background) to refine')
+    context.notify('fine mask edges')
+    refined = _fine(context, path, edits, [(masks[i]['kind'], selection.decode(masks[i]['raster'])) for i in chosen])
+    for i, alpha in zip(chosen, refined):
+        masks[i]['raster'] = selection.encode(alpha)
+    edits = model.validate(edits)
+    context.apply(path, edits, 'mask.refine')
+    return dict(path=path, refined=[dict(index=i, name=masks[i]['name'], size=list(selection.decode(masks[i]['raster']).shape[1::-1]))
+                                    for i in chosen])
+
+
+@command('edit.reset','Reset every edit of a photo (keeps its camera white balance and develop reference).',
          dict(path=PATH), tool='reset_edits')
 def edit_reset(context, path=None):
     path = _target(context, path)
@@ -453,23 +517,59 @@ def edit_auto(context, path=None):
     return _summary(path, edits)
 
 
-@command('edit.presets', 'Names of the built-in looks for edit.preset.', read_only=True, tool='list_presets')
+@command('edit.presets', 'Presets for edit.preset: the built-in looks and the presets the user imported '
+                        '(Lightroom .xmp / .lrtemplate, LUTs, LUMEN presets).', read_only=True, tool='list_presets')
 def edit_presets(context):
-    return dict(presets=[dict(name=p['name'], description=p['subtitle']) for p in model.builtin_presets()])
+    from . import presets
+    return dict(presets=[dict(name=p['name'], description=p['subtitle'], group=p.get('group', ''),
+                              kind='built-in' if p.get('source') == 'builtin' else p.get('source', 'lumen'),
+                              notes=presets.lightroom.describe(p.get('notes', []))) for p in presets.all_presets()])
 
 
-@command('edit.preset', 'Apply a built-in look (see edit.presets) at a strength.',
-         dict(name=dict(type='string'), amount=dict(type='number', minimum=0, maximum=100), path=PATH),
+@command('edit.preset', 'Apply a preset (see edit.presets) at a strength to a photo, or to several (paths) as a batch.',
+         dict(name=dict(type='string'), amount=dict(type='number', minimum=0, maximum=100), path=PATH,
+              paths=dict(type='array', items=dict(type='string'), description='Apply to these photos instead of one.')),
          required=('name',), tool='apply_preset')
-def edit_preset(context, name, amount=100, path=None):
-    presets = {p['name']: p for p in model.builtin_presets()}
-    preset = presets.get(name) or next((p for p in presets.values() if name.lower() in p['subtitle'].lower()), None)
+def edit_preset(context, name, amount=100, path=None, paths=None):
+    from . import presets
+    preset = presets.find(name)
     if preset is None:
         raise CommandError(f'unknown preset {name!r}; see edit.presets')
+    if paths:
+        done = []
+        for other in [_resolve(p) for p in paths]:
+            if not Path(other).is_file():
+                raise CommandError(f'file not found: {other}')
+            if other not in context.photos():
+                context.add([other])
+            edits = model.apply_look(context.edits(other), preset['look'], amount)
+            context.apply(other, model.validate(edits), f'edit.preset {preset["name"]}')
+            done.append(other)
+        return dict(preset=preset['name'], applied=done)
     path = _target(context, path)
     edits = model.apply_look(context.edits(path), preset['look'], amount)
     context.apply(path, model.validate(edits), f'edit.preset {preset["name"]}')
     return _summary(path, edits)
+
+
+@command('preset.import', 'Import presets into the preset list: Lightroom Classic / Camera Raw .xmp, Lightroom '
+                          '.lrtemplate, .cube LUTs, LUMEN .lumenpreset, or a .zip pack of them. Lightroom settings are '
+                          'converted approximately; the result lists what could not be carried over.',
+         dict(path=dict(type='string', description='Preset file or .zip pack.')), required=('path',), tool='import_presets')
+def preset_import(context, path):
+    from . import presets
+    source = Path(path).expanduser()
+    if not source.is_file():
+        raise CommandError(f'file not found: {source}')
+    try:
+        result = presets.import_path(source)
+    except (OSError, ValueError) as exc:
+        raise CommandError(str(exc))
+    context.notify(f'imported {len(result["imported"])} presets')
+    context.presets_changed()
+    return dict(imported=[dict(name=i['name'], group=i['group'], kind=i['source'],
+                               not_carried_over=presets.lightroom.describe(i['notes'])) for i in result['imported']],
+                skipped=[dict(file=n, reason=r) for n, r in result['skipped']])
 
 
 @command('edit.copy', 'Copy the look (tone, colour, effects, process version, lens switches) of a photo to others; '
@@ -478,7 +578,7 @@ def edit_preset(context, name, amount=100, path=None):
 def edit_copy(context, to, path=None):
     path = _target(context, path)
     source = context.edits(path)
-    look = model.extract_look(source)
+    look = model.copy_look(source)
     done = []
     for other in [_resolve(p) for p in to]:
         if other == path:

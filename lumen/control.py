@@ -24,7 +24,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import commands, engine, i18n, model
+from . import commands, engine, i18n, model, viewport
 
 log = logging.getLogger(__name__)
 
@@ -308,6 +308,21 @@ class WindowContext(commands.Context):
 
     def notify(self, text):
         self._gui(lambda: self.window.agent_activity(text))
+
+    def presets_changed(self):
+        self._gui(lambda: self.window.reload_presets())
+
+    def original(self, path):
+        """Original-resolution pixels (fine masks, 1.7.0): the window's own decode for its photo."""
+        def run():
+            w = self.window
+            if path == w.source_path and w.source is not None:
+                if w.detail_source is None:
+                    w.detail_source = viewport.DetailSource(w.source_path)
+                return w.detail_source
+            return None
+        holder = self._gui(run)
+        return holder.level(0) if holder is not None else engine.load_image(path, None)[0]
 
 
 class Server(QObject):

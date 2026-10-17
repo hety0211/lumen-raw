@@ -120,8 +120,16 @@ class Session(commands.Context):
         return self.documents[path]['initialized']
 
     def apply(self, path, edits, label):
+        fresh = path in self.documents and not self.documents[path]['initialized']
         document = self._load(path)
-        document['edits'] = copy.deepcopy(edits)
+        edits = copy.deepcopy(edits)
+        if fresh:
+            # Edits computed before the photo was first opened (a batch preset, copied edits) get its
+            # own white balance, develop reference and lens profile, as the window gives them (1.7.0).
+            for key in ('white_balance', 'develop'):
+                edits[key] = copy.deepcopy(document['edits'][key])
+            edits['lens'] = lens.prepare(edits.get('lens'), document['info'].get('lens_match'))[0]
+        document['edits'] = edits
         document['history'].push(edits)
 
     def step(self, path, delta):

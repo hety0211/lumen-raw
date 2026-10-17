@@ -24,7 +24,7 @@ from PIL import Image, ImageCms, ImageOps
 from .model import COLORS
 from . import white_balance, retouch, develop, selection, dng, photo_metadata
 from . import curves as tone_curves
-from . import large_image, performance, compute, gpu_graphs, lens, color, tone
+from . import large_image, performance, compute, gpu_graphs, lens, color, tone, lut
 from .i18n import tr
 
 log = logging.getLogger(__name__)
@@ -985,6 +985,8 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
             alpha = cache.alpha(alpha_key, lambda: mask_alpha(mask, x.shape, mask_reference))
             apply_local(x, alpha, mask['adjustments'], backend, detail_scale, version=version,
                         space=space if version == 2 else None)
+    # 1.7.0: the creative LUT acts on the finished colour, before vignette and grain.
+    x = lut.apply(x, edits.get('lut'), space if version == 2 else None)
     x = finishing(x, edits.get('effects', {}), edits.get('crop'))
     if apply_crop:
         x = crop_rotate(x, edits)
@@ -1072,6 +1074,7 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
             check()
             apply_local(x, mask_alpha(mask, (h, w), reference, area), mask['adjustments'], backend, detail_scale, (h, w),
                         version, space if version == 2 else None)
+    x = lut.apply(x, edits.get('lut'), space if version == 2 else None)
     x = finishing(x, edits.get('effects', {}), edits.get('crop'), area)
     x = x[area.inner(target)]
     if space is not None and version == 1:

@@ -1,6 +1,7 @@
 """``lumen-cli``: LUMEN RAW from the command line and as an MCP server (1.6.0).
 
-    lumen-cli render INPUT OUTPUT [--size 2560] [--quality 92] [--preset NAME] [--set exposure=0.3 …]
+    lumen-cli render INPUT OUTPUT [--size 2560] [--quality 92] [--preset NAME] [--lut FILE.cube] [--set exposure=0.3 …]
+    lumen-cli import-presets FILE               Lightroom .xmp / .lrtemplate, .cube, .lumenpreset or a .zip pack
     lumen-cli info PHOTO
     lumen-cli list [QUERY]                      e.g. "rating>=3 -flag:reject"
     lumen-cli rate PHOTO… 0-5 | flag PHOTO… pick|reject|none | label PHOTO… red|…|none
@@ -109,6 +110,8 @@ def render(args):
                 target = target.setdefault(part, {})
             key = parts[-1]
         target[key] = _value(value)
+    if args.lut:
+        changes['lut'] = dict(path=args.lut, amount=args.lut_amount)
     if changes:
         run('edit.apply', changes=changes)
     limit = dict(max_kb=args.max_kb) if args.max_kb else {}
@@ -132,7 +135,9 @@ def main(argv=None):
     p.add_argument('output')
     p.add_argument('--size', type=int, help='long edge in pixels (default: full size)')
     p.add_argument('--quality', type=int, default=92)
-    p.add_argument('--preset', help='built-in look name')
+    p.add_argument('--preset', help='preset name (built-in or imported, see list_presets)')
+    p.add_argument('--lut', help='.cube LUT to apply')
+    p.add_argument('--lut-amount', type=float, default=100, help='LUT strength 0–100')
     p.add_argument('--amount', type=float, default=100, help='preset strength 0–100')
     p.add_argument('--set', action='append', metavar='KEY=VALUE',
                    help='edit value, e.g. exposure=0.3, highlights=-40, hsl.blue.saturation=20 (repeatable)')
@@ -156,6 +161,8 @@ def main(argv=None):
     p.add_argument('photos', nargs='+')
     p = sub.add_parser('import-lightroom', help='ratings, flags and labels from a Lightroom Classic catalog')
     p.add_argument('catalog')
+    p = sub.add_parser('import-presets', help='Lightroom .xmp / .lrtemplate presets, .cube LUTs or a .zip pack')
+    p.add_argument('file')
     sub.add_parser('commands', help='every command id with its parameters')
     p = sub.add_parser('run', help='run any command (in the open editor when there is one)')
     p.add_argument('command')
@@ -210,6 +217,9 @@ def main(argv=None):
         elif args.action == 'import-lightroom':
             from .session import Session
             result = commands.run(Session(), 'library.import_lightroom', dict(catalog=args.catalog))
+        elif args.action == 'import-presets':
+            context = _context(False)
+            result = context.run('preset.import', dict(path=str(Path(args.file).resolve())))
         elif args.action == 'commands':
             result = dict(commands=commands.describe())
         else:

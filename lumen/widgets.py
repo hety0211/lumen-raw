@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QCursor, QImage, QPainter, QPen, QPainterPath,
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSlider, QDoubleSpinBox, QLayout,
                                QToolButton, QButtonGroup, QAbstractSlider, QAbstractSpinBox, QComboBox, QScrollArea,
                                QScrollBar, QApplication, QCheckBox, QSpinBox)
-from .i18n import tr
+from .i18n import tr, N_
 
 
 class WheelGuard(QObject):
@@ -330,15 +330,93 @@ class AdjustSlider(QWidget):
 
 
 class Histogram(QWidget):
+    """RGB histogram of the edited photo.  1.7.0: as in Lightroom, dragging left or right in one
+    of its five tonal zones changes that zone's slider (blacks, shadows, exposure, highlights,
+    whites); the zone under the pointer is shaded and named with its value; double-click resets it."""
+    dragged = Signal(str, float)
+    committed = Signal()
+    #: (slider, label, start, end) along the tone axis; Lightroom's zones.
+    ZONES = (('blacks', N_('黑色'), 0., .1), ('shadows', N_('暗部'), .1, .35), ('exposure', N_('曝光'), .35, .65),
+             ('highlights', N_('亮部'), .65, .9), ('whites', N_('白色'), .9, 1.))
+    #: Change per full width of drag: slider points, and EV for exposure.
+    SPAN = 200.
+    EXPOSURE_SPAN = 4.
+
     def __init__(self):
         super().__init__()
         self.setFixedHeight(105)
+        self.setMouseTracking(True)
         self.hist = None
+        self.values = {}
+        self.hover = None
+        self.drag = None
+        self.setToolTip(tr('左右拖动直方图可调整黑色、暗部、曝光、亮部与白色，与 Lightroom 相同；双击归零'))
 
     def set_image(self, rgb):
         values = (np.clip(rgb[::3, ::3], 0, 1) * 255).astype(np.uint8)
         self.hist = [np.bincount(values[..., c].ravel(), minlength=256) for c in range(3)]
         self.update()
+
+    def set_values(self, adjustments):
+        self.values = {zone[0]: float(adjustments.get(zone[0], 0.)) for zone in self.ZONES}
+        self.update()
+
+    def zone_at(self, x):
+        t = min(max(x / max(self.width(), 1), 0.), .999999)
+        return next(zone for zone in self.ZONES if zone[2] <= t < zone[3])
+
+    @staticmethod
+    def limits(key):
+        return (-5., 5.) if key == 'exposure' else (-100., 100.)
+
+    def mousePressEvent(self, e):
+        if self.hist is None or e.button() != Qt.MouseButton.LeftButton:
+            return super().mousePressEvent(e)
+        zone = self.zone_at(e.position().x())
+        self.drag = (zone[0], e.position().x(), self.values.get(zone[0], 0.))
+        self.hover = zone
+        self.update()
+
+    def mouseMoveEvent(self, e):
+        if self.drag is not None:
+            key, start, value = self.drag
+            span = self.EXPOSURE_SPAN if key == 'exposure' else self.SPAN
+            low, high = self.limits(key)
+            target = value + (e.position().x() - start) / max(self.width(), 1) * span
+            target = round(min(high, max(low, target)), 2 if key == 'exposure' else 0)
+            if target != self.values.get(key):
+                self.values[key] = target
+                self.dragged.emit(key, float(target))
+            self.update()
+            return
+        if self.hist is not None:
+            zone = self.zone_at(e.position().x())
+            if zone is not self.hover:
+                self.hover = zone
+                self.setCursor(Qt.CursorShape.SizeHorCursor)
+                self.update()
+
+    def mouseReleaseEvent(self, e):
+        if self.drag is not None and e.button() == Qt.MouseButton.LeftButton:
+            self.drag = None
+            self.committed.emit()
+            self.update()
+
+    def mouseDoubleClickEvent(self, e):
+        if self.hist is None or e.button() != Qt.MouseButton.LeftButton:
+            return
+        key = self.zone_at(e.position().x())[0]
+        self.drag = None
+        self.values[key] = 0.
+        self.dragged.emit(key, 0.)
+        self.committed.emit()
+        self.update()
+
+    def leaveEvent(self, e):
+        if self.drag is None:
+            self.hover = None
+            self.unsetCursor()
+            self.update()
 
     def paintEvent(self, _):
         p = QPainter(self)
@@ -348,6 +426,10 @@ class Histogram(QWidget):
             p.setPen(QColor('#6d7684'))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, tr('RGB 直方图'))
             return
+        if self.hover is not None:
+            key, label, start, end = self.hover
+            p.fillRect(QRectF(start * self.width(), 0, (end - start) * self.width(), self.height()),
+                       QColor(255, 255, 255, 34 if self.drag else 20))
         peak = max(max(np.percentile(h, 99), 1) for h in self.hist)
         for h, color in zip(self.hist, ['#ea7d88', '#8ed7ac', '#86adf3']):
             path = QPainterPath(QPointF(0, self.height()))
@@ -360,6 +442,17 @@ class Histogram(QWidget):
             p.fillPath(path, c)
             p.setPen(QPen(QColor(color), 1))
             p.drawPath(path)
+        if self.hover is not None:
+            key, label, _, _ = self.hover
+            value = self.values.get(key, 0.)
+            number = '0' if value == 0 else f'{value:+.2f}' if key == 'exposure' else f'{value:+.0f}'
+            text = f'{tr(label)}  {number}'
+            box = QRectF(4, 3, p.fontMetrics().horizontalAdvance(text) + 10, 18)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(QColor(17, 20, 24, 200))
+            p.drawRoundedRect(box, 4, 4)
+            p.setPen(QColor('#dfe6d8'))
+            p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
 
 
 class CurveEditor(QWidget):
@@ -498,6 +591,8 @@ class Canvas(QWidget):
     sampled = Signal(object)
     clone_sampled = Signal(object)
     color_sampled = Signal(object)
+    #: 1.7.0: the colour-grading eyedropper (tool 'pick').
+    picked = Signal(object)
     viewport_changed = Signal()
     files_dropped = Signal(list)
 
@@ -656,8 +751,8 @@ class Canvas(QWidget):
             if e.button() == Qt.MouseButton.LeftButton:
                 self.opened.emit()
             return
-        if e.button() == Qt.MouseButton.LeftButton and self.tool in ('sample','color') and self.image_rect().contains(e.position()):
-            (self.sampled if self.tool == 'sample' else self.color_sampled).emit(self.pos(e.position()))
+        if e.button() == Qt.MouseButton.LeftButton and self.tool in ('sample','color','pick') and self.image_rect().contains(e.position()):
+            dict(sample=self.sampled, color=self.color_sampled, pick=self.picked)[self.tool].emit(self.pos(e.position()))
             return
         if e.button() == Qt.MouseButton.LeftButton and self.split:
             line = self.image_rect().left() + self.split_position * self.image_rect().width()

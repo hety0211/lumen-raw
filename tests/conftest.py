@@ -8,3 +8,5 @@ import tempfile
 os.environ['LUMEN_LANGUAGE'] = os.environ.get('LUMEN_TEST_LANGUAGE', 'zh_CN')
 os.environ['LUMEN_CATALOG'] = os.path.join(tempfile.mkdtemp(prefix='lumen-test-catalog-'), 'catalog.jsonl')
 os.environ['LUMEN_CONTROL_NAME'] = f'lumen-raw-test-{os.getpid()}'
+# 1.7.0: imported presets go to a folder of the test run, never the user's preset library.
+os.environ['LUMEN_PRESETS'] = tempfile.mkdtemp(prefix='lumen-test-presets-')

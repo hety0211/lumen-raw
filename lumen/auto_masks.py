@@ -1,10 +1,20 @@
-"""Automatic masks integrated with the existing non-destructive mask stack."""
+"""Automatic masks integrated with the existing non-destructive mask stack.
+
+1.7.0: an AI mask appears at once from the quick pass (network + guided filter on the
+preview), then a fine pass refines its edges on the original photograph in the background
+(``selection.fine``) and replaces it — one more undo step.  Masks of older projects can be
+refined with 精细化所选蒙版.
+"""
 import copy
+import time
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel, QCheckBox, QComboBox
 from .widgets import AdjustSlider
 from .scheduler import Activity as A
-from . import engine, model, selection, lens
-from .i18n import tr
+from . import engine, model, selection, lens, viewport
+from .i18n import tr, setting, save_setting
+
+#: settings.ini key of the fine-edge option (on by default).
+FINE_SETTING = 'fine_masks'
 
 
 class AutoMaskMixin:
@@ -36,6 +46,16 @@ class AutoMaskMixin:
         self.refine_mask_check=QCheckBox(tr('画笔修整自动蒙版'))
         self.refine_mask_check.toggled.connect(self.update_tool)
         layout.addWidget(self.refine_mask_check)
+        # 1.7.0: fine edges on the original photograph.
+        self.fine_mask_check=QCheckBox(tr('精细边缘（读取原图，较慢）'))
+        self.fine_mask_check.setToolTip(tr('AI 蒙版先按预览快速生成，再读取原图，在最长 {edge} 像素上按颜色细化发丝、毛发、枝叶等边缘，完成后自动替换（约多 5–10 秒，可撤销）。', edge=selection.FINE_EDGE))
+        self.fine_mask_check.setChecked(setting(FINE_SETTING,'1')!='0')
+        self.fine_mask_check.toggled.connect(lambda on:save_setting(FINE_SETTING,'1' if on else '0'))
+        layout.addWidget(self.fine_mask_check)
+        self.fine_mask_button=self.button(tr('精细化所选蒙版'),self.refine_selected_mask)
+        self.fine_mask_button.setToolTip(tr('在原图上细化所选 AI 蒙版的边缘，例如旧版本创建的蒙版'))
+        self.fine_mask_button.setEnabled(False)
+        layout.addWidget(self.fine_mask_button)
         self.canvas.color_sampled.connect(self.pick_color_region)
 
     def color_selection_mode(self,checked):
@@ -89,10 +109,114 @@ class AutoMaskMixin:
             self.refresh()
             self.changed();self.commit()
             self.statusBar().showMessage(tr('已创建{name} · {provider} · 可继续调整局部参数', name=mask["name"], provider=provider))
+            if self.fine_mask_check.isChecked():
+                self.refine_masks_later([(kind,mask['raster'])])
         def fail(text):
             release()
             if token==self.document_token:self.error(tr('自动选择失败：')+text)
         self.job(work,ready,fail)
+
+    # 1.7.0: fine edges.
+
+    def fine_wanted(self,mask):
+        """An AI mask whose stored raster is coarser than its fine version would be."""
+        if not mask or mask.get('kind') not in selection.FINE_KINDS or not mask.get('raster') or not self.info:
+            return False
+        size=selection.fine_size(self.info.get('width') or 1,self.info.get('height') or 1)
+        return max(selection.decode(mask['raster']).shape[:2])<max(size)
+
+    def refresh_fine_button(self):
+        if hasattr(self,'fine_mask_button'):
+            mask=self.selected_mask()
+            pending=mask is not None and mask.get('raster') in getattr(self,'fine_pending',set())
+            self.fine_mask_button.setEnabled(self.source is not None and self.fine_wanted(mask) and not pending)
+
+    @property
+    def fine_busy(self):
+        return bool(getattr(self,'fine_pending',None))
+
+    def refine_selected_mask(self):
+        mask=self.selected_mask()
+        if self.fine_wanted(mask):
+            self.refine_masks_later([(mask['kind'],mask['raster'])])
+
+    def refine_masks_later(self,items):
+        """Refine AI masks (``(kind, raster)`` of the quick pass) on the original photograph.
+
+        The work runs on its own thread, not the image job queue, so the preview keeps updating
+        while the masks are refined; one pass at a time, later requests wait for it.  Each
+        finished raster replaces the quick one wherever it still is."""
+        items=[(k,r) for k,r in items if k in selection.FINE_KINDS and r]
+        if not items or self.source is None or not self.info:
+            return
+        if not hasattr(self,'fine_relay'):
+            from .nl_panel import _Relay
+            self.fine_relay,self.fine_pending,self.fine_waiting=_Relay(self),set(),[]
+        if self.fine_pending:
+            self.fine_waiting+=[(self.document_token,item) for item in items]
+            self.fine_pending.update(r for _,r in items)
+            self.refresh_fine_button()
+            return
+        self.fine_pending.update(r for _,r in items)
+        self.refresh_fine_button()
+        if self.detail_source is None:
+            self.detail_source=viewport.DetailSource(self.source_path)
+        holder,token,corrections=self.detail_source,self.document_token,copy.deepcopy(self.edits)
+        width=self.info.get('width') or self.source.shape[1]
+        height=self.info.get('height') or self.source.shape[0]
+        started=time.perf_counter()
+        self.statusBar().showMessage(tr('正在读取原图并精细化蒙版边缘…'))
+        def work():
+            target=max(selection.fine_size(width,height))
+            level=0
+            while max(viewport.level_size(width,height,level+1))>=target:
+                level+=1
+            guide=selection.fine_guide(holder.level(level),corrections)
+            done={}
+            for kind,raster in items:
+                alpha=selection.refine_fine(kind,selection.decode(raster),guide)
+                if alpha is not None:
+                    done[raster]=selection.encode(alpha)
+            return done
+        def finish():
+            self.fine_pending.clear()
+            waiting=[item for t,item in self.fine_waiting if t==self.document_token]
+            self.fine_waiting=[]
+            self.refresh_fine_button()
+            if waiting:
+                self.refine_masks_later(waiting)
+        def ready(done):
+            if token==self.document_token and not self.closing:
+                count=self.replace_rasters(done)
+                if count:
+                    self.statusBar().showMessage(tr('已精细化 {count} 个蒙版的边缘 · {seconds} 秒 · 可撤销', count=count,
+                                                    seconds=f'{time.perf_counter()-started:.1f}'))
+            finish()
+        def fail(error):
+            if token==self.document_token and not self.closing:
+                text=str(error).strip().splitlines()[-1][:120] if str(error).strip() else type(error).__name__
+                self.statusBar().showMessage(tr('精细化蒙版失败，保留快速蒙版：')+text)
+            finish()
+        from .nl_panel import run_async
+        run_async(self.fine_relay,work,ready,fail)
+
+    def replace_rasters(self,done):
+        """Swap quick mask rasters for their fine versions in the current edits (and in the last
+        natural-language result, so its strength slider still applies).  Returns how many."""
+        def swap(edits):
+            count=0
+            for mask in (edits or {}).get('masks',[]):
+                if mask.get('raster') in done:
+                    mask['raster']=done[mask['raster']];count+=1
+            return count
+        if not done:return 0
+        self.commit()
+        count=swap(self.edits)
+        if getattr(self,'nl_plan',None) is not None and getattr(self,'nl_applied',None) is not None:
+            swap(self.nl_plan.target);swap(self.nl_applied)
+        if count:
+            self.refresh();self.changed();self.commit()
+        return count
 
     def build_develop_profile(self,layout):
         self.develop_combo=QComboBox()
