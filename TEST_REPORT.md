@@ -10,7 +10,19 @@
 - **直方图与吸管：** 离屏测试中用鼠标事件拖动直方图：区域划分与 Lightroom 相同（0／10／35／65／90／100%），曝光区四分之一宽度为 +1 EV，暗部为 50 点，上下限、撤销、双击归零与滑块同步均正确；吸管取色的色相与点击处颜色一致，灰色不改动。拖动手感与吸管准星未在真实鼠标上人工确认。
 - **自动检查：** 完整回归 **451 项通过、11 项跳过（macOS 专属等）**；新增 `tests/test_v170.py`、`tests/test_v170_masks.py`、`tests/test_v170_tools.py`。`python tools/i18n_catalog.py`：八种译文目录各 1119 条，无缺漏。
 - **打包：** `LumenRAW-1.7.0-Windows.zip` 950,558,297 字节，`LumenRAW-1.7.0-Setup.exe` 880,225,266 字节，解包后与冻结版逐个一致；冻结版与安装版冒烟测试为 DirectML，`lumen-cli` 与 MCP 检查通过。安装版上另行检查：导入 `.xmp` 与 `.lrtemplate`、`render --preset … --lut …`、MCP `refine_masks` 得到与原图同尺寸（2648 × 3936）的精细蒙版。
-- **未覆盖：** 没有用 Adobe 的实际渲染对照预设效果；没有用户的真实预设包（以自写的预设和合成包测试）；精细边缘未在人像发丝上系统测试（样片中只有猫的虚化耳朵）；Mac 版未构建。
+- **未覆盖：** 没有用 Adobe 的实际渲染对照预设效果；没有用户的真实预设包（以自写的预设和合成包测试）；精细边缘未在人像发丝上系统测试（样片中只有猫的虚化耳朵）；Mac 版见下一节。
+
+## 1.7.0 macOS 验证 · 2026-10-19
+
+同一台 Apple M1 Pro（16 GB），macOS 27.0.1（26A434）；构建环境同 1.5.2 Mac 版（python-build-standalone CPython 3.12.14，依赖未变）。这是 1.6.0 以来第一次构建 Mac 版，全部步骤由 `tools/build_macos.sh` 执行，日志在 `.publish/v170/macos/logs/`。
+
+- **问题与修复：** 第一次构建停在 Metal 检查：`tools/check_metal.py` 和 `tests/test_macos.py` 用 `model.recipe()` 构造调整，1.6.0 起它默认是处理版本 2，于是处理版本 1 的 Metal 核心被拿去和处理版本 2 的 NumPy 参考比较（误差 0.41–0.51）。App 内的自检（`Pipeline.self_test` 固定版本 1、`self_test2` 检查版本 2）不受影响。测试与检查脚本现在固定版本 1，另外检查版本 2：完整管线（含径向与明亮度蒙版）的版本 2 用例以 `test_v160` 与 `self_test2` 相同的界限比较（最大 2×10⁻³、平均 2×10⁻⁵），实测只有 1 个像素超过 2×10⁻⁵（3.95×10⁻⁵）。`build_macos.sh` 增加了与 Windows 相同的 `tools/check_cli.py` 步骤。
+- **自动检查：** Mac 上完整回归 **447 项通过、16 项跳过**（13 项为未复制到 Mac 的尼康／索尼／佳能样片，另有 SSH 会话中的登录钥匙串、Windows DXGI 显卡选择等），11 分钟；控制通道测试（助手通过 Unix 套接字操作窗口）、精细蒙版、预设导入、LUT、广色域导出与品牌标志测试都在 Mac 上运行并通过。`python tools/i18n_catalog.py`：八种译文目录各 1119 条，无缺漏。
+- **Metal／Core ML：** 光影 3.7 ms、色彩 3.6 ms、合并 4.6 ms（1600 × 1067），与 NumPy 最大误差 3.8×10⁻⁶；处理版本 2 合并核心 1.1×10⁻⁵；九个模型全部在 Core ML 上运行。
+- **冒烟测试：** 源码、打包后的 `LUMEN RAW.app` 与直接从挂载的 DMG 运行均通过：显影 `Metal · Apple M1 Pro`，AI 超分 `CoreMLExecutionProvider`，lensfun 1569 支镜头，A7 III 样片识别为 Tamron E 28-200mm F2.8-5.6 A071，随包语音模型与一次自然语言修图。
+- **lumen-cli（打包版）：** `tools/check_cli.py` 通过（版本、1200 像素渲染、MCP 2025-11-25 握手与 2026-07-28 发现，27 个工具，`open_photo`／`apply_edits`／`render_preview`）。另用独立的 `LUMEN_PRESETS` 导入 `tests/presets` 的 `.xmp` 与 `.lrtemplate`，`render --preset 暖调胶片 01 --lut`（17³ 暖色表）使平均 R 由 180.1 升到 194.5、B 由 123.1 降到 110.8、G 不变；“经典黑白” 预设输出三通道完全相同。
+- **打包：** `LumenRAW-1.7.0-macOS-arm64.dmg` 908,051,721 字节，SHA-256 `5fcb84c0af53bf383d49ccd4b36994e505c3c3da38a73e9f628be9b85d4291a7`；App 1.2 GB，1142 个文件（新增 `Contents/MacOS/lumen-cli`），临时签名，`codesign --verify --deep --strict` 通过；最低系统 macOS 15.0；挂载后签名有效。
+- **未覆盖：** 没有在 Mac 的图形界面中手动操作（预设面板、拖动直方图、吸管与精细蒙版只经离屏测试）；没有在 Mac 上用真实的 Claude Code／Codex 连接 MCP（以 `check_cli.py` 的 stdio 会话代替）；其余同 1.5.2 Mac 版（未公证首次打开、钥匙串与麦克风授权对话框未人工实测）。
 
 ## 1.6.2 验证 · 2026-10-14
 

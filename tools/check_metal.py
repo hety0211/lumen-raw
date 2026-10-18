@@ -24,6 +24,7 @@ TILES = {'realesr-general-x4v3.onnx': 192, 'realesrgan-x4plus.onnx': 192, 'nafne
 
 def edits():
     e = model.recipe()
+    e['process'] = 1                     # these are the process-1 stages; 1.6.0 recipes default to 2
     e['adjustments'].update(exposure=.35, contrast=14, shadows=28, highlights=-30, blacks=-8, whites=10,
                             temperature=-12, tint=6, saturation=8, vibrance=15)
     e['hsl'] = [[10, -20, 5], [0, 15, 0], [-5, 0, 10], [0, -10, 0], [15, 0, -5], [0, 20, 0], [0, 0, 0], [-10, 5, 0]]
@@ -57,6 +58,12 @@ def check_pixels(report):
         print(f'{kind}: Metal {elapsed:.1f} ms on 1600 x 1067 · max error vs NumPy {error:.2e}')
         if not np.isfinite(result).all() or error > 1e-4:
             raise SystemExit(f'Metal {kind} kernel differs from the NumPy reference ({error:.2e})')
+    # Process 2 (1.6.0): pipeline() already ran its self-test; a failure only disables process 2
+    # in the app, but a release must have it.
+    if not pipeline.version2:
+        raise SystemExit('Metal process-2 kernel unavailable: ' + pipeline.error2)
+    report['pixels']['process2'] = dict(max_error=pipeline.self_test2())
+    print(f'process 2 fused: max error vs NumPy {report["pixels"]["process2"]["max_error"]:.2e}')
     started = time.perf_counter()
     engine.color_stage(engine.Backend('cpu').tonal(image, e['adjustments']), e)
     report['pixels']['numpy_fused_ms'] = round((time.perf_counter() - started) * 1000, 1)

@@ -6,7 +6,7 @@
 
 LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows 和 Apple 芯片 Mac，无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。打开、调色、镜头校正、AI 降噪 / 超分 / 蒙版和导出全部在本机离线完成；只有你主动使用云端大模型修图时，才会联网发送指令和参数。
 
-当前版本：Windows **1.7.0**（2026-10-17），macOS **1.5.2**（2026-10-08）。
+当前版本：**1.7.0**（Windows 2026-10-17，macOS 2026-10-19）。
 
 ![LUMEN RAW 1.5.1 界面：右侧「裁切·镜头」面板按 EXIF 识别出尼康 Z 14-24mm f/2.8 S，并校正了畸变、暗角和横向色差](docs/screenshots/lens.png)
 
@@ -17,9 +17,9 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 | 系统 | 下载 | 要求 |
 |---|---|---|
 | Windows | [`LumenRAW-1.7.0-Setup.exe`（安装版）或 `LumenRAW-1.7.0-Windows.zip`（便携版）](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0) | Windows 10 22H2 / Windows 11，x64 |
-| macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
+| macOS | [`LumenRAW-1.7.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
 
-1.6 和 1.7 目前只有 Windows 版：处理版本 2、评级、AI 助手接入、预设导入、LUT 与精细蒙版暂不包含在 Mac 版 1.5.2 中。1.6 保存的工程（`.lumen`）和选片集（`.lumenalbum`）无法在 1.5.2 中打开，1.7 保存的也无法在 1.6.x 中打开；1.5.2 及更早的工程各版本通用。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
+Windows 版与 Mac 版功能和文件格式相同。1.6 保存的工程（`.lumen`）和选片集（`.lumenalbum`）无法在 1.5.x 中打开，1.7 保存的也无法在 1.6.x 中打开；旧工程在新版本中照常打开，画面不变。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **Windows**
 
@@ -168,9 +168,15 @@ claude mcp add lumen-raw -- "%LOCALAPPDATA%\Programs\LUMEN RAW\lumen-cli.exe" mc
 codex mcp add lumen-raw -- "%LOCALAPPDATA%\Programs\LUMEN RAW\lumen-cli.exe" mcp
 ```
 
-WorkBuddy、Claude Desktop 等其他客户端使用 JSON 配置（`"command"` 为 `lumen-cli.exe` 的完整路径，`"args": ["mcp"]`）。之后可以对助手说“把这个文件夹里三星以上的照片按金色时刻预设处理，天空压暗一点，导出到桌面”。
+Mac 上 `lumen-cli` 在 App 内部：
 
-- **LUMEN RAW 打开时：** 助手通过本地控制通道（只有当前用户能连接的命名管道）在窗口中操作，每一步都显示出来，`Ctrl+Z` 即可撤销；状态栏和「AI 助手接入」窗口列出最近的操作，可在该窗口关闭窗口控制。
+```
+claude mcp add lumen-raw -- "/Applications/LUMEN RAW.app/Contents/MacOS/lumen-cli" mcp
+```
+
+WorkBuddy、Claude Desktop 等其他客户端使用 JSON 配置（`"command"` 为 `lumen-cli.exe` 的完整路径，Mac 上为 `lumen-cli` 的完整路径，`"args": ["mcp"]`）。之后可以对助手说“把这个文件夹里三星以上的照片按金色时刻预设处理，天空压暗一点，导出到桌面”。
+
+- **LUMEN RAW 打开时：** 助手通过本地控制通道（只有当前用户能连接的命名管道；Mac 上为 Unix 套接字）在窗口中操作，每一步都显示出来，`Ctrl+Z` 即可撤销；状态栏和「AI 助手接入」窗口列出最近的操作，可在该窗口关闭窗口控制。
 - **LUMEN RAW 未打开时：** 助手在后台独立打开、调整、渲染和导出照片，照片旁的同名 `.lumen` 工程会被沿用；保存工程或导出前不会写任何文件。
 - **工具：** 打开照片、读取／应用调整（与自然语言修图同一套参数，含天空、主体等 AI 区域蒙版）、撤销／重做、自动色调、预设、复制调色、星级／旗标／色标、渲染预览（把 JPEG 图像交给助手查看）、导出、批量导出、保存工程、导入 Lightroom 预设与 LUT、精细化 AI 蒙版边缘等 27 个。
 - **协议：** stdio，支持 MCP 2026-07-28（无握手）和 2024-11-05 至 2025-11-25（`initialize` 握手）。
@@ -304,7 +310,7 @@ cd lumen-raw
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **测试：** 1.7.0 的回归测试在 Windows 上 451 项通过、11 项跳过（macOS 专属等）；1.5.2 在 macOS 上 335 项通过、4 项跳过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
+- **测试：** 1.7.0 的回归测试在 Windows 上 451 项通过、11 项跳过（macOS 专属等）；在 macOS 上 447 项通过、16 项跳过。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 - **界面翻译：** 代码中的界面文字为简体中文原文，经 `tr()` 查找 `lumen/locales/<语言>.json`；`python tools/i18n_catalog.py` 检查各语言的缺漏和占位符。新增界面文字后请同时补充各语言的译文。
 - **Windows 发布构建：** `build-release.cmd` 依次执行测试、DirectML 检查、便携版 ZIP 和 Inno Setup 安装包。
 - **macOS 发布构建：** `./build-macos.command` 依次执行测试、Metal / Core ML 自检、PyInstaller、临时签名、冒烟测试和 DMG，输出在 `.publish/v<版本>/macos/`。

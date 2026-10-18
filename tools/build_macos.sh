@@ -107,6 +107,7 @@ rm -rf "$PUBLISH/app-smoke"
 QT_QPA_PLATFORM=offscreen "$APP/Contents/MacOS/LumenRAW" --smoke-test "$SAMPLE" "$PUBLISH/app-smoke" >> "$BUILD_LOG" 2>&1 \
     || fail "frozen smoke test; see $PUBLISH/app-smoke/report.json"
 run 'smoke report' "$BUILD_LOG" "$PY" tools/package_macos.py --check-smoke "$PUBLISH/app-smoke/report.json"
+run 'frozen lumen-cli and MCP check' "$LOGS/cli-smoke.log" "$PY" tools/check_cli.py "$APP/Contents/MacOS/lumen-cli" "$SAMPLE" "$PUBLISH/cli-smoke"
 
 step 'DMG'
 run 'package DMG' "$LOGS/package.log" "$PY" tools/package_macos.py --dmg "$APP" "$PUBLISH" --sample "$SAMPLE"

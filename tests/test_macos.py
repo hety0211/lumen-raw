@@ -29,8 +29,9 @@ def source(seed=11, shape=(83, 121, 3)):
     return np.ascontiguousarray(image)
 
 
-def color_edits(mode='smooth', monochrome=False):
+def color_edits(mode='smooth', monochrome=False, process=1):
     e = model.recipe()
+    e['process'] = process      # the 1.x kernel these checks describe; 1.6.0 recipes default to 2
     e['adjustments'].update(exposure=.6, contrast=-22, shadows=41, highlights=-35, blacks=-18, whites=25,
                             temperature=-30, tint=17, saturation=-12, vibrance=33)
     e['hsl'] = [[20, -30, 15], [0, 40, -20], [-50, 10, 0], [10, 0, 30],
@@ -300,8 +301,8 @@ def test_metal_identity_and_strips(monkeypatch):
     np.testing.assert_array_equal(pipeline.run('fused', view, inputs), whole[::-1])
 
 
-def masked_edits():
-    e = color_edits()
+def masked_edits(process=1):
+    e = color_edits(process=process)
     e['adjustments'].update(clarity=30, texture=20, sharpness=40, denoise=15)
     radial = model.new_mask('radial', 1)
     radial.update(start=[.1, .15], end=[.35, .5])
@@ -314,12 +315,13 @@ def masked_edits():
 
 
 @needs_metal
-def test_metal_backend_pipeline_matches_cpu_with_masks():
+@pytest.mark.parametrize('process', [1, 2])
+def test_metal_backend_pipeline_matches_cpu_with_masks(process):
     src = source(9, (90, 130, 3)).clip(0, 1)
     backend = engine.Backend('auto')
     assert backend.metal is not None and backend.gpu_pointwise and backend.name.startswith('Metal')
     for spatial in (False, True):
-        e = masked_edits()
+        e = masked_edits(process)
         e['adjustments']['denoise'] = 0.
         if not spatial:
             for k in engine.SPATIAL_KEYS:
@@ -327,10 +329,16 @@ def test_metal_backend_pipeline_matches_cpu_with_masks():
         gpu = engine.process(src, e, backend, apply_crop=False)
         assert compute.state.snapshot()[0] == metal.PROVIDER
         cpu = engine.process(src, e, engine.Backend('cpu'), apply_crop=False)
-        np.testing.assert_allclose(gpu, cpu, atol=2e-5)
+        if process == 1:
+            np.testing.assert_allclose(gpu, cpu, atol=2e-5)
+        else:
+            # Process 2's OkLCh pass (cube roots, gamut mapping) in float32: the fused-graph bound
+            # of test_v160 and Pipeline.self_test2.
+            difference = np.abs(gpu - cpu)
+            assert difference.max() < 2e-3 and difference.mean() < 2e-5
     # OpenCV's float bilateral filter (luminance noise reduction) looks colour distances up in a
     # quantized table: a 1e-7 difference from the GPU stage can move a few pixels across a bin.
-    e = masked_edits()
+    e = masked_edits(process)
     difference = np.abs(engine.process(src, e, backend, apply_crop=False)
                         - engine.process(src, e, engine.Backend('cpu'), apply_crop=False))
     assert difference.mean() < 1e-6 and difference.max() < 5e-3 and (difference > 2e-5).mean() < .002

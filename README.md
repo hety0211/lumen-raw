@@ -6,7 +6,7 @@
 
 LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Opening, editing, lens corrections, AI denoising / super-resolution / masks and export all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing.
 
-Current version: Windows **1.7.0** (2026-10-17), macOS **1.5.2** (2026-10-08).
+Current version: **1.7.0** (Windows 2026-10-17, macOS 2026-10-19).
 
 ![LUMEN RAW 1.5.1 in English: the Crop · Lens panel has identified a Nikon Nikkor Z 14-24mm f/2.8 S from EXIF and corrects its distortion, vignetting and chromatic aberration](docs/screenshots/workspace-en.png)
 
@@ -17,9 +17,9 @@ Actual application screenshot with CC0 public test photographs from raw.pixls.us
 | System | Download | Requirements |
 |---|---|---|
 | Windows | [`LumenRAW-1.7.0-Setup.exe` (installer) or `LumenRAW-1.7.0-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0) | Windows 10 22H2 / Windows 11, x64 |
-| macOS | [`LumenRAW-1.5.2-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.5.2-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
+| macOS | [`LumenRAW-1.7.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
 
-1.6 and 1.7 are Windows only for now: process version 2, ratings, AI assistant access, preset import, LUTs and fine masks are not in the Mac build 1.5.2. Projects (`.lumen`) and albums (`.lumenalbum`) saved by 1.6 cannot be opened by 1.5.2, nor those saved by 1.7 by 1.6.x; projects from 1.5.2 and earlier work everywhere. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+Windows and macOS have the same features and file formats. Projects (`.lumen`) and albums (`.lumenalbum`) saved by 1.6 cannot be opened by 1.5.x, nor those saved by 1.7 by 1.6.x; older projects open in newer versions unchanged. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
@@ -168,9 +168,15 @@ claude mcp add lumen-raw -- "%LOCALAPPDATA%\Programs\LUMEN RAW\lumen-cli.exe" mc
 codex mcp add lumen-raw -- "%LOCALAPPDATA%\Programs\LUMEN RAW\lumen-cli.exe" mcp
 ```
 
-WorkBuddy, Claude Desktop and other clients take a JSON entry (`"command"`: the full path of `lumen-cli.exe`, `"args": ["mcp"]`). Then ask, for example: "apply the Golden preset to the photos rated three stars or more in this folder, darken the sky a little and export them to the desktop".
+On a Mac, `lumen-cli` is inside the app:
 
-- **With LUMEN RAW open:** the assistant works in the window through a local control channel (a named pipe only your user can open); every step is visible and `Ctrl+Z` undoes it. The status bar and the AI Assistants window list recent actions; window control can be switched off there.
+```
+claude mcp add lumen-raw -- "/Applications/LUMEN RAW.app/Contents/MacOS/lumen-cli" mcp
+```
+
+WorkBuddy, Claude Desktop and other clients take a JSON entry (`"command"`: the full path of `lumen-cli.exe`, or of `lumen-cli` on a Mac, `"args": ["mcp"]`). Then ask, for example: "apply the Golden preset to the photos rated three stars or more in this folder, darken the sky a little and export them to the desktop".
+
+- **With LUMEN RAW open:** the assistant works in the window through a local control channel (a named pipe on Windows, a Unix socket on macOS, that only your user can open); every step is visible and `Ctrl+Z` undoes it. The status bar and the AI Assistants window list recent actions; window control can be switched off there.
 - **With LUMEN RAW closed:** the assistant opens, edits, renders and exports photos in the background, continuing from a `.lumen` project next to a photo; nothing is written until it saves a project or exports.
 - **Tools (27):** open photos, read / apply edits (the natural-language editing vocabulary, including AI region masks such as sky and subject, and LUTs), refine AI mask edges, undo / redo, auto tone, presets (built-in and imported), import Lightroom presets and LUTs, copy edits, stars / flags / labels, render a preview (a JPEG image the assistant can look at), export, batch export, save projects, and more.
 - **Protocol:** stdio; MCP 2026-07-28 (no handshake) and 2024-11-05 to 2025-11-25 (`initialize`).
@@ -304,7 +310,7 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 1.7.0, 451 regression tests pass on Windows with 11 skipped (macOS-only and similar); for 1.5.2, 335 pass on macOS with 4 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 1.7.0, 451 regression tests pass on Windows with 11 skipped (macOS-only and similar); on macOS 447 pass with 16 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.
