@@ -8,12 +8,11 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageOps
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QListWidget, QListWidgetItem, QAbstractItemView, QFileDialog, QMessageBox,QMenu,QDialog,QProgressDialog)
 from . import model, engine, host, catalog
 from .scheduler import Activity as A
-from .widgets import qimage
+from .widgets import photo_icon, qimage
 from .i18n import tr
 
 #: Largest album file (1.7.0: fine AI masks; 128 MB before).
@@ -31,29 +30,25 @@ def dirty(document):
 
 
 def thumbnail(path):
+    """A filmstrip-sized thumbnail (at most 128 × 80) as float RGB.  2.0.0: from the camera view,
+    which decodes embedded JPEGs at a reduced scale instead of in full."""
+    from . import previews
     path=Path(path)
     if path.suffix.lower() in engine.RAW_EXTENSIONS and path.suffix.lower()!='.dng':
-        import rawpy
-        from . import previews
-        with rawpy.imread(str(path)) as raw:
-            preview=previews.libraw_preview(raw)
-            if preview is None:
-                # 1.4.1: e.g. Canon HDR PQ CR3 (HEVC preview); last resort, a small RAW decode.
-                preview=previews.hevc_preview(path)
-                preview=previews.orient(preview,raw.sizes.flip) if preview is not None else None
-        if preview is None:
+        found=previews.embedded_view(path,256)
+        if found is None:
+            # 1.4.1: no usable embedded preview: a small RAW decode.
             rgb,info=engine.load_image(path,144)
             return engine.develop_view(rgb,dict(develop=info.get('develop',{}),process=2))
-        im=Image.fromarray(np.ascontiguousarray(preview))
+        view=found[0]
     else:
         try:
-            im=Image.open(path)
+            view=previews.camera_view(path,256)
         except Exception:
             return engine.develop_view(engine.load_image(path,144)[0],dict(process=2))
-    with im:
-        pic=ImageOps.exif_transpose(im).convert('RGB')
-        pic.thumbnail((128,80))
-        return np.asarray(pic,np.float32)/255
+    pic=Image.fromarray(np.ascontiguousarray(view))
+    pic.thumbnail((128,80))
+    return np.asarray(pic,np.float32)/255
 
 
 class LibraryMixin:
@@ -120,6 +115,10 @@ class LibraryMixin:
             self.refresh_ratings(added)
             # 1.6.0: ratings Lightroom, Bridge or a camera wrote into XMP, for photos the catalog does not know.
             self.read_xmp_async(added)
+            # 2.0.0: photos of the 选片集 are part of the library too.
+            if hasattr(self,'library_db'):
+                self.register_in_library(added)
+                self.source_timer.start()
         self.update_library_status()
         self.next_film_thumbnails()
 
@@ -129,18 +128,23 @@ class LibraryMixin:
         self.work.begin(A.THUMBNAILS)
         batch=self.thumbnail_queue[:4]
         del self.thumbnail_queue[:4]
+        previews=self.previews
         def work():
+            # 2.0.0: the library's cached thumbnails (a cache hit takes a few milliseconds).
+            from PySide6.QtGui import QImage
             images=[]
             for path in batch:
-                try:images.append((path,thumbnail(path)))
+                try:
+                    image=QImage.fromData(previews.thumbnail(path),'JPG')
+                    images.append((path,None if image.isNull() else image))
                 except Exception:images.append((path,None))
             return images
         def ready(images):
             self.work.end(A.THUMBNAILS)
-            for path,rgb in images:
-                if rgb is not None:
+            for path,image in images:
+                if image is not None:
                     item=self.film_item(path)
-                    if item:item.setIcon(QIcon(QPixmap.fromImage(qimage(rgb))))
+                    if item:item.setIcon(photo_icon(image.scaled(self.filmstrip.iconSize(),Qt.AspectRatioMode.KeepAspectRatio,Qt.TransformationMode.SmoothTransformation)))
             self.next_film_thumbnails()
         def fail(_):
             self.work.end(A.THUMBNAILS)
@@ -152,6 +156,19 @@ class LibraryMixin:
             item=self.filmstrip.item(i)
             if item.data(Qt.ItemDataRole.UserRole)==path:return item
         return None
+
+    def prefetch_neighbours(self):
+        """Decode the photos next to the open one in the filmstrip ahead of time (2.0.0)."""
+        item=self.film_item(self.source_path)
+        if item is None:return
+        row=self.filmstrip.row(item);paths=[]
+        for step in (1,2,-1):
+            index=row+step
+            while 0<=index<self.filmstrip.count() and self.filmstrip.item(index).isHidden():index+=1 if step>0 else -1
+            if 0<=index<self.filmstrip.count():
+                path=self.filmstrip.item(index).data(Qt.ItemDataRole.UserRole)
+                if Path(path).is_file() and Path(path).suffix.lower()!='.lumen':paths.append(path)
+        self.previews.prefetch(paths)
 
     def film_clicked(self,item):
         modifiers=QApplication.keyboardModifiers()
@@ -174,6 +191,8 @@ class LibraryMixin:
         menu.addSeparator()
         export=menu.addAction(tr('批量导出 {count} 张…',count=count) if count>1 else tr('批量导出…'),self.batch_export)
         export.setEnabled(count>0 and not busy)
+        # 2.0.0: a time-lapse video of the selected photos (or of the whole 选片集).
+        menu.addAction(tr('制作延时视频…'),self.make_timelapse).setEnabled(self.filmstrip.count()>1 and not busy)
         # 1.6.0: ratings, flags, labels and XMP.
         menu.addSeparator()
         self.add_rating_actions(menu)
@@ -240,6 +259,77 @@ class LibraryMixin:
             finish()
             self.error(tr('批量导出失败：\n')+text)
         self.job(lambda:run(items,options,backend,self.export_progress.emit,cancel),success,failed)
+
+    def timelapse_paths(self):
+        """The sequence of a time-lapse: the photos selected in the filmstrip, or all it shows."""
+        selected=self.selected_paths()
+        if len(selected)>1:return selected
+        return [self.filmstrip.item(i).data(Qt.ItemDataRole.UserRole) for i in range(self.filmstrip.count())
+                if not self.filmstrip.item(i).isHidden()]
+
+    def make_timelapse(self,checked=False,paths=None):
+        """2.0.0: a time-lapse video of a sequence of the 选片集; keyframes carry their edits."""
+        from . import timelapse
+        from .timelapse_dialog import TimelapseDialog
+        if self.work.busy(A.AI) or not self.work.can_start(A.EXPORTING):
+            self.statusBar().showMessage(tr('请等待当前读取或导出完成。'));return
+        paths=[p for p in (paths or self.timelapse_paths()) if Path(p).is_file() and Path(p).suffix.lower()!='.lumen']
+        if len(paths)<2:
+            self.statusBar().showMessage(tr('延时视频至少需要 2 张照片：在选片集中选择一组间隔拍摄的照片。'));return
+        self.stash_document()
+        self.register_in_library(paths)
+        records={r['path']:r for r in self.library_db.rows(('paths',paths))}
+        paths=timelapse.ordered(paths,records)
+        frames=[]
+        for path in paths:
+            document=self.documents.get(path)
+            current=path==self.source_path and self.source is not None
+            edits=self.edits if current else document['edits'] if document else None
+            frames.append(dict(path=path,name=Path(path).name,captured=records.get(path,{}).get('captured'),
+                               edits=copy.deepcopy(edits) if edits is not None else None,
+                               initialized=current or bool(document and document['initialized']),
+                               edited=bool(document) and self.document_edited(path)))
+        key=tuple(paths)
+        dialog=TimelapseDialog(self,frames,self.timelapse_marks.get(key) if hasattr(self,'timelapse_marks') else None)
+        if dialog.exec()!=QDialog.DialogCode.Accepted:return
+        options=dialog.options()
+        self.timelapse_marks=getattr(self,'timelapse_marks',{});self.timelapse_marks[key]=options['keyframes']
+        backend=engine.Backend('auto' if self.backend_combo.currentIndex()==0 else 'cpu')
+        self.work.begin(A.EXPORTING)
+        self.cancel_detail()
+        self.export_cancel=threading.Event()
+        self.export_dialog=QProgressDialog(tr('正在准备关键帧…'),tr('取消'),0,100,self)
+        self.export_dialog.setWindowTitle(tr('延时摄影视频'))
+        self.export_dialog.setAutoClose(False)
+        self.export_dialog.setAutoReset(False)
+        self.export_dialog.setMinimumDuration(0)
+        self.export_dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        self.export_dialog.canceled.connect(self.export_cancel.set)
+        self.export_dialog.show()
+        self.export_button.setEnabled(False)
+        self.open_button.setEnabled(False)
+        self.statusBar().showMessage(tr('正在生成延时视频 · {n} 张照片…',n=len(frames)))
+        cancel=self.export_cancel
+        def progress(done,total,text):
+            self.export_progress.emit(round(100*done/max(1,total)),text)
+        def finish():
+            self.close_export_dialog()
+            self.work.end(A.EXPORTING)
+            self.open_button.setEnabled(True)
+            self.export_button.setEnabled(self.source is not None)
+        def success(result):
+            finish()
+            size=Path(result['output']).stat().st_size
+            text=tr('已保存：\n{path}\n\n{width} × {height} · {frames} 帧 · {seconds} 秒 · {mb:.0f} MB\n编码器 {codec} · 用时 {elapsed} 秒',
+                    path=result['output'],width=result['size'][0],height=result['size'][1],frames=result['frames'],
+                    seconds=result['seconds'],mb=size/1e6,codec=result['codec'],elapsed=result['elapsed'])
+            self.statusBar().showMessage(tr('延时视频已生成 · {path}',path=result['output']))
+            QMessageBox.information(self,tr('延时摄影视频'),text)
+        def failed(text):
+            finish()
+            if cancel.is_set():self.statusBar().showMessage(tr('已取消，未生成视频。'))
+            else:self.error(tr('延时视频生成失败：\n')+text)
+        self.job(lambda:timelapse.run(frames,options,backend,progress,cancel),success,failed)
 
     def clear_current_photo(self):
         self.timer.stop();self.detail_timer.stop();self.history_timer.stop();self.generation+=1;self.reset_resolution()

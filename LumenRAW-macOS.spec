@@ -3,6 +3,7 @@
 # which draws build/macos/LumenRAW.icns first and signs the bundle afterwards.
 import os
 import re
+import sys
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all, collect_data_files
 
@@ -12,19 +13,16 @@ version = re.search(r"__version__ = '([0-9.]+)'",
 art = root / 'build' / 'macos'
 minimum = os.environ.get('LUMEN_MACOS_MINIMUM', '15.0')
 
-raw_data, raw_binaries, raw_hidden = collect_all('rawpy')
-ort_data, ort_binaries, ort_hidden = collect_all('onnxruntime')
+sys.path.insert(0, str(root))
+from tools import bundle
 
-# Windows-only runtime files (exiftool.exe with its Strawberry Perl) are not shipped on macOS;
-# the Perl ExifTool from tools/fetch_exiftool.py runs with /usr/bin/perl instead.
-assets = []
-for item in sorted((root / 'assets').iterdir()):
-    if item.name == 'exiftool':
-        assets.append((str(item / 'unix'), 'assets/exiftool/unix'))
-    elif item.is_dir():
-        assets.append((str(item), f'assets/{item.name}'))
-    else:
-        assets.append((str(item), 'assets'))
+raw_data, raw_binaries, raw_hidden = collect_all('rawpy')
+ort_data, ort_binaries, ort_hidden = collect_all('onnxruntime', filter_submodules=bundle.runtime_module,
+                                                 exclude_datas=bundle.ORT_EXCLUDED_DATAS)
+
+# 1.8.0: float16-weight models, no bundled speech model, unused Qt pieces dropped (tools/bundle.py).
+# The Perl ExifTool runs with /usr/bin/perl (Windows' exiftool.exe is not shipped).
+assets = bundle.asset_datas(root, 'macos')
 
 a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)],
@@ -32,9 +30,11 @@ a = Analysis(
     datas=assets + [(str(root / 'lumen' / 'locales'), 'lumen/locales')] + raw_data + ort_data + collect_data_files('tifffile'),
     hiddenimports=raw_hidden + ort_hidden + ['PIL.ImageCms', 'objc', 'Foundation', 'Metal', 'PySide6.QtMultimedia',
                                              'PySide6.QtNetwork'],
-    excludes=['cupy', 'torch', 'torchvision', 'onnx', 'sympy', 'windowsml', 'tkinter'],
+    excludes=bundle.EXCLUDES + ['windowsml'],
     noarchive=False,
 )
+a.binaries = bundle.trim(a.binaries, 'macos')
+a.datas = bundle.trim(a.datas, 'macos')
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name='LumenRAW',
           debug=False, bootloader_ignore_signals=False, strip=False, upx=False,

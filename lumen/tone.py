@@ -148,6 +148,7 @@ def context(balanced, a):
 
 _maps = {}
 _maps_lock = threading.Lock()
+MAPS_BYTES = 256 * 2**20
 
 
 def _resampled(ctx, shape, area):
@@ -165,7 +166,10 @@ def _resampled(ctx, shape, area):
         values.setflags(write=False)
         entry = (ctx, values)
         with _maps_lock:
-            while len(_maps) >= 6:
+            # 1.8.0: room for a frame and its CPU strips, but never more than MAPS_BYTES of maps
+            # besides the newest (a 61 MP frame's map alone is about 490 MB).
+            while _maps and (len(_maps) >= 24 or
+                             sum(v[1].nbytes for v in _maps.values()) + values.nbytes > MAPS_BYTES):
                 _maps.pop(next(iter(_maps)))
             _maps[key] = entry
     return entry[1]

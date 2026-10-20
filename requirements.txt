@@ -5,3 +5,5 @@ rawpy>=0.25,<0.28
 PySide6>=6.8,<7
 tifffile>=2025.1
 onnxruntime>=1.21,<2
+# 2.0.0: time-lapse videos (PyAV with its FFmpeg: x264, x265, SVT-AV1, ProRes, AMF / NVENC / QSV / MF).
+av>=15,<20

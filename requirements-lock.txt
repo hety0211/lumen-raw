@@ -1,4 +1,5 @@
 altgraph==0.17.5
+av==19.0.1
 colorama==0.4.6
 iniconfig==2.3.0
 numpy==2.5.3

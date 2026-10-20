@@ -15,7 +15,7 @@ from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QPainterPath,
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QMenu, QMessageBox,
                                QStyledItemDelegate, QToolButton, QWidget)
 
-from . import catalog, i18n
+from . import catalog, host, i18n, theme
 from .i18n import tr, N_
 
 log = logging.getLogger(__name__)
@@ -161,16 +161,16 @@ class RatingBar(QWidget):
         center = QPointF(button.width() / 2, button.height() / 2)
         if button in self.stars:
             filled = self.stars.index(button) < self.rating
-            painter.setPen(QPen(QColor('#d9c060' if enabled else '#5d6358'), 1))
-            painter.setBrush(QColor('#f2d36b') if filled and enabled else QColor('#ffffff22') if hover else Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor('#d9c060') if enabled else theme.color('disabled'), 1))
+            painter.setBrush(QColor('#f2d36b') if filled and enabled else theme.color('ink', 34) if hover else Qt.BrushStyle.NoBrush)
             painter.drawPath(star_path(center.x(), center.y(), 6.5))
         elif button is self.pick:
             active = self.flag == 'pick'
-            painter.setPen(QPen(QColor('#f4f7ee' if active else '#9fb091' if enabled else '#5d6358'), 2 if active else 1.3))
+            painter.setPen(QPen(theme.color('head' if active else 'dim' if enabled else 'disabled'), 2 if active else 1.3))
             painter.drawPath(flag_path(center.x() - 4, center.y() - 6, 12))
         elif button is self.reject:
             active = self.flag == 'reject'
-            painter.setPen(QPen(QColor('#f0a0a0' if active else '#9fb091' if enabled else '#5d6358'), 2 if active else 1.3))
+            painter.setPen(QPen(QColor('#f0a0a0') if active else theme.color('dim' if enabled else 'disabled'), 2 if active else 1.3))
             painter.drawLine(center + QPointF(-4, -4), center + QPointF(4, 4))
             painter.drawLine(center + QPointF(-4, 4), center + QPointF(4, -4))
         else:
@@ -242,6 +242,16 @@ class RatingMixin:
 
     def build_library_menu(self, menu):
         library = menu.addMenu(tr('图库'))
+        # 2.0.0: the photo library, smart albums, culling hints and the preview cache.
+        library.addAction(tr('导入文件夹…') + '\t' + host.keys('Ctrl+Shift+I'), self.import_folder_dialog)
+        library.addAction(tr('新建智能相册…'), self.new_smart_album)
+        library.addAction(tr('选片模式') + '\tC', self.start_culling)
+        self.analysis_action = library.addAction(tr('后台分析清晰度与闭眼'))
+        self.analysis_action.setCheckable(True)
+        self.analysis_action.setChecked(self.library_worker.analysis_enabled)
+        self.analysis_action.toggled.connect(self.toggle_analysis)
+        self.build_cache_menu(library)
+        library.addSeparator()
         self.add_rating_actions(library)
         library.addSeparator()
         library.addAction(tr('从 XMP 读取所选照片的评级'), self.read_selected_xmp)
@@ -254,6 +264,12 @@ class RatingMixin:
         library.addAction(tr('导入 Lightroom 目录中的评级…'), self.import_lightroom)
         library.addAction(tr('清除筛选'), lambda: (self.film_quick.setCurrentIndex(0), self.film_search.clear()))
         return library
+
+    def toggle_analysis(self, on):
+        i18n.save_setting('library_analysis', '1' if on else '0')
+        self.library_worker.analysis_enabled = on
+        if on:
+            self.library_worker.kick()
 
     def toggle_xmp_sync(self, on):
         i18n.save_setting(catalog.XMP_SETTING, '1' if on else '0')
@@ -275,10 +291,24 @@ class RatingMixin:
     # -- actions
 
     def rating_targets(self):
+        if getattr(self, 'mode', 'develop') == 'library':
+            return self.library_targets()            # 2.0.0: the library grid's selection
         paths = [p for p in self.selected_paths() if p in self.documents]
         if not paths and self.source_path:
             paths = [self.source_path]
         return paths
+
+    def rate_paths(self, paths, **fields):
+        """Rate given photos (the culling view): the same commands as the bar and shortcuts."""
+        from . import commands
+        (field, value), = fields.items()
+        command = dict(rating='library.rate', flag='library.flag', label='library.label')[field]
+        if field != 'rating' and not value:
+            value = 'none'
+        try:
+            commands.run(self.control.context, command, {field: value, 'paths': list(paths)})
+        except commands.CommandError as exc:
+            return self.error(str(exc))
 
     def rate_selected(self, toggle=False, **fields):
         """Stars, flags and labels from the bar, menus and shortcuts: the same commands
@@ -355,7 +385,7 @@ class RatingMixin:
             terms = catalog.parse_query(query)
             self.film_search.setStyleSheet('')
         except ValueError:
-            self.film_search.setStyleSheet('QLineEdit { border-color: #b65a4c; }')
+            self.film_search.setStyleSheet('QLineEdit { border-color: %s; }' % theme.color('error').name())
             return
         shown = 0
         needs_edits = any(field == 'edited' for _, field, _, _ in terms)

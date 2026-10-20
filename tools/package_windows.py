@@ -40,6 +40,12 @@ def main():
     missing = required - names
     if missing:
         raise SystemExit('Frozen app is missing runtime resources: ' + ', '.join(sorted(missing)))
+    # 1.8.0: the speech model is downloaded on first use, the AI models carry float16 weights.
+    if 'model.int8.onnx' in names:
+        raise SystemExit('The speech model must not be packaged (it is downloaded on first use).')
+    sky = next(path for path in files if path.name.lower() == 'skyseg.onnx')
+    if sky.stat().st_size > 120 * 2**20:
+        raise SystemExit('The packaged models are not the float16-weight copies (tools/compact_models.py).')
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     if OUTPUT.exists():
         raise SystemExit(f'Preserving existing package: {OUTPUT}')

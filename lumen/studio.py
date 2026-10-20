@@ -5,13 +5,13 @@ import zipfile
 from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt, QSize
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QListWidget,
     QListWidgetItem, QTabWidget, QComboBox, QCheckBox, QFileDialog, QInputDialog, QMenu, QMessageBox,
     QDialog, QDialogButtonBox, QPlainTextEdit, QPushButton)
 from . import model, engine, lens, lightroom, lut
 from . import presets as library_presets
-from .widgets import AdjustSlider, ColorWheel, TabStrip, qimage
+from .widgets import AdjustSlider, ColorWheel, TabStrip, photo_icon, qimage
 from .i18n import tr
 
 
@@ -151,7 +151,7 @@ class StudioMixin:
             if token != self.thumbnail_token or presets is not self.presets:
                 return
             for index, image in images:
-                self.preset_icons[index] = QIcon(QPixmap.fromImage(qimage(image)))
+                self.preset_icons[index] = photo_icon(qimage(image))
             self.show_preset_icons()
         self.job(work, ready, lambda text: self.statusBar().showMessage(tr('预设缩略图暂时不可用：') + text))
 

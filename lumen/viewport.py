@@ -136,7 +136,7 @@ def make_tile(rgb, x0, y0):
     data = np.empty((h, w, 4), np.uint8)
     data[..., 0], data[..., 1], data[..., 2], data[..., 3] = rgb8[..., 2], rgb8[..., 1], rgb8[..., 0], 255
     image = QImage(data.data, w, h, data.strides[0], QImage.Format.Format_RGB32).copy()
-    peak = rgb.max(axis=2)
+    peak = np.maximum(np.maximum(rgb[..., 0], rgb[..., 1]), rgb[..., 2])  # faster than max(axis=2)
     return Tile(x0, y0, w, h, image, _warning(peak <= .005, SHADOW_COLOR), _warning(peak >= .995, HIGHLIGHT_COLOR))
 
 

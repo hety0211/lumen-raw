@@ -5,27 +5,151 @@ ONNX Runtime's CPU provider. The front end reproduces the Kaldi 80-bin log-mel f
 that the model was trained with (25 ms Hamming window, 10 ms shift, pre-emphasis
 0.97, edges snipped), stacks 7 frames every 6 (LFR) and applies the CMVN stored in
 the model's metadata. CTC output is decoded greedily.
+
+1.8.0: the packages no longer contain the model (about 229 MB).  ``download`` fetches the files
+of ``assets/speech-assets.json`` on first use into the per-user data folder, from Hugging Face or
+its mirror, resuming partial downloads and checking every file's size and SHA-256 before it is
+used.  A source checkout may keep the model in ``assets/models/sensevoice`` (tools/fetch_assets.py).
+2.0.0: the manifest's ``releases`` (LUMEN RAW's own GitHub release of the same files) are tried
+too, so the download does not depend on the upstream repository staying online.
 """
 from __future__ import annotations
+import hashlib
+import json
+import os
 import re
 import threading
+import urllib.request
 import wave
 from pathlib import Path
 import numpy as np
-from .i18n import tr
+from . import __version__
+from .i18n import language, tr
 
 RATE = 16000
-MODEL_DIR = Path(__file__).resolve().parents[1] / 'assets' / 'models' / 'sensevoice'
-MODEL = MODEL_DIR / 'model.int8.onnx'
-TOKENS = MODEL_DIR / 'tokens.txt'
+ASSETS = Path(__file__).resolve().parents[1] / 'assets'
+BUNDLED = ASSETS / 'models' / 'sensevoice'
+MANIFEST = ASSETS / 'speech-assets.json'
+MODEL_NAME, TOKENS_NAME = 'model.int8.onnx', 'tokens.txt'
 MAX_SECONDS = 60
+#: Host of the manifest URLs; the manifest's ``mirrors`` serve the same paths.
+UPSTREAM = 'https://huggingface.co/'
+CHUNK = 1 << 20
 
 _lock = threading.Lock()
 _recognizer = None
 
 
+class Cancelled(Exception):
+    pass
+
+
+def user_folder():
+    from . import host
+    return host.data_folder() / 'models' / 'sensevoice'
+
+
+def model_folder():
+    """The folder holding the model and its tokens, or None before the download."""
+    for folder in (BUNDLED, user_folder()):
+        if (folder / MODEL_NAME).is_file() and (folder / TOKENS_NAME).is_file():
+            return folder
+    return None
+
+
 def available():
-    return MODEL.is_file() and TOKENS.is_file()
+    return model_folder() is not None
+
+
+def manifest():
+    return json.loads(MANIFEST.read_text(encoding='utf-8'))
+
+
+def download_megabytes():
+    return round(sum(record['bytes'] for record in manifest()['files']) / 1e6)
+
+
+def sources(url, mirrors, releases=()):
+    """The manifest URL, its mirrors and the release copies (2.0.0, by file name).  Simplified
+    Chinese interfaces try the mirror first and the upstream last."""
+    mirrored = [mirror + url[len(UPSTREAM):] for mirror in mirrors if url.startswith(UPSTREAM)]
+    released = [release + url.rsplit('/', 1)[-1] for release in releases]
+    if language() == 'zh_CN':
+        return mirrored + released + [url]
+    return [url] + released + mirrored
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, 'rb') as stream:
+        for block in iter(lambda: stream.read(CHUNK), b''):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _fetch(url, part, size, progress, cancelled):
+    """Download ``url`` into ``part``, continuing a partial file when the server allows it."""
+    have = part.stat().st_size if part.is_file() else 0
+    if have > size:
+        part.unlink()
+        have = 0
+    if have == size:
+        return  # complete before an interruption; the caller checks its SHA-256
+    headers = {'User-Agent': f'LUMEN-RAW/{__version__}'}
+    if have:
+        headers['Range'] = f'bytes={have}-'
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
+        if have and response.status != 206:
+            have = 0
+        with open(part, 'ab' if have else 'wb') as stream:
+            while have < size:
+                if cancelled():
+                    raise Cancelled()
+                block = response.read(CHUNK)
+                if not block:
+                    break
+                stream.write(block)
+                have += len(block)
+                progress(have)
+    if have != size:
+        raise OSError(tr('下载不完整（{have} / {size} 字节）', have=have, size=size))
+
+
+def download(progress=lambda done, total: None, cancelled=lambda: False):
+    """Fetch the speech model into ``user_folder()``; returns the folder.  ``progress(done,
+    total)`` reports bytes, ``cancelled()`` may stop the download (``Cancelled``; the partial file
+    is kept and continued next time)."""
+    data = manifest()
+    records = data['files']
+    total = sum(record['bytes'] for record in records)
+    folder = user_folder()
+    folder.mkdir(parents=True, exist_ok=True)
+    done = 0
+    for record in records:
+        target = folder / Path(record['path']).name
+        if target.is_file() and target.stat().st_size == record['bytes'] and _sha256(target) == record['sha256']:
+            done += record['bytes']
+            progress(done, total)
+            continue
+        part = target.with_name(target.name + '.part')
+        errors = []
+        for url in sources(record['url'], data.get('mirrors', []), data.get('releases', [])):
+            try:
+                _fetch(url, part, record['bytes'], lambda have: progress(done + have, total), cancelled)
+                if _sha256(part) != record['sha256']:
+                    part.unlink()
+                    raise OSError(tr('校验失败'))
+                break
+            except Cancelled:
+                raise
+            except Exception as exc:
+                errors.append(f'{url.split("/")[2]}: {exc}')
+        else:
+            raise OSError(tr('语音识别模型下载失败：') + '；'.join(errors))
+        os.replace(part, target)
+        done += record['bytes']
+        progress(done, total)
+    return folder
 
 
 def _mel_banks(bins=80, fft=512, rate=RATE, low=20., high=0.):
@@ -77,8 +201,10 @@ def lfr(features, window=7, shift=6):
 
 
 class Recognizer:
-    def __init__(self, model=MODEL, tokens=TOKENS, threads=4):
+    def __init__(self, folder=None, threads=4):
         import onnxruntime as ort
+        folder = Path(folder or model_folder())
+        model, tokens = folder / MODEL_NAME, folder / TOKENS_NAME
         options = ort.SessionOptions()
         options.intra_op_num_threads = threads
         options.inter_op_num_threads = 1
@@ -139,7 +265,7 @@ def recognizer():
     with _lock:
         if _recognizer is None:
             if not available():
-                raise FileNotFoundError(tr('未找到语音识别模型（assets/models/sensevoice）。'))
+                raise FileNotFoundError(tr('语音识别模型尚未下载。'))
             _recognizer = Recognizer()
         return _recognizer
 

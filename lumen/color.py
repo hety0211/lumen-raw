@@ -150,13 +150,23 @@ def from_oklab(lab):
     return (lms * lms * lms) @ LMS_TO_RGB.T
 
 
+def _channel_max(rgb):
+    # 1.8.0: NumPy reduces a 3-long last axis one pixel at a time; element-wise maxima of the
+    # channels give the same values about 9x faster.
+    return np.maximum(np.maximum(rgb[..., 0], rgb[..., 1]), rgb[..., 2])
+
+
+def _channel_min(rgb):
+    return np.minimum(np.minimum(rgb[..., 0], rgb[..., 1]), rgb[..., 2])
+
+
 def _inside(rgb):
-    return (rgb.min(axis=-1) >= -GAMUT_EPS) & (rgb.max(axis=-1) <= 1 + GAMUT_EPS)
+    return (_channel_min(rgb) >= -GAMUT_EPS) & (_channel_max(rgb) <= 1 + GAMUT_EPS)
 
 
 def _excess(rgb):
     """How far a colour lies outside the sRGB cube (≤ 0 inside)."""
-    return np.maximum(rgb.max(axis=-1) - 1, -rgb.min(axis=-1))
+    return np.maximum(_channel_max(rgb) - 1, -_channel_min(rgb))
 
 
 def anchor(lightness, chroma):

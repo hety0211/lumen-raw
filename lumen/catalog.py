@@ -266,7 +266,23 @@ class Catalog:
 
 # --------------------------------------------------------------------------- queries
 
-_FIELD = re.compile(r'^(-?)(rating|stars|star|flag|label|color|colour|name|ext|folder|edited)\s*(>=|<=|=|:|>|<)\s*(.*)$', re.I)
+_FIELD = re.compile(r'^(-?)(rating|stars|star|flag|label|color|colour|name|ext|folder|edited|'
+                    # 2.0.0: fields of the library catalog (library_db): keywords, EXIF and culling hints.
+                    r'keyword|keywords|tag|camera|body|lens|iso|f|aperture|focal|date|year|faces|eyes|sharpness|sharp|burst)'
+                    r'\s*(>=|<=|=|:|>|<)\s*(.*)$', re.I)
+_ALIASES = {'stars': 'rating', 'star': 'rating', 'color': 'label', 'colour': 'label', 'keywords': 'keyword',
+            'tag': 'keyword', 'body': 'camera', 'aperture': 'f', 'year': 'date', 'sharp': 'sharpness'}
+#: Fields compared as numbers.
+NUMERIC = ('rating', 'iso', 'f', 'focal', 'faces', 'sharpness')
+#: Bare words with a meaning of their own (2.0.0).
+_WORDS = {'blurry': ('blurry', '=', 'yes'), 'sharp': ('blurry', '=', 'no'), 'burst': ('burst', '=', 'yes'),
+          'best': ('burst', '=', 'best'), 'missing': ('missing', '=', 'yes'), 'faces': ('faces', '>=', 1),
+          'closed': ('eyes', '=', 'closed')}
+
+
+def _tokens(text):
+    """Whitespace-separated terms; ``"…"`` keeps spaces in a value (``keyword:"New York"``)."""
+    return [token.replace('"', '') for token in re.findall(r'(?:[^\s"]*"[^"]*"[^\s"]*)+|\S+', str(text or ''))]
 
 
 def parse_query(text):
@@ -275,27 +291,35 @@ def parse_query(text):
     Fields: rating / stars (= : > >= < <=), flag (pick, reject, none), label / color (red …,
     none, any), name (substring or wildcard), ext, folder (substring), edited (yes / no).  A bare
     word matches the file name; ``picked``, ``rejected``, ``unflagged``, ``edited`` and colour
-    names are shorthands; a leading ``-`` negates a term.  All terms must match."""
+    names are shorthands; a leading ``-`` negates a term.  All terms must match.
+
+    2.0.0, for photos of the library catalog: keyword / tag (any, none, a name or wildcard),
+    camera, lens (substring), iso, f, focal (numbers), date (``date:2026-10``,
+    ``date>=2026-10-01``), faces (number), eyes (closed / open), sharpness (0–100), burst (yes /
+    best); the words ``blurry``, ``sharp``, ``burst``, ``best``, ``closed`` and ``missing``.  A bare
+    word there also matches keywords, camera and lens."""
     terms = []
-    for token in str(text or '').split():
+    for token in _tokens(text):
         negate = token.startswith('-') and len(token) > 1
         word = token[1:] if negate else token
         lowered = word.lower()
         match = _FIELD.match(word)
-        if match:
+        if match and match.group(4):
             _, field, op, value = match.groups()
-            field = {'stars': 'rating', 'star': 'rating', 'color': 'label', 'colour': 'label'}.get(field.lower(), field.lower())
+            field = _ALIASES.get(field.lower(), field.lower())
             op = '=' if op == ':' else op
-            if field == 'rating':
+            if field in NUMERIC:
                 try:
-                    value = int(value)
+                    value = int(value) if field == 'rating' else float(value)
                 except ValueError:
-                    raise ValueError(f'rating needs a number: {token}')
-            terms.append((negate, field, op, str(value).lower() if field != 'rating' else value))
+                    raise ValueError(f'{field} needs a number: {token}')
+            terms.append((negate, field, op, value if field in NUMERIC else str(value).lower()))
         elif lowered in ('picked', 'pick', 'rejected', 'reject', 'unflagged'):
             terms.append((negate, 'flag', '=', {'picked': 'pick', 'rejected': 'reject', 'unflagged': 'none'}.get(lowered, lowered)))
         elif lowered in ('edited', 'unedited'):
             terms.append((negate != (lowered == 'unedited'), 'edited', '=', 'yes'))
+        elif lowered in _WORDS:
+            terms.append((negate, *_WORDS[lowered]))
         elif label_from_text(lowered):
             terms.append((negate, 'label', '=', label_from_text(lowered)))
         elif re.fullmatch(r'★{1,5}\+?', word):
@@ -310,8 +334,52 @@ def _compare(value, op, target):
             '<': value < target, '<=': value <= target}[op]
 
 
-def matches(terms, path, meta, edited=False):
-    """True when a photo (``meta`` from ``Catalog.get``) satisfies every term."""
+def _text_match(value, pattern):
+    value = str(value or '').lower()
+    return fnmatch.fnmatch(value, pattern) if any(c in pattern for c in '*?[') else pattern in value
+
+
+def _record_field(field, op, value, record):
+    """A 2.0.0 catalog field of ``record`` (``library_db`` row); False when it is unknown."""
+    if field == 'keyword':
+        names = [k.lower() for k in record.get('keywords') or ()]
+        if value == 'any':
+            return bool(names)
+        if value == 'none':
+            return not names
+        if any(c in value for c in '*?['):
+            return any(fnmatch.fnmatch(k, value) for k in names)
+        return value in names
+    if field == 'camera':
+        return _text_match(f"{record.get('make') or ''} {record.get('model') or ''}", value)
+    if field == 'lens':
+        return _text_match(record.get('lens'), value)
+    if field in ('iso', 'f', 'focal', 'faces', 'sharpness'):
+        number = record.get({'f': 'aperture'}.get(field, field))
+        return number is not None and _compare(float(number), op, value)
+    if field == 'date':
+        captured = str(record.get('captured') or '')
+        return bool(captured) and _compare(captured[:len(value)], op, value)
+    if field == 'eyes':
+        faces, closed = record.get('faces'), record.get('eyes_closed')
+        if faces is None:
+            return False
+        return bool(closed) if value == 'closed' else faces > 0 and not closed
+    if field == 'blurry':
+        return bool(record.get('blurry')) == (value == 'yes')
+    if field == 'burst':
+        group = record.get('burst')
+        if value == 'best':
+            return bool(group) and record.get('best', False)
+        return bool(group) == (value in ('yes', 'true', '1'))
+    if field == 'missing':
+        return bool(record.get('missing'))
+    return False
+
+
+def matches(terms, path, meta, edited=False, record=None):
+    """True when a photo (``meta`` from ``Catalog.get``) satisfies every term.  ``record`` is its
+    library catalog row (2.0.0 fields; without one they never match)."""
     p = Path(path)
     for negate, field, op, value in terms:
         if field == 'rating':
@@ -323,6 +391,10 @@ def matches(terms, path, meta, edited=False):
         elif field == 'name':
             name = p.name.lower()
             ok = fnmatch.fnmatch(name, value) if any(c in value for c in '*?[') else value in name
+            if not ok and record is not None and not any(c in value for c in '*?['):
+                # 2.0.0: library text search also finds keywords, camera and lens.
+                ok = any(value in str(text).lower() for text in
+                         (*(record.get('keywords') or ()), record.get('make'), record.get('model'), record.get('lens')) if text)
         elif field == 'ext':
             ok = p.suffix.lower().lstrip('.') == value.lstrip('.')
         elif field == 'folder':
@@ -330,7 +402,7 @@ def matches(terms, path, meta, edited=False):
         elif field == 'edited':
             ok = edited == (value in ('yes', 'true', '1', ''))
         else:
-            ok = True
+            ok = record is not None and _record_field(field, op, value, record)
         if ok == negate:
             return False
     return True

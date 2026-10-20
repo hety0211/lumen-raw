@@ -65,7 +65,7 @@ class MergeDialog(QDialog):
         self.setWindowTitle(tr('照片合成'));self.resize(900,840)
         root=QVBoxLayout(self);title=QLabel(tr('照片合成  /  PHOTO MERGE'));title.setObjectName('section');root.addWidget(title)
         self.preview=QLabel(tr('选择合成方法，先预览构图与边缘，再生成完整副本。'));self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setFixedHeight(285);self.preview.setStyleSheet('background:#111712;border:1px solid #3f4c3b');root.addWidget(self.preview)
+        self.preview.setFixedHeight(285);self.preview.setObjectName('preview');root.addWidget(self.preview)
         self.options=QWidget();form=QFormLayout(self.options);root.addWidget(self.options)
         self.method=QComboBox()
         for key,name in merge.METHODS.items():self.method.addItem(name,key)

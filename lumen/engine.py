@@ -15,7 +15,9 @@ import logging
 import os
 import sys
 import colorsys
+import threading
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import NamedTuple
 import cv2
@@ -354,6 +356,40 @@ GPU_TILE = 1024
 GPU_TILE_PIXELS = 2 ** 21
 
 
+#: 1.8.0: the CPU's pointwise stages run on row strips in parallel.  NumPy releases the GIL in its
+#: array loops, so the strips scale with the cores (a 1.7 MP preview: about 4x on 8 threads).
+STRIP_PIXELS = 1 << 17
+_STRIP_THREAD = 'lumen-strip'
+_strip_pool = None
+_strip_lock = threading.Lock()
+
+
+def in_strips(image, stage):
+    """``stage(block, y0, y1)`` over row strips of ``image`` on the CPU threads, stacked again;
+    for a pointwise stage the same values as ``stage(image, 0, height)``."""
+    global _strip_pool
+    h, w = image.shape[:2]
+    count = min(performance.THREADS, h, h * w // STRIP_PIXELS)
+    if count < 2 or threading.current_thread().name.startswith(_STRIP_THREAD):
+        return stage(image, 0, h)
+    with _strip_lock:
+        if _strip_pool is None:
+            _strip_pool = ThreadPoolExecutor(performance.THREADS, thread_name_prefix=_STRIP_THREAD)
+    bounds = [h * i // count for i in range(count + 1)]
+    parts = _strip_pool.map(lambda i: stage(image[bounds[i]:bounds[i + 1]], bounds[i], bounds[i + 1]), range(count))
+    return np.concatenate(list(parts), axis=0)
+
+
+def strip_spec(spec, shape, y0, y1):
+    """The process-2 tone ``spec`` of a block of ``shape`` for its rows y0:y1, so the local tone
+    context is sampled where those rows lie in the frame."""
+    if spec is None or spec.context is None:
+        return spec
+    h, w = shape[:2]
+    area = spec.area or Area(w, h, 0, 0, w, h)
+    return spec._replace(area=Area(area.width, area.height, area.x0, area.y0 + y0, area.x1, area.y0 + y1))
+
+
 def has_spatial(a):
     return any(a.get(k, 0) for k in SPATIAL_KEYS)
 
@@ -484,8 +520,10 @@ class Backend:
             if result is not None:
                 return result
         try:
-            result = self._tonal(image, a, self.xp)
-            if self.xp is not np:
+            xp = self.xp
+            result = self._tonal(image, a, xp) if xp is not np else \
+                in_strips(image, lambda block, *_: self._tonal(block, a, np))
+            if xp is not np:
                 result = self.xp.asnumpy(result)
                 compute.state.report('CUDAExecutionProvider',self.name,tr('CuPy · CUDA 光影显影（实验）'))
             else:
@@ -507,13 +545,13 @@ class Backend:
             if result is not None:
                 return result
         compute.state.report('CPUExecutionProvider', detail=tr('{threads} 线程 · NumPy 光影显影', threads=performance.THREADS))
-        return tone.tonal(image, a, spec)
+        return in_strips(image, lambda block, y0, y1: tone.tonal(block, a, strip_spec(spec, image.shape, y0, y1)))
 
     def color(self, image, edits, space=None):
         """Saturation / vibrance, HSL, curves, monochrome and grading (``space``: output colour
         space of process 2; the GPU graphs map into sRGB, other spaces use NumPy)."""
         if color.wide(space):
-            return color_stage(image, edits, space)
+            return cpu_color_stage(image, edits, space)
         if process_version(edits) == 2:
             if self.gpu_version2:
                 kind = 'color2lab' if gpu_graphs.lab_stage(edits) else 'color2'
@@ -524,7 +562,7 @@ class Backend:
             result = self._gpu('color', image, gpu_graphs.color_inputs(edits))
             if result is not None:
                 return result
-        return color_stage(image, edits)
+        return cpu_color_stage(image, edits)
 
     def fused(self, image, edits, spec=None):
         """Tonal + color in one GPU pass; only valid without spatial detail tools."""
@@ -535,13 +573,13 @@ class Backend:
                 result = self._gpu('fused2lab' if gpu_graphs.lab_stage(edits) else 'fused2', image, inputs)
                 if result is not None:
                     return result
-            return color_stage(self.tonal(image, a, spec), edits)
+            return cpu_color_stage(self.tonal(image, a, spec), edits)
         if self.gpu_pointwise:
             inputs = dict(gpu_graphs.tonal_inputs(a), **gpu_graphs.color_inputs(edits))
             result = self._gpu('fused', image, inputs)
             if result is not None:
                 return result
-        return color_stage(self.tonal(image, a), edits)
+        return cpu_color_stage(self.tonal(image, a), edits)
 
     def _tonal_dml(self, image, a):
         return self._run_graph('tonal', image, gpu_graphs.tonal_inputs(a))
@@ -654,7 +692,7 @@ def saturation(x, a):
     lum = x[..., 0:1] * .2126 + x[..., 1:2] * .7152 + x[..., 2:3] * .0722
     amount = 1 + a.get('saturation', 0) / 100
     if a.get('vibrance', 0):
-        spread = np.max(x, axis=2, keepdims=True) - np.min(x, axis=2, keepdims=True)
+        spread = (color._channel_max(x) - color._channel_min(x))[..., None]
         amount = amount + a.get('vibrance', 0) / 100 * (1 - spread)
     return np.clip(lum + (x - lum) * amount, 0, 1)
 
@@ -687,6 +725,11 @@ def color_stage(x, edits, space=None):
     if edits.get('monochrome', False):
         x = monochrome(x)
     return color_grade(x, edits.get('grading', {}))
+
+
+def cpu_color_stage(x, edits, space=None):
+    """``color_stage`` on the CPU threads (1.8.0)."""
+    return in_strips(x, lambda block, *_: color_stage(block, edits, space))
 
 
 def apply_hsl(rgb, values):

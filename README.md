@@ -1,31 +1,32 @@
 # LUMEN RAW
 
-**An open-source RAW photo editor: color grading, lens corrections, AI enhancement, smart masks, photo merging — and editing by describing the look in one sentence.**
+**An open-source RAW photo editor: a photo library and fast culling, color grading, lens corrections, AI enhancement, smart masks, photo merging, time-lapse videos — and editing by describing the look in one sentence.**
 
 [中文说明](README.zh-CN.md) · [Downloads](https://github.com/hety0211/lumen-raw/releases) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
-LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Opening, editing, lens corrections, AI denoising / super-resolution / masks and export all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing.
+LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Importing, culling, editing, lens corrections, AI denoising / super-resolution / masks, export and time-lapse videos all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing, and once to download the speech model if you use voice instructions.
 
-Current version: **1.7.0** (Windows 2026-10-17, macOS 2026-10-19).
+Current version: **2.0.0** (Windows 2026-10-21). The Mac build is still 1.7.0 (2026-10-19).
 
-![LUMEN RAW 1.5.1 in English: the Crop · Lens panel has identified a Nikon Nikkor Z 14-24mm f/2.8 S from EXIF and corrects its distortion, vignetting and chromatic aberration](docs/screenshots/workspace-en.png)
+![LUMEN RAW 2.0.0 in English: the Library page with the folder tree, smart albums and keywords on the left, the thumbnail grid with stars, pick flags, color labels and a rejected photo, and the selected photo's capture data, sharpness, rating and keywords on the right](docs/screenshots/library-grid-en.png)
 
-Actual application screenshot with CC0 public test photographs from raw.pixls.us ([image credits](docs/screenshots/README.md)).
+Actual application screenshots. The photographs are public test samples: CC0 photos from raw.pixls.us and Play Raw photos from discuss.pixls.us under CC BY-SA 4.0 ([image credits](docs/screenshots/README.md)).
 
 ## Download and install
 
 | System | Download | Requirements |
 |---|---|---|
-| Windows | [`LumenRAW-1.7.0-Setup.exe` (installer) or `LumenRAW-1.7.0-Windows.zip` (portable)](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0) | Windows 10 22H2 / Windows 11, x64 |
-| macOS | [`LumenRAW-1.7.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
+| Windows | [`LumenRAW-2.0.0-Setup.exe` (installer, 415 MB) or `LumenRAW-2.0.0-Windows.zip` (portable, 477 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.0.0) | Windows 10 22H2 / Windows 11, x64 |
+| macOS | [`LumenRAW-1.7.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0-macos) (1.7.0) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
 
-Windows and macOS have the same features and file formats. Projects (`.lumen`) and albums (`.lumenalbum`) saved by 1.6 cannot be opened by 1.5.x, nor those saved by 1.7 by 1.6.x; older projects open in newer versions unchanged. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+There is no Mac build of 2.0.0 yet: the library, culling, preview cache, time-lapse videos, new themes and the smaller download are Windows-only for now; everything up to 1.7.0 is the same on both systems. The file formats did not change in 2.0.0, so projects (`.lumen`) and albums (`.lumenalbum`) move freely between 2.0.0 and 1.7.0; 1.6.x cannot open those saved by 1.7 or later, and older projects open in newer versions unchanged. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
-- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.6.2 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
+- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.7.0 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
 - **Portable:** extract and run `LumenRAW-Windows\LumenRAW.exe`. Keep the `_internal` folder next to the exe. The portable build follows the system language until you choose one.
-- Both include Python, ExifTool, fonts, the nine AI models, the speech model and the lensfun lens database, and work fully offline.
+- Both include Python, ExifTool, fonts, the eleven AI models, the video encoders and the lensfun lens database, and work fully offline. The speech model for voice instructions (about 240 MB) is downloaded the first time you click **Voice**; when you upgrade from 1.5 – 1.7, the installer keeps the model those versions bundled, so it is not downloaded again.
+- 2.0.0 is less than half the size of 1.7.0 (installer 880 → 415 MB, portable 950 → 477 MB), mainly because the AI models are stored at half precision (results differ by about 0.001 %, at the same speed), unused Qt parts were left out and the speech model is no longer bundled.
 
 **macOS**
 
@@ -37,6 +38,11 @@ Windows and macOS have the same features and file formats. Projects (`.lumen`) a
 
 ## Features
 
+- **Library (2.0.0):** import folders into a catalog of your photos: a folder tree, a zoomable thumbnail grid, keywords and smart albums (saved searches by rating, keyword, camera, lens, date, sharpness, closed eyes, bursts …). Capture data, XMP ratings and keywords are read in the background; your files are never changed. See [Library](#library).
+- **Fast culling (2.0.0):** full screen with the camera's own previews, so moving between photos is instant; side-by-side compare, 100 % zoom, Lightroom's rating keys. Bursts are grouped with the best frame marked, and possibly blurry photos and closed eyes are flagged (eyes by two small offline face models). See [Culling](#culling).
+- **Smart preview cache (2.0.0):** a photo you opened before opens again in about 50 ms instead of 1–2 s, and the neighbors of the current photo are decoded ahead.
+- **Time-lapse videos (2.0.0):** turn an interval sequence into an H.264, H.265, AV1 or ProRes video at the sensor's aspect ratio, with edits blended between keyframes and deflicker for auto exposure and auto white balance. See [Time-lapse videos](#time-lapse-videos).
+- **New look, smaller download (2.0.0):** dark and light themes with amber accents that follow the system; the installer is less than half the size with every AI model still included; CPU previews are 3–4× faster.
 - **Presets (1.7.0):** import Lightroom Classic / Camera Raw presets (`.xmp`, `.lrtemplate` or whole `.zip` packs), converted approximately to LUMEN settings with a list of what has no counterpart; `.cube` 3D LUTs as a new adjustment with a strength, saved in projects; presets in groups, applied to many photos at once; 12 built-in looks. See [Presets, Lightroom presets and LUTs](#presets-lightroom-presets-and-luts).
 - **Fine AI mask edges (1.7.0):** sky, people, subject and background masks appear at once, then their edges are refined on the original at up to 4096 pixels: foliage, needles and building outlines without light halos. See [Fine AI mask edges](#fine-ai-mask-edges).
 - **Histogram dragging and a grading eyedropper (1.7.0):** drag in the histogram to change blacks, shadows, exposure, highlights and whites, as in Lightroom; pick a color from the photo as a color-grading hue. See [Histogram dragging and the grading eyedropper](#histogram-dragging-and-the-grading-eyedropper).
@@ -52,9 +58,56 @@ Windows and macOS have the same features and file formats. Projects (`.lumen`) a
 - **Masks:** brush, linear and radial gradients, luminance range, similar-color selection, and local AI models for sky, people, subject, background and foreground. Invert, feather, opacity and brush refinement; up to 32 masks per photo.
 - **AI enhancement:** Real-ESRGAN 2× / 4× super-resolution and DRUNet / NAFNet / FFDNet denoising, each with its own preview dialog. Results are saved as editable DNG copies.
 - **Photo merging:** focus stacking, HDR stacking (Mertens exposure fusion with three deghosting levels) and panoramas up to 200 megapixels, from 2–32 photos.
-- **Culling and batches:** import many photos at once, multi-select in the filmstrip with Ctrl / Shift, copy the current edit to the selection, or batch-export JPEG / PNG / TIFF / DNG with an optional long-edge size.
+- **Batches:** multi-select in the library grid or the filmstrip with Ctrl / Shift, copy the current edit to the selection, apply presets to many photos, or batch-export JPEG / PNG / TIFF / DNG with an optional long-edge size.
 - **Large images:** 100% view of original pixels, rendering only what is on screen. Editing a zoomed 61-megapixel photo keeps GUI stalls to about 40 ms. Before / after, hold-for-original and clipping warnings.
 - **Watermarks and export:** four border styles with shooting information and the camera and lens brand logos picked from EXIF. Export JPEG / PNG (8-bit), TIFF (16-bit) and linear DNG (16-bit), up to 400 megapixels, in sRGB, Display P3 or Adobe RGB, optionally with a JPEG size limit in KB, keeping the original's EXIF, IPTC and XMP (camera, lens, capture settings, copyright, keywords; GPS optional).
+
+## Library
+
+The **Library** page (`G`; `D` returns to **Develop**) is LUMEN RAW's own catalog of your photos.
+
+1. **Import:** **Import Folder…** (`Ctrl+Shift+I`, or drag a folder onto the grid) adds a folder and its sub-folders in the background, skipping recycle bins and system or hidden folders. Photos stay where they are; the library only records them (`library.db` in the data folder). Photos you open in the develop view join the library too.
+2. **Browse:** on the left are the catalog (all photos, last import, the current selection), smart albums, the folder tree with photo counts, and keywords. The grid sorts by capture time, name, rating or import time; `Ctrl` + wheel or the slider sizes thumbnails from 96 to 320 pixels. Thumbnails show stars, flags, color labels, burst positions and hints.
+3. **Rate and tag:** `0`–`5`, `P` / `X` / `U` and `6`–`9` act on the selected photos, as in the filmstrip. Type keywords in the info panel on the right (comma-separated, with completion); click × on a keyword to remove it.
+4. **Open:** double-click or `Enter` opens the selection in the develop view (the photos join the filmstrip); `C` or `Space` starts [culling](#culling). Right-click to add photos to the selection, batch-export, show them in their folder, make a time-lapse, or remove them from the library (the files stay).
+
+- **Search and smart albums:** the search box and **New Smart Album…** take the filter syntax of the filmstrip plus `keyword:` (a name, `any` or `none`; quote names with spaces), `camera:`, `lens:`, `iso`, `f`, `focal`, `date:2026-10` or `date>=2026-10-01`, `faces`, `eyes:closed`, `sharpness<30`, `burst` / `burst:best`, and the words `blurry`, `sharp`, `best`, `closed` and `missing`. Plain words search file names, keywords, cameras and lenses. Eight smart albums are built in: picked, ★3 and up, rejected, possibly blurry, possibly closed eyes, bursts, best of each burst and no keywords.
+- **Capture data, ratings and keywords** are read by ExifTool, 64 photos at a time, with sub-second capture times. Stars, labels and keywords already in XMP sidecars or embedded XMP (from Lightroom, Bridge or the camera) appear in the grid. With **Write XMP Sidecars Automatically When Ratings Change** on, keywords are written to the sidecars too (`dc:subject`, as Lightroom does); the photos themselves are never written.
+- **Folders** can be rescanned (new photos are added, moved or deleted files marked as missing) or removed from the library.
+
+## Culling
+
+![LUMEN RAW 2.0.0 culling in compare mode: a lighthouse in Greece on the left, the candidate (Skagen lighthouse) on the right with an amber frame; the header shows its capture data, four stars, the pick flag and sharpness 98, the strip below shows the ratings of the whole set](docs/screenshots/culling-en.png)
+
+**Cull** (`C`, or `Space` in the grid) shows the photos of the grid full screen — only the selected ones when several are selected. It can also start from the filmstrip.
+
+| Action | Key |
+|---|---|
+| Next / previous photo | `→` / `←` |
+| Next / previous burst | `↓` / `↑` |
+| Stars / flags / labels | `0`–`5` / `P` `X` `U` / `6`–`9` |
+| Advance after rating on / off | `A` |
+| 100 % where you point, and back | `Z`, `Space` or click; drag to pan |
+| Compare side by side | `C`; `Tab` switches the side you rate, `↑` keeps the candidate |
+| Face boxes | `F` |
+| Open in Develop / back to the library | `Enter` / `Esc` or `G` |
+
+- **Speed:** culling shows the camera's own rendering — the JPEG preview inside the RAW file, decoded straight at the size needed — with three photos ahead and behind loaded in advance, so moving between photos is instant. 100 % uses the full-size embedded JPEG where there is one and reads the RAW otherwise.
+- **Compare:** the left side keeps the chosen photo while `←` / `→` change the candidate on the right; both sides zoom and pan together.
+- **Bursts:** consecutive photos from the same camera body (model and serial number), at most 2 s apart and with a similar picture, form a burst, shown as "3/7". The best frame of each (eyes open first, then the sharpest) is marked in amber, and **Collapse bursts** shows only those. Copies with the same name and time (exports, the JPEG of RAW + JPEG) are not bursts.
+- **Sharpness and closed eyes:** every photo is analysed once in the background (at low priority, paused while AI or export runs; can be turned off in the **Library** menu) and the results are kept. Sharpness (0–100) is measured where the picture has the most structure, so a shallow depth of field counts by the subject in focus and fog is not taken for blur; below 22, or 14 below the best of its burst, a photo is marked "possibly blurry". Faces are found by YuNet and their eyes measured with Google's MediaPipe Face Mesh (478 landmarks); when both eyes are nearly shut, the photo is marked "possibly closed eyes". The two models together are 2.7 MB and run offline; a 61-megapixel ARW takes about 0.3 s to read and 0.2 s to analyse.
+
+## Time-lapse videos
+
+Select an interval sequence in the filmstrip (or in the library grid, which adds it to the filmstrip) and choose **Make Time-Lapse Video…** from the context menu, or **Photo → Time-Lapse Video…**. Photos are ordered by capture time, one frame each (or repeated up to 10 frames).
+
+1. **Keyframes:** by default the first, the last and every photo you edited; click a frame in the dialog to add or remove one. A keyframe's own edit sets its look, and the photos between two keyframes blend smoothly: exposure, white balance, color, curves and grading are interpolated (hues the short way round the color wheel), and different crops become a slow pan and zoom. Give the first and last photo of a sunset different edits and the video moves from one look to the other.
+2. **Deflicker:** off / light / medium / strong (averaged over 5 / 11 / 25 neighbors). Each frame's brightness is measured on the camera preview and its exposure corrected toward its neighbors (up to ±1.5 EV), and the white-balance multipliers recorded in each RAW are smoothed the same way. This removes the flicker and color jumps of auto exposure and auto white balance and keeps slow changes such as a sunset.
+3. **Output:** H.264 (MP4), H.265 / HEVC (MP4, optional 10-bit), AV1 (MP4, optional 10-bit) or Apple ProRes 422 HQ (MOV); original, 4K, 2K or FHD (3840 / 2560 / 1920 pixels on the long edge, never enlarged); the sensor's aspect ratio by default (4K from a 3:2 camera is 3840 × 2560), or a centered 16:9, 4:3, 1:1 or 9:16 crop; 24–60 fps; a maximum bit rate computed from the size (80 Mbps for H.264 at 3840 × 2160, less for H.265 and AV1). The dialog lists the pixel size of every choice.
+
+- **Encoding** uses the graphics card first (AMD AMF, NVIDIA NVENC, Intel Quick Sync, Windows Media Foundation) and falls back to x264, x265 or SVT-AV1 on the CPU. Videos are tagged BT.709 and MP4s are ready for streaming. Each frame is decoded only at the size the video needs, two frames ahead, and all frames are rendered in order on one device. Cancelling or a failure leaves no partial file.
+- **Measured:** 360 night frames from a Sony A7 III (24 MP ARW, auto white balance) became a 3840 × 2566 H.264 video in about 5 minutes with hardware encoding; medium deflicker cut the frame-to-frame brightness steps by about 60 %.
+- Assistants and scripts can use the `video.timelapse` command (MCP tool `make_timelapse`) with the same options.
 
 ## Presets, Lightroom presets and LUTs
 
@@ -90,6 +143,8 @@ In the left-hand **Presets** panel:
 
 ## Lens corrections
 
+![LUMEN RAW 1.5.1 in English: the Crop · Lens panel has identified a Nikon Nikkor Z 14-24mm f/2.8 S from EXIF and corrects its distortion, vignetting and chromatic aberration](docs/screenshots/workspace-en.png)
+
 **Lens Corrections** sits below the crop tools in the right-hand **Crop · Lens** panel:
 
 1. When a photo opens, the camera, lens model, focal length, aperture and focus distance from EXIF are matched against the lensfun database (1,569 lenses, 1,057 cameras). The panel shows the profile it found and which corrections the profile contains.
@@ -122,7 +177,7 @@ The model can set 16 global sliders (exposure, contrast, highlights, shadows, wh
 - **API keys** stay on your computer: encrypted with Windows DPAPI for the current user, or in the macOS keychain.
 - **Thinking depth:** default / off / low / medium / high / max, translated into each provider's own parameter and dropped automatically if a server rejects it. Low or off is usually enough: with LM Studio and qwen3-14b on an RX 9070 XT, one edit took 11.3 s by default and 1.6 s with thinking off. The first request after loading a model is slower.
 - **Usage:** the status line shows the tokens of each edit, about 2,400. One DeepSeek (deepseek-flash) connection test plus one edit used 2,486 tokens and cost under ¥0.01. Attaching the preview, follow-up turns or other models change this; your provider's bill is authoritative.
-- **Voice:** click **Voice** or press `Ctrl+Shift+Space` (`⌘⇧Space` on a Mac), speak, and pause for about a second; the recognized text is sent automatically (can be turned off in Settings). The bundled SenseVoice-Small model recognizes Chinese, English and mixed speech offline, about 0.1 s for 6 s of speech.
+- **Voice:** click **Voice** or press `Ctrl+Shift+Space` (`⌘⇧Space` on a Mac), speak, and pause for about a second; the recognized text is sent automatically (can be turned off in Settings). The SenseVoice-Small model recognizes Chinese, English and mixed speech offline, about 0.1 s for 6 s of speech. On Windows it is downloaded (about 240 MB) the first time you click **Voice**, after you agree: from Hugging Face, from hf-mirror.com or from this project's own GitHub release, every file checked against its size and SHA-256; an interrupted download resumes. The Mac build 1.7.0 still bundles it.
 
 ## Color and process versions
 
@@ -143,7 +198,7 @@ Photos opened in 1.6.0 use **process version 2 (scene-referred)**; projects and 
 
 ![LUMEN RAW 1.6.0: filmstrip thumbnails show stars, the pick flag, a rejected photo and color labels; the toolbar has stars, flags, labels and filters; the status bar shows an edit an AI assistant just applied](docs/screenshots/library-en.png)
 
-In the filmstrip toolbar and on the thumbnails:
+In the library grid, in culling, and in the filmstrip toolbar and thumbnails:
 
 | Action | Key |
 |---|---|
@@ -151,9 +206,9 @@ In the filmstrip toolbar and on the thumbnails:
 | Pick / reject / unflag | `P` / `X` / `U` |
 | Red / yellow / green / blue label (again to clear) | `6` / `7` / `8` / `9` |
 
-- Applies to the selected photos in the filmstrip (or the current photo); the context menu and the **Library** menu have the same actions.
+- Applies to the selected photos (or the current photo); the context menus and the **Library** menu have the same actions.
 - **Saved automatically:** ratings live in `catalog.jsonl` in the data folder, an append-only log: every change is on disk at once, survives a crash, and needs no saving. Selections (`.lumenalbum`) carry a copy.
-- **Filters:** quick filters (picked, not rejected, ★3 and up, …) or a field search: `rating>=3 -flag:reject label:red name:DSC0* ext:arw folder:2024 edited` (a leading `-` excludes; all terms must match).
+- **Filters:** quick filters (picked, not rejected, ★3 and up, …) or a field search: `rating>=3 -flag:reject label:red name:DSC0* ext:arw folder:2024 edited` (a leading `-` excludes; all terms must match). The library adds keyword, camera, lens, date and culling fields (see [Library](#library)).
 - **XMP:** importing reads star ratings and labels from XMP sidecars (`name.xmp`) or embedded XMP, so ratings from Lightroom, Bridge or the camera appear. The **Library** menu writes ratings to XMP sidecars, optionally on every change (off by default). Only sidecars are written, never the photo; reject is written as Rating −1, as Lightroom does.
 - **From Lightroom:** **Library → Import Ratings from a Lightroom Catalog…** reads a Lightroom Classic `.lrcat` read-only and imports stars, pick / reject flags and color labels (virtual copies skipped), optionally adding the photos found to the filmstrip.
 
@@ -174,11 +229,11 @@ On a Mac, `lumen-cli` is inside the app:
 claude mcp add lumen-raw -- "/Applications/LUMEN RAW.app/Contents/MacOS/lumen-cli" mcp
 ```
 
-WorkBuddy, Claude Desktop and other clients take a JSON entry (`"command"`: the full path of `lumen-cli.exe`, or of `lumen-cli` on a Mac, `"args": ["mcp"]`). Then ask, for example: "apply the Golden preset to the photos rated three stars or more in this folder, darken the sky a little and export them to the desktop".
+WorkBuddy, Claude Desktop and other clients take a JSON entry (`"command"`: the full path of `lumen-cli.exe`, or of `lumen-cli` on a Mac, `"args": ["mcp"]`). Then ask, for example: "apply the Golden preset to the photos rated three stars or more in this folder, darken the sky a little and export them to the desktop", or "import E:\DCIM, keep the sharpest open-eyed frame of each burst and tag them Iceland".
 
 - **With LUMEN RAW open:** the assistant works in the window through a local control channel (a named pipe on Windows, a Unix socket on macOS, that only your user can open); every step is visible and `Ctrl+Z` undoes it. The status bar and the AI Assistants window list recent actions; window control can be switched off there.
 - **With LUMEN RAW closed:** the assistant opens, edits, renders and exports photos in the background, continuing from a `.lumen` project next to a photo; nothing is written until it saves a project or exports.
-- **Tools (27):** open photos, read / apply edits (the natural-language editing vocabulary, including AI region masks such as sky and subject, and LUTs), refine AI mask edges, undo / redo, auto tone, presets (built-in and imported), import Lightroom presets and LUTs, copy edits, stars / flags / labels, render a preview (a JPEG image the assistant can look at), export, batch export, save projects, and more.
+- **Tools (32):** open photos, read / apply edits (the natural-language editing vocabulary, including AI region masks such as sky and subject, and LUTs), refine AI mask edges, undo / redo, auto tone, presets (built-in and imported), import Lightroom presets and LUTs, copy edits, stars / flags / labels, render a preview (a JPEG image the assistant can look at), export, batch export, save projects; new in 2.0.0: import folders into the library, search it (keywords, camera, date, sharpness, closed eyes, bursts …), add or remove keywords, analyse sharpness and closed eyes and pick the best frame of each burst, and make time-lapse videos.
 - **Protocol:** stdio; MCP 2026-07-28 (no handshake) and 2024-11-05 to 2025-11-25 (`initialize`).
 
 **Command line:**
@@ -191,20 +246,24 @@ lumen-cli render trip.lumen out.tif
 lumen-cli rate *.ARW 4
 lumen-cli list "rating>=3 -flag:reject"
 lumen-cli run edit.apply "{\"changes\": {\"adjustments\": {\"highlights\": -40}}}"
+lumen-cli run catalog.import "{\"paths\": [\"E:/DCIM\"]}"
+lumen-cli run catalog.search "{\"query\": \"burst:best -eyes:closed keyword:Iceland\"}"
+lumen-cli run video.timelapse "{\"query\": \"folder:Timelapse\", \"output\": \"night.mp4\", \"deflicker\": \"medium\"}"
 lumen-cli commands
 ```
 
 `run` executes in the open window when there is one (`--headless` never does). Results are JSON; from source use `python main.py --cli …`.
 
-## Interface languages
+## Interface languages and appearance
 
+- **View → Appearance** offers **Match system** (the default; follows Windows' or macOS's dark / light switch at once), **Dark** (near-black with amber accents, so the photo sits on almost black) or **Light** (warm white panels around a neutral grey canvas). The choice applies at once and is remembered; where the system allows, the title bar follows. Theme switching is part of 2.0.0 and not in the Mac build yet.
 - The **Language** menu at the top offers English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. After choosing one, LUMEN RAW offers to restart; unsaved edits are offered for saving first.
 - The Windows installer asks for the same nine languages and writes the choice to the settings, so the first start uses it; after a change in the app, the next installer run preselects that language. Without a setting, the interface follows the system language.
 - Japanese, Korean and Traditional Chinese use the system's fonts for those scripts; Latin and Cyrillic text uses the system interface font.
 
 ## Workflow
 
-1. **Import:** **Open Photo** or drag photos onto the window; several at once go to the filmstrip.
+1. **Import:** **File → Import Folder into the Library…** (`Ctrl+Shift+I`) for a card or a trip, then cull with `C` and open the keepers with `Enter`; or **Open Photo** / drag photos onto the window, which puts them straight into the filmstrip.
 2. **Start:** pick a preset, click **Auto**, or describe the look in words; enable lens corrections in **Crop · Lens** if you want them.
 3. **Adjust:** the nine right-hand panels are Light, Color, Watermark, Detail, Masks, Crop · Lens, Grading, Effects and Retouch. Type values directly; double-click a slider track to reset it.
 4. **Check:** click **100%** or scroll to zoom, `Y` for before / after, `J` for clipping.
@@ -222,6 +281,8 @@ lumen-cli commands
 | Clone source | `Alt`-click | `Option`-click |
 | Pan / zoom | middle-drag / wheel | two-finger scroll / pinch or wheel |
 | Stars / flags / labels | `0`–`5` / `P` `X` `U` / `6`–`9` | same |
+| Library / Develop / Cull (2.0.0, Windows) | `G` / `D` / `C` | — |
+| Import folder into the library (2.0.0, Windows) | `Ctrl+Shift+I` | — |
 | Command palette | `Ctrl+K` | `⌘K` |
 
 ## GPU acceleration
@@ -231,6 +292,8 @@ lumen-cli commands
 | Pointwise development (white balance, exposure, tone, HSL, curves, grading, monochrome, ...) | DirectML | Metal |
 | AI models (super-resolution, denoising, automatic masks) | NVIDIA RTX 30-series or newer on Windows 11 24H2+: TensorRT for RTX; other GPUs: DirectML | Core ML (Apple GPU) |
 | RAW decoding, lens corrections, dehaze, clarity, texture, sharpening, classic noise reduction, retouching, merging | CPU (up to 32 threads) | CPU |
+| Time-lapse video encoding (2.0.0) | AMD AMF, NVIDIA NVENC, Intel Quick Sync or Media Foundation; CPU (x264 / x265 / SVT-AV1) otherwise | — |
+| Sharpness and closed-eye hints (2.0.0) | CPU, in the background | — |
 
 - GPU results are checked against the CPU on first use, with automatic fallback to the CPU. The bottom bar shows `GPU⚡` or `CPU⚡ (thread count)`; hover for the device and any fallback reason.
 - AI models run in a separate process: a GPU driver crash does not close the editor; the work is retried on the next device and the GPU + driver combination is remembered.
@@ -247,9 +310,13 @@ lumen-cli commands
 | API keys | in the settings file, DPAPI-encrypted | login keychain ("LUMEN RAW") |
 | Rating catalog (`catalog.jsonl`), command-line log | `%LOCALAPPDATA%\LUMEN RAW` | `~/Library/Application Support/LUMEN RAW` |
 | Imported and saved presets (`.lumenpreset`) | `%LOCALAPPDATA%\LUMEN RAW\presets` | `~/Library/Application Support/LUMEN RAW/presets` |
+| Library (`library.db`: folders, capture data, keywords, smart albums, culling hints) | `%LOCALAPPDATA%\LUMEN RAW` | — |
+| Preview cache (default limit 4 GB, deleted on uninstall) | `%LOCALAPPDATA%\LUMEN RAW\cache\previews` | — |
+| Speech model (downloaded on first use) | `%LOCALAPPDATA%\LUMEN RAW\models\sensevoice` | bundled in the app |
 
-- Originals are read-only. Edits live in `.lumen` / `.lumenalbum` files; AI and merge results are saved as new DNG files. Removing a photo from the filmstrip does not delete it from disk.
-- The app goes online only when you edit with a cloud model, and when Windows downloads TensorRT for RTX the first time. Running from source also downloads the runtime assets once. The lens database is bundled; identifying lenses needs no network.
+- Originals are read-only. Edits live in `.lumen` / `.lumenalbum` files; AI and merge results are saved as new DNG files. Removing a photo from the filmstrip or the library does not delete it from disk.
+- **Library → Preview Cache** sets the cache limit (1–32 GB), turns it off or empties it; it is rebuilt as needed. A photo changed on disk is decoded again. Uninstalling keeps the library and ratings.
+- The app goes online only when you edit with a cloud model, when you download the speech model, and when Windows downloads TensorRT for RTX the first time. Running from source also downloads the runtime assets once. The lens database and the face models are bundled; identifying lenses and culling need no network.
 - Watermark borders show built-in logos for 19 camera and lens brands (the logos are trademarks of their owners; sources in `assets/logos/README.txt`). Other brands, such as Viltrox, Voigtländer, Samyang or 7Artisans, are shown as text in an ordinary font.
 
 ## Limits
@@ -258,6 +325,9 @@ lumen-cli commands
 - **AI scope:** AI super-resolution and denoising work on developed RGB, not on sensor data, and are not Adobe's RAW enhancement. Super-resolution can invent texture, so preview first.
 - **DNG output:** exported DNGs contain edited 16-bit linear RGB, not a lossless copy of the sensor mosaic. Keep your originals and projects.
 - **Automatic masks:** since 1.7.0 sky, people, subject and background masks are refined by color on the original at up to 4096 pixels, so foliage, pine needles and building outlines are much finer; hair on a similar-colored background, glass reflecting the sky and translucent objects still cannot be separated, and regions the network gets wrong are not corrected. "Background" needs a clear subject. Check the purple overlay and refine with the brush.
+- **Culling hints:** sharpness and closed-eye marks are hints, not verdicts. In a test of 18 portraits no open eyes were taken for closed and every frontal closed pair was found, but profile faces, steep angles, sunglasses and covered faces can be missed; faces smaller than 3 % of the long edge are ignored. Intentional softness (motion blur, soft focus) is marked blurry like accidental blur. Bursts are found from capture times, so photos without one are never grouped, and two bodies of the same model that record no serial number can be mixed up.
+- **Library:** one library per user, shared by the window, the command line and MCP; there is no face recognition, map or duplicate finder. Photos on a disconnected drive show as missing until it is back. Develop settings live in `.lumen` / `.lumenalbum` files as before, not in the library.
+- **Time-lapse:** one photo per frame (repeated if you like), with no frame blending or motion smoothing and no audio. Deflicker evens out the whole frame's brightness and white balance, not local flicker such as street lights. H.264 and H.265 are limited to their 8K levels (larger originals are scaled down), and which graphics-card encoders work depends on the card and driver; the CPU takes over otherwise. Videos are built from the developed images in sRGB / BT.709 (no HDR or log output).
 - **Merging:** panoramas need about 30 % overlap, shot around one viewpoint; parallax, motion or repeating texture can leave seams. HDR is Mertens exposure fusion, not radiance HDR. Merging has so far been tested with controlled views derived from single photos; real captured sequences still need more validation.
 - **Size and resources:**
   - Exports, including watermark borders and 2× / 4× super-resolution, are capped at 400 megapixels.
@@ -271,7 +341,7 @@ lumen-cli commands
 
 ## Run from source
 
-The repository holds the code, tests, the lensfun lens database, model provenance and licenses. AI models, fonts, ExifTool and the speech model are downloaded once by `tools/fetch_assets.py` (about 830 MB), which checks every file's SHA-256; editing then works offline.
+The repository holds the code, tests, the lensfun lens database, model provenance and licenses. AI models (including the face models), fonts, ExifTool and the speech model are downloaded once by `tools/fetch_assets.py` (about 830 MB), which checks every file's SHA-256; editing then works offline. Time-lapse videos need PyAV, which `requirements.txt` installs with its own FFmpeg.
 
 **Windows** (Python 3.12 x64):
 
@@ -310,12 +380,12 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 1.7.0, 451 regression tests pass on Windows with 11 skipped (macOS-only and similar); on macOS 447 pass with 16 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 2.0.0, 539 regression tests pass on Windows with 12 skipped (macOS-only and similar). Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.
 - **Self-checks with a real photo:**
-  - `python main.py --smoke-test <photo> <output dir>`: interface, editing, masks, AI preview, the speech model, one natural-language edit, lens corrections and the language catalogs.
+  - `python main.py --smoke-test <photo> <output dir>`: interface, editing, masks, AI preview, every AI model loading, the speech model when it is installed, one natural-language edit, lens corrections, the language catalogs, the library and culling, and video encoding.
   - `--workflow-test`: multi-brand import and AI copies.
   - `--merge-test`: the three merge methods.
   - The checks only read the originals and write into a new output directory.
@@ -324,8 +394,8 @@ Model sources, conversions, licenses and hashes are in [MODEL.md](MODEL.md) and 
 
 ## License and acknowledgments
 
-Application code is released under the **[MIT License](LICENSE)**. Third-party libraries, AI models, the speech model (FunASR Model License 1.1), the lensfun lens database (CC BY-SA 3.0), fonts and ExifTool keep their own licenses, and the built-in camera and lens logos are trademarks of their owners; see [THIRD_PARTY.md](THIRD_PARTY.md), [MODEL.md](MODEL.md) and the notices in `assets/`.
+Application code is released under the **[MIT License](LICENSE)**. Third-party libraries, AI models, the speech model (FunASR Model License 1.1), the lensfun lens database (CC BY-SA 3.0), fonts and ExifTool keep their own licenses, and the built-in camera and lens logos are trademarks of their owners; see [THIRD_PARTY.md](THIRD_PARTY.md), [MODEL.md](MODEL.md) and the notices in `assets/`. The Windows packages include FFmpeg (LGPL-3.0) with the x264 and x265 encoders (GPL-2.0-or-later) as separate libraries for time-lapse videos.
 
-Built with Python, PySide6 / Qt, NumPy, OpenCV, rawpy / LibRaw, Pillow, tifffile, ONNX Runtime and PyObjC. Lens profiles come from the [lensfun](https://lensfun.github.io/) project; models from Real-ESRGAN, KAIR / DPIR, NAFNet, MiDaS, U²-Net, SkySeg, TorchVision and FunAudioLLM SenseVoice; installer translations from Inno Setup.
+Built with Python, PySide6 / Qt, NumPy, OpenCV, rawpy / LibRaw, Pillow, tifffile, ONNX Runtime, PyAV / FFmpeg and PyObjC. Lens profiles come from the [lensfun](https://lensfun.github.io/) project; models from Real-ESRGAN, KAIR / DPIR, NAFNet, MiDaS, U²-Net, SkySeg, TorchVision, FunAudioLLM SenseVoice, YuNet (OpenCV Zoo) and Google MediaPipe Face Mesh; installer translations from Inno Setup.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for bug reports and contributions. Before sharing sample photos publicly, make sure you may share them and remove sensitive location or personal information.

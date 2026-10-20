@@ -13,7 +13,7 @@ import logging
 import threading
 from pathlib import Path
 
-from . import catalog, commands, engine, lens, model
+from . import catalog, commands, engine, lens, model, preview_cache
 
 log = logging.getLogger(__name__)
 
@@ -29,6 +29,15 @@ class Session(commands.Context):
         self._selected = []
         self._backend = backend
         self._lock = threading.RLock()
+        self._library_db = None
+
+    @property
+    def library_db(self):
+        """The photo library catalog (2.0.0), opened on first use."""
+        if self._library_db is None:
+            from .library_db import LibraryDB
+            self._library_db = LibraryDB()
+        return self._library_db
 
     # -- library
 
@@ -92,7 +101,7 @@ class Session(commands.Context):
     def _load(self, path):
         document = self.documents[path]
         if document['source'] is None:
-            source, info = engine.load_image(path)
+            source, info = preview_cache.load(path)      # 2.0.0: shared with the editor
             document.update(source=source, info=info)
             if not document['initialized']:
                 edits = document['edits']

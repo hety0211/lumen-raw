@@ -7,6 +7,10 @@ def run(source, output):
     from pathlib import Path
     destination = Path(output)
     destination.mkdir(parents=True, exist_ok=True)
+    # 2.0.0: the smoke test's photo library and preview cache are its own, never the user's.
+    os.environ.setdefault('LUMEN_LIBRARY', str(destination / 'library.db'))
+    os.environ.setdefault('LUMEN_PREVIEW_CACHE', str(destination / 'previews'))
+    os.environ.setdefault('LUMEN_CATALOG', str(destination / 'catalog.jsonl'))
     report = {}
     try:
         import copy
@@ -84,6 +88,9 @@ def run(source, output):
         report['natural_language'] = natural_language(w, app, settle, destination)
         report['lens'] = lens_corrections(w, app, settle, destination)
         report['languages'] = languages()
+        report['library'] = library_and_culling(w, app, source, destination)
+        report['models'] = models_load()
+        report['video'] = video_encoding(destination)
         model.save_project(destination / 'smoke.lumen', source, w.edits, w.snapshots)
         engine.export_image(destination / 'smoke.tif', w.rendered)
         report.update(ok=True, info=w.info, preview_shape=w.rendered.shape, backend=w.backend.name,
@@ -131,6 +138,96 @@ def lens_corrections(w, app, settle, destination):
     return result
 
 
+def video_encoding(destination):
+    """2.0.0: PyAV and its FFmpeg libraries are bundled: a short H.264 clip on the CPU encoder, and
+    the encoder the graphics card would use."""
+    import numpy as np
+    import av
+    from . import timelapse
+    path = destination / 'timelapse-check.mp4'
+    encoder = timelapse.Encoder(path, 'h264', (128, 96), 30, mbps=8, hardware=False)
+    for level in (.2, .5, .8):
+        encoder.write(np.full((96, 128, 3), level, np.float32))
+    encoder.close()
+    with av.open(str(path)) as container:
+        frames = sum(1 for _ in container.decode(container.streams.video[0]))
+    if frames != 3:
+        raise RuntimeError(f'video check decoded {frames} frames')
+    hardware = timelapse.Encoder(destination / 'timelapse-hardware.mp4', 'h264', (256, 144), 30, mbps=8, hardware=True)
+    codec = hardware.codec
+    hardware.abort()
+    return dict(frames=frames, cpu='libx264', hardware=codec, ffmpeg=av.ffmpeg_version_info)
+
+
+def models_load():
+    """2.0.0: every bundled model opens in ONNX Runtime (a truncated file once reached a package)."""
+    import onnxruntime as ort
+    from pathlib import Path
+    folder = Path(__file__).resolve().parents[1] / 'assets' / 'models'
+    loaded = {}
+    for path in sorted(folder.glob('*.onnx')):
+        if path.stat().st_size < 64 * 1024:
+            raise RuntimeError(f'{path.name} is only {path.stat().st_size} bytes')
+        session = ort.InferenceSession(str(path), providers=['CPUExecutionProvider'])
+        loaded[path.name] = [i.name for i in session.get_inputs()]
+        del session
+    if len(loaded) < 11:
+        raise RuntimeError(f'only {len(loaded)} models bundled: {sorted(loaded)}')
+    return {name: inputs for name, inputs in loaded.items()}
+
+
+def library_and_culling(w, app, source, destination):
+    """2.0.0: the library catalog (SQLite, ExifTool index), the preview cache, the face models of
+    the culling hints, the grid and the culling view."""
+    import time
+    from . import culling, preview_cache
+    db = w.library_db
+    db.add([source])
+    db.index_all(w.catalog)
+    row = db.record(source)
+    if row is None or not row['indexed']:
+        raise RuntimeError('library index failed')
+    analyser = culling.faces()
+    if analyser is None:
+        raise RuntimeError('face models missing')
+    started = time.perf_counter()
+    view = w.previews.view(source)
+    result = culling.analyse(view)
+    analysed = time.perf_counter() - started
+    db.set_analysis(row['id'], result)
+    if result['sharpness'] is None or result['faces'] is None:
+        raise RuntimeError(f'culling analysis incomplete: {result}')
+    w.previews.flush()
+    started = time.perf_counter()
+    cache = preview_cache.PreviewCache(w.previews.root, limit=1024)
+    cached = cache.cached(source)
+    reread = time.perf_counter() - started
+    cache.close()
+    if cached is None:
+        raise RuntimeError('preview cache empty after opening the photo')
+    w.set_mode('library')
+    w.refresh_sources()
+    w.refresh_library_grid()
+    for _ in range(100):
+        app.processEvents()
+        time.sleep(.02)
+    w.grab().save(str(destination / 'library.png'))
+    w.select_library_path(row['path'])
+    w.start_culling()
+    for _ in range(100):
+        app.processEvents()
+        time.sleep(.02)
+    if w.cull_window is None:
+        raise RuntimeError('culling view did not open')
+    w.cull_window.grab().save(str(destination / 'culling.png'))
+    w.cull_window.close()
+    w.set_mode('develop')
+    app.processEvents()
+    return dict(photos=db.count(), captured=row['captured'], camera=row['model'], view=list(view.shape),
+                sharpness=round(result['sharpness'], 1), faces=result['faces'], analysis_ms=round(analysed * 1000),
+                cached_preview_ms=round(reread * 1000), cache_bytes=w.previews.total_bytes())
+
+
 def languages():
     """1.5.1: every interface catalog is bundled and complete."""
     from . import i18n
@@ -143,7 +240,8 @@ def languages():
 
 
 def natural_language(w, app, settle, destination):
-    """1.5.0: packaged speech model, Qt Multimedia, TLS and one edit through a local OpenAI-style server."""
+    """1.5.0: speech model (when downloaded, 1.8.0), Qt Multimedia, TLS and one edit through a local
+    OpenAI-style server."""
     import json
     import ssl
     import threading
@@ -168,9 +266,11 @@ def natural_language(w, app, settle, destination):
             self.end_headers()
             self.wfile.write(body)
 
+    # 1.8.0: packages download the speech model on first use; test it when this machine has it.
     started = time.monotonic()
-    text = speech.transcribe((np.random.default_rng(0).standard_normal(16000) * 30).astype(np.int16))
-    recognizer = round(time.monotonic() - started, 2)
+    folder = speech.model_folder()
+    text = speech.transcribe((np.random.default_rng(0).standard_normal(16000) * 30).astype(np.int16)) if folder else None
+    recognizer = round(time.monotonic() - started, 2) if folder else None
     server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
@@ -192,6 +292,7 @@ def natural_language(w, app, settle, destination):
     finally:
         server.shutdown()
         server.server_close()
-    return dict(speech_model=speech.MODEL.name, speech_seconds=recognizer, speech_text=text,
+    return dict(speech_model=str(folder / speech.MODEL_NAME) if folder else None, speech_seconds=recognizer,
+                speech_text=text, speech_download_mb=speech.download_megabytes(),
                 microphones=[d.description() for d in QMediaDevices.audioInputs()],
                 tls=ssl.OPENSSL_VERSION, status=w.nl_status.text())

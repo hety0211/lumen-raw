@@ -207,3 +207,23 @@ def save_language(code):
 
 def fonts():
     return FONTS.get(language(), []) + ['Noto Sans SC', 'Microsoft YaHei UI', 'Segoe UI']
+
+
+def install_qt_translator(app):
+    """1.8.0: Qt's own strings (standard dialog buttons such as Save / Discard / Cancel) in the
+    interface language, from the ``qtbase_<code>.qm`` files that ship with PySide6."""
+    code = language()
+    if code == 'en':
+        return None
+    import PySide6
+    from PySide6.QtCore import QLibraryInfo, QTranslator
+    package = Path(PySide6.__file__).resolve().parent
+    folders = [package / 'translations', package / 'Qt' / 'translations',
+               Path(QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath))]
+    translator = QTranslator(app)
+    for folder in folders:
+        if translator.load(f'qtbase_{code}', str(folder)):
+            app.installTranslator(translator)
+            return translator
+    log.info('Qt translations for %s not found', code)
+    return None

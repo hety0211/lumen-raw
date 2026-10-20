@@ -27,6 +27,12 @@ LUMEN RAW 的源码许可不替代依赖许可。便携包保留动态库，Qt /
 | DRUNet color | MIT，Kai Zhang，https://github.com/cszn/DPIR；assets/DRUNet-LICENSE.txt |
 | NAFNet SIDD | MIT，Megvii，https://github.com/megvii-research/NAFNet；assets/NAFNet-LICENSE.txt |
 | lensfun 镜头数据库（1.5.1，镜头校正：畸变、横向色差、暗角） | CC BY-SA 3.0，lensfun 项目，https://lensfun.github.io/ ；原样收录于 assets/lensfun/db（提交 bbd4332），许可见 assets/lensfun/COPYING.CC_BY-SA_3.0；未包含或链接 lensfun 程序库（LGPL-3.0），校正模型由 lumen/lens.py 实现 |
+| PyAV 19.0.1（2.0.0，延时摄影视频的编码） | BSD-3-Clause，https://github.com/PyAV-Org/PyAV |
+| FFmpeg 9.0.2 动态库（随 PyAV 的 av.libs 打包：avcodec、avformat、avutil、avfilter、avdevice、swscale、swresample） | LGPL-3.0-or-later（按 PyAV 的构建配置），https://ffmpeg.org/ ；构建脚本与对应源码 https://github.com/PyAV-Org/pyav-ffmpeg ；动态链接，可替换 |
+| x264、x265（随 PyAV 的 FFmpeg 打包的 H.264／H.265 编码库） | GPL-2.0-or-later，https://www.videolan.org/developers/x264.html 、https://www.x265.org/ ；以独立动态库形式随包分发，源码见上方 pyav-ffmpeg 构建脚本所引用的版本。安装包因此包含 GPL 组件；LUMEN RAW 自身仍为 MIT 许可，源码公开 |
+| SVT-AV1、libvpx、dav1d、Opus、LAME、libwebp、libvmaf、oneVPL、zlib、libiconv 及 MinGW 运行库（随 PyAV 的 FFmpeg 打包） | 各自许可：BSD-3-Clause-Clear 与 AOM 专利许可（SVT-AV1）、BSD-3-Clause（libvpx、Opus、libwebp）、BSD-2-Clause（dav1d）、LGPL-2.0-or-later（LAME）、BSD-2-Clause-Patent（libvmaf）、MIT（oneVPL）、zlib、LGPL-2.1-or-later（libiconv）、GPL 附运行库例外（libgcc／libstdc++）与 MIT／ZPL（winpthreads） |
+| YuNet 人脸检测模型（2.0.0，选片的闭眼提示） | MIT，Shiqi Yu，https://github.com/ShiqiYu/libfacedetection.train ；ONNX 取自 OpenCV Zoo `face_detection_yunet_2023mar.onnx`（提交 f12e127），https://github.com/opencv/opencv_zoo ；assets/YuNet-LICENSE.txt |
+| MediaPipe Face Mesh V2 面部关键点模型（2.0.0，选片的闭眼提示） | Apache-2.0，Google，https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker （`face_landmarker.task` float16 v1 中的 `face_landmarks_detector.tflite`）；ONNX 格式转换 naklitechie/face-landmarks-onnx（Apache-2.0，权重未改动），https://huggingface.co/naklitechie/face-landmarks-onnx ；assets/MediaPipe-LICENSE.txt |
 | SenseVoice-Small 语音识别模型（1.5.0） | FunASR 模型开源协议 1.1，FunAudioLLM / 阿里巴巴集团，https://huggingface.co/FunAudioLLM/SenseVoiceSmall；ONNX 导出 k2-fsa / sherpa-onnx（Apache-2.0），https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17；assets/SenseVoice-LICENSE.txt |
 | 相机与镜头品牌标志（1.6.2，水印边框） | 来自 Wikimedia Commons，均标为公有领域（简单字形的文字标志不受著作权保护），同时是各品牌所有者的注册商标；仅用于在照片边框上按 EXIF 标注拍摄所用的机身与镜头，不表示与这些公司有任何关联或获得认可；原始 SVG、文件名、来源页面与 SHA-256 见 assets/logos/src、assets/logos/README.txt 与 assets/logos/logos.json |
 | 可选 CuPy | MIT，https://cupy.dev/ |

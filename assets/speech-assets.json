@@ -1,6 +1,12 @@
 {
   "version": "1.5.0",
-  "note": "SenseVoice-Small int8 ONNX (FunAudioLLM, FunASR Model License 1.1), sherpa-onnx export, pinned revision.",
+  "note": "SenseVoice-Small int8 ONNX (FunAudioLLM, FunASR Model License 1.1), sherpa-onnx export, pinned revision. 1.8.0: downloaded by the app on first use (lumen/speech.py); hf-mirror.com serves the same pinned files where huggingface.co is unreachable. 2.0.0: the same files are also published on LUMEN RAW's own GitHub release (releases), so the download keeps working if the upstream repository goes away.",
+  "mirrors": [
+    "https://hf-mirror.com/"
+  ],
+  "releases": [
+    "https://github.com/hety0211/lumen-raw/releases/download/speech-model-1/"
+  ],
   "files": [
     {
       "path": "assets/models/sensevoice/model.int8.onnx",

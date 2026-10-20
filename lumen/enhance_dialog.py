@@ -74,7 +74,7 @@ class ExportDialog(QDialog):
         for label in (self.before, self.after):
             label.setFixedSize(256, 256)
             label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            label.setStyleSheet('background: #121713; border: 1px solid #3c4738;')
+            label.setObjectName('preview')
             previews.addWidget(label)
         root.addLayout(previews)
         self.status = QLabel(tr('预览为成片中央 128 × 128 原始像素；左侧为普通放大，右侧为增强。'))

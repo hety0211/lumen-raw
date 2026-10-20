@@ -11,6 +11,8 @@ PySide6-Essentials==6.11.2
 PySide6-Addons==6.11.2
 shiboken6==6.11.2
 tifffile==2026.9.20
+# 2.0.0: time-lapse videos (PyAV; VideoToolbox encoders on macOS).
+av==19.0.1
 onnxruntime==1.30.0
 flatbuffers==25.12.19
 pyobjc-core==12.2.2

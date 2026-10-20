@@ -8,11 +8,13 @@ still follow the camera's own rendering.
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import logging
 import os
 import struct
 import tempfile
+import threading
 from pathlib import Path
 
 import cv2
@@ -172,3 +174,142 @@ def hevc_preview(path):
 def orient(image, flip):
     """Apply LibRaw's ``sizes.flip`` (0, 3, 5, 6) to a sensor-oriented image."""
     return {3: lambda a: np.rot90(a, 2), 5: lambda a: np.rot90(a, 1), 6: lambda a: np.rot90(a, -1)}.get(flip, lambda a: a)(image)
+
+
+# --------------------------------------------------------------------------- 2.0.0: camera views
+
+#: Long edge of the camera views the library and culling show (and cache).
+VIEW_EDGE = 2560
+#: Formats Pillow decodes quickly enough that their views are not cached.
+QUICK = ('.jpg', '.jpeg')
+
+
+def _fit(image, long_edge):
+    if long_edge and max(image.size) > long_edge:
+        scale = long_edge / max(image.size)
+        image = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+                             Image.Resampling.BICUBIC, reducing_gap=2.0)
+    return image
+
+
+def _draft(image, long_edge):
+    """Let the JPEG decoder skip detail the view does not need (DCT scaling: ½, ¼, ⅛)."""
+    if long_edge and image.format == 'JPEG':
+        scale = long_edge / max(image.size)
+        if scale < 1:
+            image.draft('RGB', (max(1, round(image.width * scale)), max(1, round(image.height * scale))))
+
+
+_transforms = {}
+_transforms_lock = threading.Lock()
+
+
+def _transform(profile):
+    """A cached LittleCMS transform from an embedded profile to sRGB, or None for sRGB itself.
+    Building one takes up to seconds; without the pixel cache (NOCACHE) it may be shared by threads."""
+    from PIL import ImageCms
+    key = hashlib.sha1(profile).digest()
+    with _transforms_lock:
+        if key not in _transforms:
+            try:
+                source = ImageCms.ImageCmsProfile(io.BytesIO(profile))
+                if 'srgb' in (ImageCms.getProfileDescription(source) or '').lower():
+                    _transforms[key] = None
+                else:
+                    flags = ImageCms.Flags.NOCACHE if hasattr(ImageCms, 'Flags') else 0x0040
+                    _transforms[key] = ImageCms.buildTransform(source, ImageCms.createProfile('sRGB'), 'RGB', 'RGB',
+                                                               flags=flags)
+            except Exception:
+                log.debug('ICC profile not usable', exc_info=True)
+                _transforms[key] = None
+        return _transforms[key]
+
+
+def _srgb(image):
+    """``image`` in sRGB for display: an embedded ICC profile is converted (LUMEN's own wide-gamut
+    exports and other profiles alike)."""
+    profile = image.info.get('icc_profile')
+    image = image.convert('RGB')
+    if profile:
+        transform = _transform(profile)
+        if transform is not None:
+            try:
+                from PIL import ImageCms
+                image = ImageCms.applyTransform(image, transform)
+            except Exception:
+                log.debug('ICC conversion skipped', exc_info=True)
+    return image
+
+
+def jpeg_view(data, long_edge=VIEW_EDGE, flip=0):
+    """Upright sRGB uint8 array of JPEG bytes (an embedded preview), at most ``long_edge``."""
+    with Image.open(io.BytesIO(data)) as image:
+        _draft(image, long_edge)
+        oriented = image.getexif().get(0x0112, 1) != 1
+        upright = ImageOps.exif_transpose(image) if oriented else image
+        array = np.asarray(_fit(upright.convert('RGB'), long_edge))
+    return array if oriented else orient(array, flip)
+
+
+def embedded_view(path, long_edge=VIEW_EDGE):
+    """The camera's own rendering of a RAW file (its largest embedded preview), upright, sRGB uint8,
+    at most ``long_edge``; ``(array, full_size)`` where ``full_size`` is True when the preview has
+    at least half the sensor's pixels (good enough to judge focus at 100 %).  None without one."""
+    import rawpy
+    with rawpy.imread(str(path)) as raw:
+        flip, pixels = raw.sizes.flip, raw.sizes.width * raw.sizes.height
+        try:
+            thumb = raw.extract_thumb()
+        except Exception:
+            thumb = None
+        if thumb is not None and thumb.format == rawpy.ThumbFormat.JPEG:
+            try:
+                with Image.open(io.BytesIO(thumb.data)) as probe:
+                    size = probe.size
+                return jpeg_view(thumb.data, long_edge, flip), size[0] * size[1] >= .5 * pixels
+            except Exception:
+                log.info('embedded JPEG of %s unreadable', path, exc_info=True)
+                return None
+        if thumb is not None and np.asarray(thumb.data).ndim == 3:
+            data = np.asarray(thumb.data)[..., :3]
+            array = orient(np.asarray(_fit(Image.fromarray(np.ascontiguousarray(data)), long_edge)), flip)
+            return array, data.shape[0] * data.shape[1] >= .5 * pixels
+    hevc = hevc_preview(path)
+    if hevc is not None:
+        array = orient(np.asarray(_fit(Image.fromarray(hevc), long_edge)), flip)
+        return array, False
+    return None
+
+
+def camera_view(path, long_edge=VIEW_EDGE):
+    """What the library and the culling view show of a photo: upright sRGB uint8 at most
+    ``long_edge`` (None: full size).  RAW files show the camera's embedded preview; without one
+    (or for LUMEN's linear DNG and 16-bit TIFF) the photo is decoded and developed."""
+    from . import engine, dng
+    path = Path(path)
+    suffix = path.suffix.lower()
+    raw = suffix in engine.RAW_EXTENSIONS and not (suffix == '.dng' and dng.is_rendered(path))
+    if raw:
+        found = embedded_view(path, long_edge)
+        if found is not None:
+            return found[0]
+    elif suffix not in ('.tif', '.tiff', '.dng'):
+        with Image.open(path) as image:
+            _draft(image, long_edge)
+            upright = ImageOps.exif_transpose(image)
+            return np.asarray(_fit(_srgb(upright), long_edge))
+    rgb, info = engine.load_image(path, long_edge or None)
+    developed = engine.develop_view(rgb, dict(develop=info.get('develop', {}), process=2))
+    return np.round(np.clip(developed, 0, 1) * 255).astype(np.uint8)
+
+
+def encode_jpeg(array, quality=88):
+    buffer = io.BytesIO()
+    Image.fromarray(np.ascontiguousarray(array)).save(buffer, 'JPEG', quality=quality, subsampling=0 if quality >= 90 else 2,
+                                                       optimize=False)
+    return buffer.getvalue()
+
+
+def thumbnail_of(array, long_edge):
+    """A smaller copy of an upright uint8 view."""
+    return np.asarray(_fit(Image.fromarray(np.ascontiguousarray(array)), long_edge))

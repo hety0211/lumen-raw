@@ -46,7 +46,7 @@ class EnhancementDialog(QDialog):
         previews=QHBoxLayout();self.before=QLabel(tr('原始细节'));self.after=QLabel(tr('处理后细节'))
         for label in (self.before,self.after):
             label.setAlignment(Qt.AlignmentFlag.AlignCenter);label.setFixedSize(384,300)
-            label.setStyleSheet('background:#111712;border:1px solid #3f4c3b');previews.addWidget(label)
+            label.setObjectName('preview');previews.addWidget(label)
         root.addLayout(previews)
         self.options=QWidget();form=QFormLayout(self.options);root.addWidget(self.options)
         self.method=QComboBox()

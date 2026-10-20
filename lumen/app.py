@@ -11,14 +11,15 @@ from PySide6.QtGui import QAction, QKeySequence, QFont, QFontDatabase, QIcon, QP
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTabWidget, QScrollArea, QComboBox, QCheckBox, QListWidget,
     QFileDialog, QMessageBox, QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QSpinBox,
-    QFrame, QSplitter, QProgressDialog, QStatusBar, QSizePolicy)
-from . import engine, model, compute, host, i18n, __version__
+    QFrame, QSplitter, QProgressDialog, QStatusBar, QSizePolicy, QStackedWidget)
+from . import engine, model, compute, host, i18n, theme, __version__
 from .scheduler import Activity as A, Job, JobScheduler, JobSignals, WorkState, WorkStateAccess
 from .widgets import AdjustSlider, Canvas, CurveEditor, Histogram, TabStrip, WheelGuard
 from .studio import StudioMixin
 from .revision import RevisionMixin
 from .resolution import ResolutionMixin
 from .library import LibraryMixin
+from .library_view import LibraryModeMixin
 from .auto_masks import AutoMaskMixin
 from .workflow import WorkflowMixin
 from .nl_panel import NaturalLanguageMixin
@@ -31,99 +32,9 @@ from .exposure_curve import ExposureCurve
 from .watermark_dialog import WatermarkEditor
 from .i18n import tr
 
-STYLE = '''
-QWidget { background: #1b2028; color: #dbe0e9; font-family: FAMILIES; font-size: 12px; }
-QMainWindow { background: #101318; }
-QLabel#brand { color: #e9eaff; font-size: 23px; font-weight: 700; letter-spacing: 3px; }
-QLabel#subtle { color: #8390a2; font-size: 11px; }
-QLabel#section { color: #b8c4d8; font-size: 13px; font-weight: 600; padding: 5px 0; }
-QPushButton { background: #292f3a; border: 1px solid #363e4b; border-radius: 6px; padding: 7px 12px; }
-QPushButton:hover { background: #353d4c; border-color: #637395; }
-QPushButton:pressed, QPushButton:checked { background: #465279; border-color: #9dafff; color: #fff; }
-QPushButton:disabled { color: #5e6878; background: #20252d; border-color: #2b323d; }
-QPushButton#primary { background: #b3c2ff; border: 0; color: #171d32; font-weight: 600; }
-QPushButton#primary:hover { background: #c9d4ff; }
-QPushButton#primary:disabled { background: #47516b; color: #8491ab; }
-QTabWidget::pane { border: 0; border-top: 1px solid #323a47; }
-QTabBar::tab { color: #8f9aae; background: #1b2028; padding: 12px 11px; border-bottom: 2px solid transparent; }
-QTabBar::tab:selected { color: #c9d3ff; border-bottom: 2px solid #b3c2ff; }
-QSlider::groove:horizontal { height: 3px; background: #3a4351; border-radius: 1px; }
-QSlider::sub-page:horizontal { background: #808fae; }
-QSlider::handle:horizontal { background: #c5cffa; width: 10px; height: 10px; margin: -4px 0; border-radius: 5px; }
-QDoubleSpinBox, QSpinBox, QLineEdit, QComboBox { background: #161b22; border: 1px solid #333d4a; border-radius: 4px; padding: 4px; }
-QDoubleSpinBox { border: 0; color: #c3cbe0; }
-QComboBox { padding: 6px; }
-QComboBox QAbstractItemView { background: #222a36; selection-background-color: #4b587e; }
-QCheckBox { spacing: 7px; padding: 4px 0; }
-QCheckBox::indicator { width: 13px; height: 13px; background: #171c24; border: 1px solid #56647b; border-radius: 3px; }
-QCheckBox::indicator:checked { background: #aab9f1; }
-QCheckBox:disabled { color: #5e6878; }
-QCheckBox::indicator:disabled { background: #1a1f27; border-color: #353e4c; }
-QCheckBox::indicator:checked:disabled { background: #4a5468; border-color: #4a5468; }
-QScrollArea { border: 0; }
-QScrollBar:vertical { background: #1b2028; width: 7px; }
-QScrollBar::handle:vertical { background: #485366; border-radius: 3px; min-height: 30px; }
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
-QListWidget { background: #141921; border: 1px solid #303947; border-radius: 5px; }
-QListWidget::item { padding: 8px; }
-QListWidget::item:selected { background: #35405a; color: #e0e7ff; }
-QToolTip { color: #e2e7f0; background: #30394a; border: 1px solid #54627c; padding: 5px; }
-QStatusBar { background: #151a22; color: #8794a7; }
-QStatusBar QLabel { background: transparent; }
-QSplitter::handle { background: #11161d; width: 2px; }
-'''
-
-# 1.5.1: Japanese, Korean and Traditional Chinese put a native font first.
-STYLE = STYLE.replace('FAMILIES', ', '.join(f'"{f}"' for f in i18n.fonts()))
-
-# Quiet neutral surfaces keep the photograph dominant; sage accents mark active tools.
-STYLE += '''
-QWidget { background: #202422; color: #d9ded8; font-size: 12px; }
-QMainWindow, QWidget#library { background: #191d1b; }
-QWidget#topbar { background: #171b19; border-bottom: 1px solid #353b35; }
-QLabel#brand { color: #e5eadc; font-size: 24px; letter-spacing: 4px; background: transparent; }
-QLabel#subtle { color: #879389; font-size: 11px; background: transparent; }
-QLabel#section { color: #cbd5c7; font-size: 13px; font-weight: 600; padding: 7px 0; background: transparent; }
-QLabel#navigator { background: #111513; color: #67766a; border: 1px solid #343c34; border-radius: 7px; }
-QLabel#badge { color: #c6d4b7; background: #303a2c; border: 1px solid #4d5c43; border-radius: 4px; padding: 3px 8px; font-size: 10px; }
-QPushButton { background: #2a302b; color: #cbd4c7; border: 1px solid #3a443b; border-radius: 6px; padding: 7px 11px; }
-QPushButton:hover { background: #354034; border-color: #697b61; }
-QPushButton:checked, QPushButton:pressed { background: #47573d; border-color: #a0b18f; color: #f1f5e9; }
-QPushButton#primary { background: #c1d1af; color: #202a1c; border: 1px solid #c1d1af; padding: 8px 18px; }
-QPushButton#primary:hover { background: #d5e0c7; }
-QPushButton:disabled { background: #232822; color: #64705f; border-color: #30372e; }
-QTabWidget::pane { border-top: 1px solid #3b453b; }
-QTabBar::tab { color: #8e9b8c; background: #202422; padding: 12px 9px; font-size: 11px; border-bottom: 2px solid transparent; }
-QTabBar::tab:selected { color: #d7e3ca; border-bottom: 2px solid #b9cea0; }
-QSlider::groove:horizontal { background: #414a40; height: 3px; }
-QSlider::sub-page:horizontal { background: #88967b; }
-QSlider::handle:horizontal { background: #c9d8b9; width: 10px; margin: -4px 0; border-radius: 5px; border: 1px solid #c9d8b9; }
-QDoubleSpinBox, QSpinBox, QLineEdit, QComboBox { background: #181d19; border-color: #394538; color: #cad7c4; }
-QDoubleSpinBox { border: 0; background: #1c221d; }
-QComboBox QAbstractItemView { background: #252e26; selection-background-color: #46543b; }
-QCheckBox::indicator { background: #171d18; border-color: #62735b; }
-QCheckBox::indicator:checked { background: #b1c498; border-color: #b1c498; }
-QCheckBox:disabled { color: #64705f; }
-QCheckBox::indicator:disabled { background: #1a1f1b; border-color: #363f33; }
-QCheckBox::indicator:checked:disabled { background: #4f5a46; border-color: #4f5a46; }
-QScrollBar:vertical { background: #202422; width: 6px; }
-QScrollBar::handle:vertical { background: #4b5947; }
-QListWidget { background: #181d19; border-color: #343e33; }
-QListWidget::item:selected { background: #394632; color: #e2eada; }
-QListWidget#presetList { border: 0; background: #191e1a; }
-QListWidget#presetList::item { background: #242c23; border: 1px solid #354132; border-radius: 6px; padding: 5px; }
-QListWidget#presetList::item:hover { border-color: #8c9d7c; }
-QListWidget#presetList::item:selected { border-color: #b5c99c; background: #39472f; }
-QStatusBar { background: #151a16; color: #8c9984; }
-QStatusBar QLabel { background: transparent; }
-QSplitter::handle { background: #101610; }
-QToolTip { color: #e0e9d7; background: #333e2e; border-color: #60704f; }
-QPushButton#primary:disabled { background: #394233; color: #788570; border: 1px solid #4e5b44; }
-QWidget#tabStrip { background: transparent; }
-QToolButton#tabButton { color: #8e9b8c; background: transparent; padding: 10px 6px; font-size: 11px; border: 0; border-bottom: 2px solid transparent; }
-QToolButton#tabButton:hover { color: #c3cfba; }
-QToolButton#tabButton:checked { color: #d7e3ca; border-bottom: 2px solid #b9cea0; }
-'''
+# 1.8.0: the stylesheet comes from ``theme`` (dark / light, View → Appearance); STYLE is the dark
+# look for tests and tools that style a QApplication themselves.
+STYLE = theme.stylesheet('dark')
 
 
 class ModeBadge(QLabel):
@@ -135,8 +46,8 @@ class ModeBadge(QLabel):
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QColor('#384b34' if self.is_gpu else '#39362b'))
-        painter.setPen(QPen(QColor('#82a178' if self.is_gpu else '#756b50'), 1))
+        painter.setBrush(theme.color('accent_soft' if self.is_gpu else 'card'))
+        painter.setPen(QPen(theme.color('accent_line' if self.is_gpu else 'border_hi'), 1))
         painter.drawRoundedRect(self.rect().adjusted(1, 1, -1, -1), 5, 5)
         left, _, right = self.text().partition('⚡')
         metrics = painter.fontMetrics()
@@ -144,15 +55,16 @@ class ModeBadge(QLabel):
         width = metrics.horizontalAdvance(left) + bolt_width + metrics.horizontalAdvance(right)
         x = (self.width() - width) / 2
         baseline = (self.height() + metrics.ascent() - metrics.descent()) / 2
-        painter.setPen(QColor('#d8ebc2' if self.is_gpu else '#d2c7aa'))
+        text = theme.color('head' if self.is_gpu else 'text')
+        painter.setPen(text)
         painter.drawText(QPointF(x, baseline), left)
         bx = x + metrics.horizontalAdvance(left)
         by = (self.height() - 14) / 2
         points = [(6, 0), (1, 8), (5, 8), (3, 14), (10, 5), (6, 5)]
         painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor('#d7e8a4' if self.is_gpu else '#e4ce8e'))
+        painter.setBrush(theme.color('accent' if self.is_gpu else 'warn'))
         painter.drawPolygon(QPolygonF([QPointF(bx + px, by + py) for px, py in points]))
-        painter.setPen(QColor('#d8ebc2' if self.is_gpu else '#d2c7aa'))
+        painter.setPen(text)
         painter.drawText(QPointF(bx + bolt_width, baseline), right)
 
 
@@ -227,7 +139,7 @@ def heading(text):
 from .enhance_dialog import ExportDialog
 
 
-class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixin, LensMixin, RatingMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
+class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixin, LensMixin, RatingMixin, LibraryModeMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
     export_progress = Signal(int, str)
 
     def __init__(self):
@@ -281,12 +193,16 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.init_resolution()
         self.init_library()
         self.init_rating()
+        # 2.0.0: the photo library (catalog, grid, culling) and the preview cache.
+        self.init_library_mode()
         self.init_natural_language()
         self.build_ui()
         self.shortcuts()
         # 1.6.0: local control channel for lumen-cli and MCP agents.
         self.init_agents()
         self.refresh()
+        if self.library_db.count():
+            self.set_mode('library')
 
     def button(self, text, callback, primary=False):
         b = QPushButton(text)
@@ -314,6 +230,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         badge.setFixedHeight(25)
         bar.addSpacing(18)
         bar.addWidget(badge)
+        bar.addSpacing(26)
+        # 2.0.0: library (G), develop (D) and culling (C).
+        self.build_mode_switch(bar)
         bar.addStretch()
         self.open_button = self.button(tr('打开原片'), self.open_file)
         bar.addWidget(self.open_button)
@@ -419,7 +338,11 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         r.addWidget(note(tr('运算线程上限 32 · 本机使用 {threads} · 最大 4 亿像素', threads=performance.THREADS)))
         splitter.addWidget(right)
         splitter.setSizes([225, 870, 405])
-        outer.addWidget(splitter, 1)
+        self.pages = QStackedWidget()
+        self.pages.addWidget(self.build_library_page())
+        self.pages.addWidget(splitter)
+        self.pages.setCurrentIndex(1)
+        outer.addWidget(self.pages, 1)
         outer.addWidget(self.build_filmstrip())
         self.setCentralWidget(central)
         self.statusBar().showMessage(tr('准备就绪 · 原片始终保留 · {shortcut} 打开', shortcut=host.keys("Ctrl+O")))
@@ -492,7 +415,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             b = QPushButton('')
             b.setFixedSize(24, 24)
             b.setToolTip(title)
-            b.setStyleSheet(f'QPushButton {{background: {color}; border: 2px solid #343d32; border-radius: 12px; padding: 0;}} QPushButton:hover {{border-color: white;}}')
+            b.setObjectName('swatch')  # border from the theme, fill from the colour
+            b.setStyleSheet(f'QPushButton#swatch {{ background: {color}; }}')
             b.clicked.connect(lambda checked=False, i=index: self.color_select.setCurrentIndex(i))
             swatches.addWidget(b)
             self.swatch_buttons.append(b)
@@ -676,6 +600,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             action.triggered.connect(fn)
             self.addAction(action)
         self.rating_shortcuts()
+        self.library_shortcuts()
 
     def open_palette(self):
         from .palette import CommandPalette
@@ -724,6 +649,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         if not self.work.can_start(A.LOADING):
             self.statusBar().showMessage(tr('请等待当前读取／导出完成。'))
             return
+        self.set_mode('develop')
         self.stash_document()
         explicit_project = Path(path).suffix.lower()=='.lumen'
         document = self.documents.get(str(Path(path).resolve())) if not explicit_project else None
@@ -792,12 +718,15 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.refresh()
             self.update_thumbnails()
             self.changed()
+            # 2.0.0: decode the neighbours in the filmstrip ahead (preview cache).
+            self.prefetch_neighbours()
         def failed(text):
             self.work.end(A.LOADING)
             self.open_button.setEnabled(True)
             self.refresh()
             self.error(tr('无法打开文件：\n') + text)
-        self.job(lambda: engine.load_image(path), loaded, failed)
+        # 2.0.0: through the preview cache (a photo opened before decodes in about 40 ms).
+        self.job(lambda: self.previews.load(path), loaded, failed)
 
     def changed(self):
         if self.refreshing or self.source is None:
@@ -1341,6 +1270,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.detail_timer.stop()
         self.cancel_detail()
         self.thumbnail_queue.clear()
+        if self.cull_window is not None:
+            self.cull_window.close()
+        self.library_worker.shutdown(3000)
         self.nl_recorder.cancel()
         self.nl_request+=1
         self.control.shutdown()
@@ -1384,8 +1316,10 @@ def main():
     from . import ai_worker
     app.aboutToQuit.connect(ai_worker.shutdown)
     app.setApplicationName('LUMEN RAW')
+    i18n.install_qt_translator(app)
     app.setStyle('Fusion')
-    app.setStyleSheet(STYLE)
+    theme.apply(app)
+    theme.follow_system(app)
     font = QFont(i18n.fonts()[0], 9)
     font.setFamilies(i18n.fonts())
     app.setFont(font)

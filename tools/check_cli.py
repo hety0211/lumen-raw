@@ -16,7 +16,8 @@ from pathlib import Path
 def main(executable, sample, folder):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, LUMEN_CATALOG=str(folder / 'catalog.jsonl'), LUMEN_CONTROL_NAME=f'lumen-cli-check-{os.getpid()}')
+    env = dict(os.environ, LUMEN_CATALOG=str(folder / 'catalog.jsonl'), LUMEN_CONTROL_NAME=f'lumen-cli-check-{os.getpid()}',
+               LUMEN_PREVIEW_CACHE=str(folder / 'previews'))     # 2.0.0: and its own preview cache
     report = {}
 
     def run(*args, stdin=None, timeout=300):

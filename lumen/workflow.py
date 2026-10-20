@@ -1,7 +1,7 @@
 """Browseable menus, watermark preferences and exclusive AI task scheduling."""
 from PySide6.QtGui import QActionGroup
-from PySide6.QtWidgets import QDialog,QMessageBox
-from . import i18n, host
+from PySide6.QtWidgets import QApplication,QDialog,QMessageBox
+from . import i18n, host, theme
 from .ai_dialog import EnhancementDialog
 from .scheduler import Activity as A
 from .watermark_dialog import WatermarkDialog
@@ -12,23 +12,48 @@ class WorkflowMixin:
     def build_menus(self):
         menu=self.menuBar()
         file=menu.addMenu(tr('文件'));file.addAction(tr('导入照片…'),self.open_file)
+        file.addAction(tr('导入文件夹到图库…')+'\t'+host.keys('Ctrl+Shift+I'),self.import_folder_dialog)
         self.menu_save=file.addAction(tr('保存当前工程'),self.save)
         self.menu_album=file.addAction(tr('保存选片集'),self.save_album)
         self.menu_export=file.addAction(tr('导出成片…'),self.export)
         photo=menu.addMenu(tr('照片'))
         photo.addAction(tr('AI 超分辨率…'),lambda:self.open_ai('super'))
         photo.addAction(tr('AI 去杂色…'),lambda:self.open_ai('denoise'))
+        photo.addAction(tr('延时摄影视频…'),self.make_timelapse)
         group=photo.addMenu(tr('合成'))
         from .merge import METHODS
         for kind,name in METHODS.items():group.addAction(name+'…',lambda checked=False,key=kind:self.open_merge(key))
         view=menu.addMenu(tr('查看'))
-        for i in range(self.tabs.count()):view.addAction(self.tabs.tabText(i),lambda checked=False,index=i:self.tabs.setCurrentIndex(index))
+        # 2.0.0: library, develop and culling.
+        view.addAction(tr('图库')+'\tG',lambda:self.set_mode('library'))
+        view.addAction(tr('显影')+'\tD',lambda:self.set_mode('develop'))
+        view.addAction(tr('选片模式')+'\tC',self.start_culling)
+        view.addSeparator()
+        for i in range(self.tabs.count()):view.addAction(self.tabs.tabText(i),lambda checked=False,index=i:(self.set_mode('develop'),self.tabs.setCurrentIndex(index)))
+        view.addSeparator()
+        self.build_appearance_menu(view)
         self.build_library_menu(menu)
         self.build_language_menu(menu)
         helpmenu=menu.addMenu(tr('帮助'))
         helpmenu.addAction(tr('AI 助手接入（MCP）…'),self.open_agent_dialog)
         helpmenu.addAction(tr('命令面板…')+'\t'+host.keys('Ctrl+K'),self.open_palette)
         helpmenu.addAction(tr('支持的 RAW 格式'),lambda:QMessageBox.information(self,tr('RAW 支持'),tr('Sony ARW / SR2 / SRF\nCanon CRW / CR2 / CR3\nNikon NEF / NRW\nFujifilm RAF（含 X-Trans）\nPanasonic RW2 / RAW\nDNG\n\n具体机型和压缩方式以内置 LibRaw 支持为准。')))
+
+    def build_appearance_menu(self,view):
+        """1.8.0: dark or light interface, or as the operating system is set; applies at once."""
+        appearance=view.addMenu(tr('外观'))
+        group=QActionGroup(self);group.setExclusive(True)
+        self.appearance_actions={}
+        for value,title in (('system',tr('跟随系统')),('dark',tr('深色')),('light',tr('浅色'))):
+            action=appearance.addAction(title,lambda checked=False,v=value:self.change_appearance(v))
+            action.setCheckable(True);action.setChecked(value==theme.preference());group.addAction(action)
+            self.appearance_actions[value]=action
+
+    def change_appearance(self,value):
+        try:theme.save_preference(value)
+        except OSError as exc:self.statusBar().showMessage(tr('无法保存外观设置：')+str(exc))
+        theme.apply(QApplication.instance(),value)
+        self.appearance_actions[value].setChecked(True)
 
     def build_language_menu(self,menu):
         """1.5.1: interface language; always also labelled in English so anyone can find it."""

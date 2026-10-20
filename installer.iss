@@ -5,7 +5,7 @@
   #define AppBuild "dist\LumenRAW"
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.7.0"
+  #define AppVersion "2.0.0"
 #endif
 #define PackageDir "v" + StringChange(AppVersion, ".", "")
 
@@ -75,6 +75,13 @@ Type: files; Name: "{userdesktop}\Lumen ARW.lnk"; Check: not PortableMode
 Name: "{group}\LUMEN RAW"; Filename: "{app}\LumenRAW.exe"; Check: not PortableMode
 Name: "{userdesktop}\LUMEN RAW"; Filename: "{app}\LumenRAW.exe"; Tasks: desktopicon; Check: not PortableMode
 
+[UninstallDelete]
+; 1.8.0: the speech model downloaded on first use (lumen/speech.py) is a re-downloadable cache.
+Type: filesandordirs; Name: "{localappdata}\LUMEN RAW\models"; Check: not PortableMode
+; 2.0.0: the preview cache (lumen/preview_cache.py) is rebuilt when needed; the library catalog
+; (library.db) and the ratings (catalog.jsonl) are the user's and stay.
+Type: filesandordirs; Name: "{localappdata}\LUMEN RAW\cache\previews"; Check: not PortableMode
+
 [Run]
 Filename: "{app}\LumenRAW.exe"; Description: "{cm:LaunchProgram,LUMEN RAW}"; Flags: nowait postinstall skipifsilent
 
@@ -82,4 +89,29 @@ Filename: "{app}\LumenRAW.exe"; Description: "{cm:LaunchProgram,LUMEN RAW}"; Fla
 function PortableMode: Boolean;
 begin
   Result := ExpandConstant('{param:PORTABLE|0}') = '1';
+end;
+
+procedure KeepFile(const Name, OldFolder, NewFolder: String);
+begin
+  if FileExists(OldFolder + '\' + Name) and not FileExists(NewFolder + '\' + Name) then
+    if not RenameFile(OldFolder + '\' + Name, NewFolder + '\' + Name) then
+      Log('Could not keep ' + Name + ' of the previous version');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  OldFolder, NewFolder: String;
+begin
+  { 1.8.0: the speech model is downloaded on first use instead of installed.  Move the copy an
+    earlier version installed to the download folder before [InstallDelete] removes _internal. }
+  if (CurStep = ssInstall) and not PortableMode then
+  begin
+    OldFolder := ExpandConstant('{app}\_internal\assets\models\sensevoice');
+    NewFolder := ExpandConstant('{localappdata}\LUMEN RAW\models\sensevoice');
+    if FileExists(OldFolder + '\model.int8.onnx') and ForceDirectories(NewFolder) then
+    begin
+      KeepFile('model.int8.onnx', OldFolder, NewFolder);
+      KeepFile('tokens.txt', OldFolder, NewFolder);
+    end;
+  end;
 end;

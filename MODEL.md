@@ -1,8 +1,23 @@
 # 模型来源与转换
 
+## 2.0.0 选片提示：YuNet 人脸检测与 MediaPipe Face Mesh
+
+选片的闭眼提示用两个小模型（合计约 2.7 MB，打包后），随包离线运行，推理代码在 `lumen/culling.py`，文件、固定版本与 SHA-256 见 `assets/culling-assets.json`（`tools/fetch_assets.py` 按它下载）。
+
+| 用途 | 模型与许可 | 输入及输出 |
+|---|---|---|
+| 找人脸 | YuNet（Shiqi Yu，MIT），OpenCV Zoo 的 `face_detection_yunet_2023mar.onnx`，232,589 字节，由 OpenCV 的 `FaceDetectorYN` 运行（打包时保持 float32，不做 float16 转换） | 相机预览缩到长边 1280 像素；人脸框、5 个关键点（双眼、鼻尖、嘴角）和置信度（阈值 0.7） |
+| 眼睛开合 | Google MediaPipe Face Mesh V2（Apache-2.0），`face_landmarker.task`（float16 v1，SHA-256 `64184e22…`）中的 `face_landmarks_detector.tflite`，由 naklitechie 用 tf2onnx 转为 ONNX（opset 17，权重未改动），4,920,995 字节；打包时权重转 float16（约 2.5 MB） | 以人脸为中心、按双眼连线转正的 256 × 256 RGB 裁切（0–1）；478 个关键点与人脸存在概率。先用 YuNet 的框，再按第一次的关键点重新裁切一次 |
+
+- **闭眼判断：** 每只眼的张开程度 = 上下眼睑三对关键点的平均距离 ÷ 内外眼角距离（Face Mesh 索引 33/133、159/145、158/153、160/144，左眼对应 263/362 等）。张得较大的那只眼也低于 0.16 时判为闭眼。只统计长边 3% 以上、存在概率 0.5 以上的人脸，因此风光照片中的小人物不参与。
+- **验证：** 在 7 张闭眼人像（Wikimedia Commons）和 11 张睁眼人像上：睁眼的张开程度为 0.19–0.54，没有被误判为闭眼；正面闭眼的 4 张（0.06–0.15）全部识别；侧躺、大角度仰头被树叶遮挡的 2 张没有检出人脸，低头的小脸（56 像素）判为睁眼。这是提示，不是判定：侧脸、大角度和遮挡的脸常会漏掉。曾试过 Intel Open Model Zoo 的 `open-closed-eye-0001` 小模型直接分类眼部裁切，它在普通照片上把一半闭眼判成睁眼（训练数据为红外近距离眼部图像），未采用。
+- **清晰度不用模型：** 在 1600 像素灰度图的 32 像素方块中，比较四个方向上二阶导数与一阶导数的能量，取结构最多的四分之一方块中第 90 百分位、四个方向中最低的一个，换算为 0–100。这一比值随模糊下降而与反差无关，雾天低反差的照片不会被当成模糊；取最低方向能发现单方向的运动模糊。
+
 ## 1.5.0 语音识别：SenseVoice-Small
 
-“自然语言输入”的语音由随包的 **SenseVoice-Small**（FunAudioLLM / 阿里巴巴通义实验室，`iic/SenseVoiceSmall`）离线识别，支持中文、英文与中英混说。文件取自 k2-fsa / sherpa-onnx 的 ONNX 导出（Hugging Face `csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`，固定版本 `2365baea`），未做修改：`model.int8.onnx`（239,233,841 字节，MatMul 权重 QUInt8 动态量化）与 `tokens.txt`（25,055 个 SentencePiece 词元）。校验值见 `assets/speech-assets.json`，许可为 FunASR 模型开源协议 1.1（`assets/SenseVoice-LICENSE.txt`，要求注明出处并保留模型名称）。
+1.8.0 起模型不再随包，第一次使用语音时下载（约 240 MB，`lumen/speech.py`）；2.0.0 起除 Hugging Face 与 hf-mirror.com 外，同样的文件也放在 LUMEN RAW 自己的 GitHub Release（`assets/speech-assets.json` 的 `releases`），上游仓库失效时仍可下载。
+
+“自然语言输入”的语音由 **SenseVoice-Small**（FunAudioLLM / 阿里巴巴通义实验室，`iic/SenseVoiceSmall`）离线识别，支持中文、英文与中英混说。文件取自 k2-fsa / sherpa-onnx 的 ONNX 导出（Hugging Face `csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17`，固定版本 `2365baea`），未做修改：`model.int8.onnx`（239,233,841 字节，MatMul 权重 QUInt8 动态量化）与 `tokens.txt`（25,055 个 SentencePiece 词元）。校验值见 `assets/speech-assets.json`，许可为 FunASR 模型开源协议 1.1（`assets/SenseVoice-LICENSE.txt`，要求注明出处并保留模型名称）。
 
 - **前端（`lumen/speech.py`，NumPy）：** 16 kHz 单声道、int16 幅度；Kaldi fbank：25 ms 帧长、10 ms 帧移、去直流、预加重 0.97、Hamming 窗、512 点 FFT 功率谱、20 Hz–8 kHz 共 80 个 Mel 三角滤波（1127·ln(1+f/700) 刻度，不含奈奎斯特频点）、取自然对数（下限 float32 eps），边缘截断。之后按模型元数据做 LFR（7 帧堆叠、步长 6，得到 560 维）和 CMVN（`neg_mean` / `inv_stddev`）。
 - **推理：** 输入 `x`、`x_length`、`language`（默认自动，可在设置中固定中文或英文）、`text_norm`（`with_itn`，输出带标点与阿拉伯数字）。输出前 4 帧为语言、情感、事件与规范化标记，其后 CTC 贪心解码，去掉空白与 `<|…|>` 标记。ONNX Runtime CPU 执行设备，4 线程。

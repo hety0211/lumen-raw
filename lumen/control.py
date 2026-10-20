@@ -165,6 +165,7 @@ class WindowContext(commands.Context):
     def __init__(self, window, bridge):
         self.window, self.bridge = window, bridge
         self.catalog = window.catalog
+        self.library_db = window.library_db
         self._backend = None
         self._sources = {}
 
@@ -279,7 +280,7 @@ class WindowContext(commands.Context):
         if shown is not None:
             return shown
         if path not in self._sources:
-            self._sources = {path: engine.load_image(path)}
+            self._sources = {path: self.window.previews.load(path)}     # 2.0.0: the preview cache
         return self._sources[path]
 
     def save_project(self, path, target):
@@ -311,6 +312,14 @@ class WindowContext(commands.Context):
 
     def presets_changed(self):
         self._gui(lambda: self.window.reload_presets())
+
+    def library_changed(self):
+        def run():
+            w = self.window
+            w.library_worker.want_index()
+            w.refresh_sources()
+            w.refresh_library_grid()
+        self._gui(run)
 
     def original(self, path):
         """Original-resolution pixels (fine masks, 1.7.0): the window's own decode for its photo."""

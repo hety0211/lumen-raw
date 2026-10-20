@@ -16,6 +16,7 @@ import copy
 import numpy as np
 from PySide6.QtCore import Qt,Signal,QPointF,QRectF
 from PySide6.QtGui import QPainter,QPainterPath,QPen,QColor
+from . import theme
 from PySide6.QtWidgets import QWidget
 from .curves import IDENTITY,tone
 from .i18n import tr
@@ -220,24 +221,24 @@ class ExposureCurve(QWidget):
 
     def paintEvent(self,event):
         painter=QPainter(self);painter.setRenderHint(QPainter.RenderHint.Antialiasing);a=self.area()
-        painter.fillRect(a,QColor('#161c17'))
+        painter.fillRect(a,theme.color('plot'))
         active=self.hover if self.hover is not None else (self.drag_state[2] if self.drag_state else None)
         if active is not None:
             # The tone range a drag here bends.
             band=QRectF(self.screen(max(0,active-2*WIDTH),1),self.screen(min(1,active+2*WIDTH),0))
-            painter.fillRect(band,QColor(124,150,104,34))
-        painter.setPen(QPen(QColor('#354033'),1))
+            painter.fillRect(band,theme.color('accent',34))
+        painter.setPen(QPen(theme.color('grid'),1))
         for i in range(5):
             t=i/4;painter.drawLine(self.screen(t,0),self.screen(t,1));painter.drawLine(self.screen(0,t),self.screen(1,t))
-        painter.setPen(QPen(QColor('#596552'),1,Qt.PenStyle.DashLine));painter.drawLine(a.bottomLeft(),a.topRight())
+        painter.setPen(QPen(theme.color('diagonal'),1,Qt.PenStyle.DashLine));painter.drawLine(a.bottomLeft(),a.topRight())
         axis=np.linspace(0,1,512);values=display(self.values,self.points,axis);path=QPainterPath(self.screen(0,float(values[0])))
         for x,y in zip(axis,values):path.lineTo(self.screen(x,y))
-        painter.setPen(QPen(QColor('#c6d9b5'),2));painter.drawPath(path)
+        painter.setPen(QPen(theme.color('accent'),2));painter.drawPath(path)
         if active is not None:
-            painter.setBrush(QColor('#202c1c'));painter.setPen(QPen(QColor('#e3f0d4'),1.5))
+            painter.setBrush(theme.color('panel'));painter.setPen(QPen(theme.color('head'),1.5))
             painter.drawEllipse(self.screen(active,float(display(self.values,self.points,active))),4,4)
         weights=membership(active) if active is not None else np.zeros(4)
         for i,text in enumerate(LABELS):
             rect=QRectF(a.left()+i*a.width()/4,a.bottom()+6,a.width()/4,22)
-            painter.setPen(QColor('#dcebcc') if weights[i]>=.2 else QColor('#94a68c'))
+            painter.setPen(theme.color('text') if weights[i]>=.2 else theme.color('dim'))
             painter.drawText(rect,Qt.AlignmentFlag.AlignCenter,text)

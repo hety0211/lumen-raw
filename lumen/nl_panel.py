@@ -16,7 +16,7 @@ from PySide6.QtCore import Qt, QObject, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QPlainTextEdit,
     QComboBox, QListWidget, QDialog, QFormLayout, QLineEdit, QCheckBox, QSpinBox, QDialogButtonBox,
-    QToolButton, QSizePolicy, QAbstractItemView, QProgressBar, QScrollArea, QFrame)
+    QToolButton, QSizePolicy, QAbstractItemView, QProgressBar, QScrollArea, QFrame, QMessageBox)
 from . import nl_edit, speech, engine, host
 from .scheduler import Activity as A
 from .widgets import AdjustSlider
@@ -36,6 +36,7 @@ EXAMPLES = [
 ]
 RECORD_LIMIT = 30
 VOICE = tr('语音')
+VOICE_TIP = tr('离线语音识别（中文 / English），说完停顿约 1 秒自动结束 · {v}', v=host.keys("Ctrl+Shift+Space"))
 
 
 class _Relay(QObject):
@@ -376,6 +377,7 @@ class NaturalLanguageMixin:
         self.nl_request = 0
         self.nl_busy = False
         self.nl_transcribing = False
+        self.nl_download = None  # threading.Event that cancels the speech-model download (1.8.0)
         self.nl_plan = None
         self.nl_applied = None
         self.nl_history = []
@@ -420,7 +422,7 @@ class NaturalLanguageMixin:
         v.addWidget(self.nl_examples)
         row = QHBoxLayout()
         self.nl_voice = QPushButton(VOICE)
-        self.nl_voice.setToolTip(tr('离线语音识别（中文 / English），说完停顿约 1 秒自动结束 · {v}', v=host.keys("Ctrl+Shift+Space")))
+        self.nl_voice.setToolTip(VOICE_TIP)
         self.nl_voice.clicked.connect(self.nl_toggle_voice)
         row.addWidget(self.nl_voice)
         self.nl_go = self.button(tr('一键修图'), self.nl_send, True)
@@ -433,8 +435,6 @@ class NaturalLanguageMixin:
         self.nl_meter.setRange(0, 100)
         self.nl_meter.setTextVisible(False)
         self.nl_meter.setFixedHeight(4)
-        self.nl_meter.setStyleSheet('QProgressBar { background: #171d18; border: 0; border-radius: 2px; }'
-                                    'QProgressBar::chunk { background: #b1c498; border-radius: 2px; }')
         self.nl_meter.hide()
         v.addWidget(self.nl_meter)
         self.nl_status = QLabel('')
@@ -501,9 +501,10 @@ class NaturalLanguageMixin:
             self.nl_show_result(None)
         ready = self.source is not None and not self.loading
         self.nl_go.setEnabled(ready or self.nl_busy)
-        self.nl_voice.setEnabled(speech.available() and (ready or self.nl_recorder.recording) and not self.nl_transcribing)
-        if not speech.available():
-            self.nl_voice.setToolTip(tr('未安装语音识别模型（assets/models/sensevoice）'))
+        downloading = self.nl_download is not None
+        self.nl_voice.setEnabled(downloading or ((ready or self.nl_recorder.recording) and not self.nl_transcribing))
+        self.nl_voice.setToolTip(VOICE_TIP if downloading or speech.available() else
+                                 tr('首次使用需下载离线语音识别模型（约 {size} MB）', size=speech.download_megabytes()))
         live = self.nl_plan is not None and self.edits == self.nl_applied
         self.nl_amount.setEnabled(live and not self.nl_busy)
         self.nl_revert.setEnabled(live and not self.nl_busy)
@@ -722,7 +723,13 @@ class NaturalLanguageMixin:
         if self.nl_recorder.recording:
             self.nl_recorder.stop()
             return
-        if self.source is None or self.nl_transcribing or not speech.available() or not self.nl_voice.isEnabled():
+        if self.nl_download is not None:
+            self.nl_download.set()
+            return
+        if self.source is None or self.nl_transcribing or not self.nl_voice.isEnabled():
+            return
+        if not speech.available():
+            self.nl_offer_speech_download()
             return
         if host.MACOS and not self.nl_microphone_permission():
             return
@@ -733,6 +740,54 @@ class NaturalLanguageMixin:
             self.nl_status.setText(tr('正在听…说完停顿一下即可'))
             # Load the recognizer while the user speaks.
             threading.Thread(target=lambda: self.nl_preload(), daemon=True).start()
+
+    def nl_offer_speech_download(self):
+        """1.8.0: the speech model is downloaded on first use (about 229 MB), after a question."""
+        answer = QMessageBox.question(self, tr('下载语音识别模型'), tr(
+            '语音输入使用离线识别模型 SenseVoice-Small，首次使用需要下载约 {size} MB。模型保存在本机，'
+            '之后识别不需要联网，录音也不会上传。\n\n现在下载吗？', size=speech.download_megabytes()))
+        if answer != QMessageBox.StandardButton.Yes:
+            return
+        cancel = threading.Event()
+        self.nl_download = cancel
+        self.nl_voice.setText(tr('取消下载'))
+        self.nl_meter.setRange(0, 1000)
+        self.nl_meter.setValue(0)
+        self.nl_meter.show()
+        self.nl_status.setText(tr('正在下载语音识别模型…'))
+        shown = [-1]
+
+        def progress(done, total):
+            permille = int(done * 1000 / max(total, 1))
+            if permille != shown[0]:
+                shown[0] = permille
+                try:
+                    self.nl_relay.done.emit(self.nl_download_progress, (done, total))
+                except RuntimeError:
+                    pass
+
+        def finished(result):
+            self.nl_download = None
+            self.nl_voice.setText(VOICE)
+            self.nl_meter.hide()
+            self.nl_meter.setRange(0, 100)
+            if isinstance(result, speech.Cancelled):
+                self.nl_status.setText(tr('已取消下载，下次会从中断处继续。'))
+            elif isinstance(result, Exception):
+                self.nl_status.setText(str(result))
+            else:
+                self.nl_status.setText(tr('语音识别模型已就绪，点“语音”开始说话。'))
+            self.refresh_natural_language()
+        run_async(self.nl_relay, lambda: speech.download(progress, cancel.is_set), finished, finished)
+        self.refresh_natural_language()
+
+    def nl_download_progress(self, value):
+        done, total = value
+        if self.nl_download is None:
+            return
+        self.nl_meter.setValue(int(done * 1000 / max(total, 1)))
+        self.nl_status.setText(tr('正在下载语音识别模型… {done} / {total} MB',
+                                  done=round(done / 1e6), total=round(total / 1e6)))
 
     def nl_preload(self):
         try:

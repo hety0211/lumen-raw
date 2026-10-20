@@ -27,6 +27,9 @@ TITLES = {
     'photo.export': N_('导出成片'), 'photo.export_batch': N_('批量导出'), 'project.save': N_('保存工程'),
     'preset.import': N_('导入预设或 LUT'),
     'mask.refine': N_('精细化 AI 蒙版边缘'),
+    'catalog.import': N_('导入文件夹到图库'), 'catalog.search': N_('在图库中查找照片'),
+    'library.keyword': N_('添加或移除关键词'), 'catalog.analyze': N_('分析清晰度、闭眼与连拍'),
+    'video.timelapse': N_('延时摄影视频'),
 }
 
 

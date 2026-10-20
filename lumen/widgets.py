@@ -4,10 +4,12 @@ import sys
 import numpy as np
 from .curves import evaluate
 from PySide6.QtCore import Qt, Signal, QEvent, QObject, QPointF, QRectF, QPoint, QRect, QSize, QTimer
-from PySide6.QtGui import QColor, QCursor, QImage, QPainter, QPen, QPainterPath, QConicalGradient, QRadialGradient
+from PySide6.QtGui import (QColor, QCursor, QIcon, QImage, QPainter, QPen, QPainterPath, QConicalGradient, QPixmap,
+                           QRadialGradient)
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSlider, QDoubleSpinBox, QLayout,
                                QToolButton, QButtonGroup, QAbstractSlider, QAbstractSpinBox, QComboBox, QScrollArea,
                                QScrollBar, QApplication, QCheckBox, QSpinBox)
+from . import theme
 from .i18n import tr, N_
 
 
@@ -86,6 +88,15 @@ class WheelGuard(QObject):
             return False                      # the page itself: the scroll area scrolls as usual
         QApplication.sendEvent(bar, event)    # a control under a resting pointer: scroll the page
         return True
+
+
+def photo_icon(image):
+    """A thumbnail icon (from a QImage) that stays unchanged when its item is selected: Qt tints
+    selected icons with the highlight colour, which would misrepresent the photo (1.8.0)."""
+    pixmap = QPixmap.fromImage(image)
+    icon = QIcon(pixmap)
+    icon.addPixmap(pixmap, QIcon.Mode.Selected)
+    return icon
 
 
 def qimage(rgb):
@@ -421,17 +432,17 @@ class Histogram(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor('#171b21'))
+        p.fillRect(self.rect(), theme.color('plot'))
         if self.hist is None:
-            p.setPen(QColor('#6d7684'))
+            p.setPen(theme.color('dim'))
             p.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter, tr('RGB 直方图'))
             return
         if self.hover is not None:
             key, label, start, end = self.hover
             p.fillRect(QRectF(start * self.width(), 0, (end - start) * self.width(), self.height()),
-                       QColor(255, 255, 255, 34 if self.drag else 20))
+                       theme.color('ink', 34 if self.drag else 20))
         peak = max(max(np.percentile(h, 99), 1) for h in self.hist)
-        for h, color in zip(self.hist, ['#ea7d88', '#8ed7ac', '#86adf3']):
+        for h, color in zip(self.hist, [theme.color(k) for k in ('hist_r', 'hist_g', 'hist_b')]):
             path = QPainterPath(QPointF(0, self.height()))
             for i, val in enumerate(h):
                 path.lineTo(i * self.width() / 255, self.height() - min(val / peak, 1) * (self.height() - 8))
@@ -440,7 +451,7 @@ class Histogram(QWidget):
             c = QColor(color)
             c.setAlpha(80)
             p.fillPath(path, c)
-            p.setPen(QPen(QColor(color), 1))
+            p.setPen(QPen(color, 1))
             p.drawPath(path)
         if self.hover is not None:
             key, label, _, _ = self.hover
@@ -449,9 +460,9 @@ class Histogram(QWidget):
             text = f'{tr(label)}  {number}'
             box = QRectF(4, 3, p.fontMetrics().horizontalAdvance(text) + 10, 18)
             p.setPen(Qt.PenStyle.NoPen)
-            p.setBrush(QColor(17, 20, 24, 200))
+            p.setBrush(theme.color('bubble'))
             p.drawRoundedRect(box, 4, 4)
-            p.setPen(QColor('#dfe6d8'))
+            p.setPen(theme.color('head'))
             p.drawText(box, Qt.AlignmentFlag.AlignCenter, text)
 
 
@@ -463,7 +474,7 @@ class CurveEditor(QWidget):
     def __init__(self):
         super().__init__()
         self.points = [[0., 0.], [1., 1.]]
-        self.color = '#b5c5ff'
+        self.channel = 'RGB'
         self.mode = 'smooth'
         self.current_x = 128
         self.drag = None
@@ -482,10 +493,14 @@ class CurveEditor(QWidget):
         return [float(np.clip((pos.x() - a.left()) / a.width(), 0, 1)),
                 float(np.clip((a.bottom() - pos.y()) / a.height(), 0, 1))]
 
+    @property
+    def color(self):
+        return theme.color({'RGB': 'accent', 'R': 'hist_r', 'G': 'hist_g', 'B': 'hist_b'}[self.channel])
+
     def set_points(self, points, channel='RGB', mode='smooth'):
         self.points = copy.deepcopy(points)
         self.mode = mode
-        self.color = {'RGB': '#b5c5ff', 'R': '#ef8693', 'G': '#8ed7ac', 'B': '#86adf3'}[channel]
+        self.channel = channel
         self.update()
 
     def hit(self, pos):
@@ -563,22 +578,22 @@ class CurveEditor(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         a = self.area()
-        p.fillRect(a, QColor('#161a20'))
-        p.setPen(QPen(QColor('#303640'), 1))
+        p.fillRect(a, theme.color('plot'))
+        p.setPen(QPen(theme.color('grid'), 1))
         for i in range(5):
             t = i / 4
             p.drawLine(QPointF(a.left() + t * a.width(), a.top()), QPointF(a.left() + t * a.width(), a.bottom()))
             p.drawLine(QPointF(a.left(), a.top() + t * a.height()), QPointF(a.right(), a.top() + t * a.height()))
-        p.setPen(QPen(QColor('#566070'), 1, Qt.PenStyle.DashLine))
+        p.setPen(QPen(theme.color('diagonal'), 1, Qt.PenStyle.DashLine))
         p.drawLine(a.bottomLeft(), a.topRight())
         path = QPainterPath(self.screen(self.points[0]))
         axis = np.linspace(0, 1, 512)
         for point in zip(axis, evaluate(self.points, axis, self.mode)):
             path.lineTo(self.screen(point))
-        p.setPen(QPen(QColor(self.color), 2))
+        p.setPen(QPen(self.color, 2))
         p.drawPath(path)
         for point in self.points:
-            p.setBrush(QColor('#1c2028'))
+            p.setBrush(theme.color('panel'))
             p.drawEllipse(self.screen(point), 4, 4)
 
 
@@ -870,22 +885,22 @@ class Canvas(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        p.fillRect(self.rect(), QColor('#101214'))
+        p.fillRect(self.rect(), theme.color('canvas'))
         if self.image is None:
             box = QRectF(self.width() / 2 - 195, self.height() / 2 - 100, 390, 200)
-            p.setPen(QPen(QColor('#394250'), 1, Qt.PenStyle.DashLine))
-            p.setBrush(QColor('#171b23'))
+            p.setPen(QPen(theme.color('border_hi'), 1, Qt.PenStyle.DashLine))
+            p.setBrush(theme.color('card'))
             p.drawRoundedRect(box, 14, 14)
-            p.setPen(QColor('#c3cdf5'))
+            p.setPen(theme.color('accent'))
             font = p.font()
             font.setPixelSize(25)
             p.setFont(font)
             p.drawText(box.adjusted(0, 26, 0, -95), Qt.AlignmentFlag.AlignCenter, tr('每一束光，都有余地'))
             font.setPixelSize(14)
             p.setFont(font)
-            p.setPen(QColor('#c1c8d4'))
+            p.setPen(theme.color('text'))
             p.drawText(box.adjusted(0, 82, 0, -45), Qt.AlignmentFlag.AlignCenter, tr('点击打开，或将原片拖到这里'))
-            p.setPen(QColor('#778292'))
+            p.setPen(theme.color('dim'))
             p.drawText(box.adjusted(0, 132, 0, -16), Qt.AlignmentFlag.AlignCenter, 'SONY / CANON / NIKON / FUJIFILM / PANASONIC')
             return
         r = self.image_rect()
@@ -1027,12 +1042,12 @@ class ColorWheel(QWidget):
         gradient = QConicalGradient(center, 0)
         for i in range(7):
             gradient.setColorAt(i / 6, QColor.fromHsvF((i / 6) % 1, .72, .76))
-        p.setPen(QPen(QColor('#464d47' if not self.active else '#c6d2b7'), 2 if self.active else 1))
+        p.setPen(QPen(theme.color('accent' if self.active else 'border_hi'), 2 if self.active else 1))
         p.setBrush(gradient)
         p.drawEllipse(center, radius, radius)
         radial = QRadialGradient(center, radius)
-        radial.setColorAt(0, QColor('#9eaaa3'))
-        radial.setColorAt(1, QColor(158, 170, 163, 0))
+        radial.setColorAt(0, theme.color('dim'))
+        radial.setColorAt(1, theme.color('dim', 0))
         p.setBrush(radial)
         p.setPen(Qt.PenStyle.NoPen)
         p.drawEllipse(center, radius, radius)
@@ -1043,5 +1058,5 @@ class ColorWheel(QWidget):
         p.drawEllipse(marker, 4, 4)
         p.setPen(QPen(QColor('#f2f3ec'), 1.5))
         p.drawEllipse(marker, 4, 4)
-        p.setPen(QColor('#d3d9ce' if self.active else '#8b948d'))
+        p.setPen(theme.color('text' if self.active else 'dim'))
         p.drawText(QRectF(0, self.height() - 27, self.width(), 20), Qt.AlignmentFlag.AlignCenter, self.title)

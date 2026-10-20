@@ -84,11 +84,12 @@ def check_smoke(report_path):
         raise SystemExit(f'Pixel development did not run on Metal: {backend}')
     if 'CPUExecutionProvider' in enhance and os.environ.get('LUMEN_ALLOW_CPU_AI') != '1':
         raise SystemExit(f'AI preview fell back to the CPU: {enhance}')
-    # 1.5.0: speech model, Qt Multimedia and one natural-language edit (diagnostics.natural_language).
+    # 1.5.0: Qt Multimedia and one natural-language edit (diagnostics.natural_language); since 1.8.0
+    # the speech model is downloaded on first use, so the package must not contain it.
     language = report.get('natural_language') or {}
     print(f'natural language: {language}')
-    if language.get('speech_model') != 'model.int8.onnx':
-        raise SystemExit('The natural-language smoke test did not run with the packaged speech model')
+    if not language.get('speech_download_mb'):
+        raise SystemExit('The natural-language smoke test did not report the speech-model download')
 
 
 def sha256(path):
@@ -145,6 +146,8 @@ def verify_dmg(output, app_name, sample):
             if code:
                 raise SystemExit(f'smoke test from the mounted DMG failed ({code}); see {smoke}/report.json')
             check_smoke(smoke / 'report.json')
+            if list(app.rglob('model.int8.onnx')):
+                raise SystemExit('The speech model must not be packaged (it is downloaded on first use)')
             result['mounted_smoke_test'] = 'passed'
             shutil.rmtree(smoke, ignore_errors=True)
         return result

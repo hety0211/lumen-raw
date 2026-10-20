@@ -61,6 +61,8 @@ class Context:
     """What commands act on.  ``path=None`` always means the current photo."""
     mode = 'headless'
     catalog: catalog.Catalog
+    #: 2.0.0: the photo library catalog (``library_db.LibraryDB``).
+    library_db = None
 
     def photos(self): raise NotImplementedError
     def current(self): raise NotImplementedError
@@ -81,6 +83,9 @@ class Context:
 
     def presets_changed(self):
         """The preset library changed (1.7.0): the window reloads its list."""
+
+    def library_changed(self):
+        """The library catalog changed (2.0.0): the window shows it."""
 
 
 # --------------------------------------------------------------------------- arguments
@@ -227,13 +232,27 @@ def library_list(context, query='', limit=500):
     except ValueError as exc:
         raise CommandError(str(exc))
     current, selected = context.current(), set(context.selected())
+    plain = ('rating', 'flag', 'label', 'name', 'ext', 'folder', 'edited')
+    records = _records(context, context.photos()) if any(t[1] not in plain for t in terms) else {}
     photos = []
     for path in context.photos():
         meta = context.catalog.get(path)
         edited = any(t[1] == 'edited' for t in terms) and context.edits(path) != _fresh(context.edits(path))
-        if catalog.matches(terms, path, meta, edited):
+        if catalog.matches(terms, path, meta, edited, records.get(path)):
             photos.append(dict(_meta(context, path), current=path == current, selected=path in selected))
     return dict(count=len(photos), photos=photos[:limit])
+
+
+def _records(context, paths):
+    """Library catalog rows (2.0.0 fields) of ``paths`` by path, with bursts and hints."""
+    from . import library_db
+    try:
+        rows = context.library_db.rows(('paths', paths))
+    except Exception:
+        return {}
+    library_db.annotate_bursts(rows)
+    library_db.annotate_hints(rows)
+    return {row['path']: row for row in rows}
 
 
 @command('library.add', 'Import photos (RAW, JPEG, PNG, TIFF) or every supported photo of a folder.',
@@ -326,6 +345,144 @@ def library_import_lightroom(context, catalog=None, add=False):
     found = [p for p in values if Path(p).is_file()]
     added = context.add(found[:max(0, 2000 - len(context.photos()))]) if add else []
     return dict(imported=len(values), found=len(found), added=len(added))
+
+
+# --------------------------------------------------------------------------- the library catalog (2.0.0)
+
+def _catalog_photo(row):
+    result = dict(path=row['path'], name=row['name'], captured=row.get('captured') or None,
+                  camera=' '.join(x for x in (row.get('make'), row.get('model')) if x) or None, lens=row.get('lens') or None,
+                  iso=row.get('iso'), aperture=row.get('aperture'), shutter=row.get('shutter'), focal=row.get('focal'),
+                  rating=row.get('rating', 0), flag=row.get('flag') or 'none', label=row.get('label') or 'none',
+                  keywords=row.get('keywords') or [], missing=bool(row.get('missing')))
+    if row.get('analysis'):
+        result.update(sharpness=None if row.get('sharpness') is None else round(row['sharpness'], 1), faces=row.get('faces'),
+                      eyes_closed=row.get('eyes_closed'), blurry=bool(row.get('blurry')))
+    if row.get('burst'):
+        result['burst'] = dict(group=row['burst'], index=row['burst_index'], size=row['burst_size'], best=bool(row.get('best')))
+    return result
+
+
+def _catalog_source(context, folder=None, keyword=None):
+    from . import library_db
+    db = context.library_db
+    if folder:
+        wanted = library_db.key(folder)
+        match = next((f for f in db.folders() if f['key'] == wanted), None)
+        if match is None:
+            raise CommandError(f'folder not in the library (import_folder first): {folder}')
+        return ('folder', match['id'], True)
+    if keyword:
+        match = next((k for k in db.keywords() if k['name'].lower() == str(keyword).lower()), None)
+        if match is None:
+            return ('ids', [])
+        return ('keyword', match['id'])
+    return ('all',)
+
+
+@command('catalog.search', 'Photos of the library catalog (every imported folder) with capture data, keywords, ratings, '
+         'culling hints and burst groups, optionally filtered.',
+         dict(query=dict(type='string', description='Filter, as library.list plus keyword (any/none/name), camera, lens, iso, f, '
+                                                    'focal, date (2026-10 or date>=2026-10-01), faces, eyes:closed, sharpness '
+                                                    '(0-100), burst / burst:best and the words blurry, best, missing.'),
+              folder=dict(type='string', description='Only this folder and its sub-folders.'),
+              keyword=dict(type='string', description='Only photos with this keyword.'),
+              sort=dict(type='string', enum=['captured', 'name', 'rating', 'added']),
+              limit=dict(type='integer', minimum=1, maximum=5000, description='Default 200.')),
+         read_only=True, tool='search_library')
+def catalog_search(context, query='', folder=None, keyword=None, sort='captured', limit=200):
+    try:
+        rows = context.library_db.search(context.catalog, query, _catalog_source(context, folder, keyword), sort=sort)
+    except ValueError as exc:
+        raise CommandError(str(exc))
+    return dict(count=len(rows), photos=[_catalog_photo(r) for r in rows[:limit]])
+
+
+@command('catalog.import', 'Add folders (with their sub-folders) or photos to the library catalog and read their capture '
+         'data, ratings and keywords from EXIF / XMP.',
+         dict(paths=dict(type='array', items=dict(type='string'), description='Folders or photo files.'),
+              recursive=dict(type='boolean', description='Also sub-folders (default true).')),
+         required=('paths',), tool='import_folder')
+def catalog_import(context, paths, recursive=True):
+    from . import library_db
+    db = context.library_db
+    added = 0
+    for name in paths:
+        p = Path(name).expanduser()
+        if p.is_dir():
+            added += len(db.import_folder(str(p.resolve()), recursive)[0])
+        elif p.is_file() and p.suffix.lower() in library_db.extensions():
+            added += len(db.add([str(p.resolve())])[0])
+        else:
+            raise CommandError(f'not a supported photo or folder: {name}')
+    db.index_all(context.catalog)
+    context.library_changed()
+    return dict(added=added, photos=db.count())
+
+
+@command('library.keyword', 'Add or remove keywords of photos (kept in the library catalog; written to XMP sidecars when '
+         'the editor writes ratings there).',
+         dict(add=dict(type='array', items=dict(type='string')), remove=dict(type='array', items=dict(type='string')),
+              paths=PATHS), tool='tag_photos')
+def library_keyword(context, add=None, remove=None, paths=None):
+    from . import library_db
+    if not add and not remove:
+        raise CommandError('give keywords to add or remove')
+    targets = _targets(context, paths)
+    db = context.library_db
+    db.add([p for p in targets if Path(p).is_file()])
+    ids = db.ids_of(targets)
+    if add:
+        db.add_keywords(ids, library_db.clean_keywords(add))
+    if remove:
+        db.remove_keywords(ids, library_db.clean_keywords(remove))
+    rows = db.rows(('ids', ids))
+    if context.catalog.write_xmp_on_change:
+        library_db.write_keywords_xmp({r['path']: r['keywords'] for r in rows})
+    context.library_changed()
+    return dict(photos=[dict(path=r['path'], keywords=r['keywords']) for r in rows])
+
+
+@command('catalog.analyze', 'Culling hints: sharpness (0-100), faces and closed eyes per photo, and burst groups with the '
+         'best frame of each (eyes open, then sharpest).  Computed from the camera previews; photos analysed before '
+         'are not computed again.',
+         dict(paths=PATHS, query=dict(type='string', description='Or the library photos matching this filter (catalog.search).'),
+              limit=dict(type='integer', minimum=1, maximum=2000, description='Default 300.')),
+         tool='analyze_photos')
+def catalog_analyze(context, paths=None, query=None, limit=300):
+    from . import culling, library_db, preview_cache
+    db = context.library_db
+    if query is not None:
+        try:
+            targets = [r['path'] for r in db.search(context.catalog, query)][:limit]
+        except ValueError as exc:
+            raise CommandError(str(exc))
+    else:
+        targets = _targets(context, paths)[:limit]
+        db.add([p for p in targets if Path(p).is_file()])
+        db.index_all(context.catalog)
+    cache = getattr(getattr(context, 'window', None), 'previews', None) or preview_cache.default()
+    for row in db.unanalysed(db.ids_of(targets)):
+        try:
+            result = culling.analyse(cache.view(row['path']))
+        except Exception as exc:
+            result = {}
+            context.notify(f'{Path(row["path"]).name}: {exc}')
+        db.set_analysis(row['id'], result)
+    rows = db.rows(('paths', targets))
+    library_db.annotate_bursts(rows)
+    library_db.annotate_hints(rows)
+    for row in rows:
+        row.update(context.catalog.get(row['path']))
+    bursts = {}
+    for row in rows:
+        if row.get('burst'):
+            group = bursts.setdefault(row['burst'], dict(group=row['burst'], photos=[], best=None))
+            group['photos'].append(row['path'])
+            if row.get('best'):
+                group['best'] = row['path']
+    context.library_changed()
+    return dict(count=len(rows), photos=[_catalog_photo(r) for r in rows], bursts=list(bursts.values()))
 
 
 # --------------------------------------------------------------------------- photos and edits
@@ -725,6 +882,64 @@ def photo_export_batch(context, folder, paths=None, query=None, format='jpg', qu
                                context.backend(), lambda *_: None, _Never())
     return dict(exported=[dict(path=p, output=t, **_notes(e)) for p, t, e in results if t],
                 failed=[dict(path=p, error=e) for p, t, e in results if not t])
+
+
+@command('video.timelapse', 'Make a time-lapse video of photos in capture order (interval shots).  Keyframes carry their '
+         'edits; the photos between two keyframes blend smoothly between them (exposure, white balance, colour, crop).',
+         dict(output=dict(type='string', description='Video file (.mp4, or .mov for ProRes).'),
+              paths=PATHS, query=dict(type='string', description='Library catalog filter instead of paths (catalog.search).'),
+              keyframes=dict(type='array', items=dict(type='string'),
+                             description='Photos whose edits are keyframes; default: first, last and every edited photo.'),
+              format=dict(type='string', enum=['h264', 'hevc', 'av1', 'prores']),
+              resolution=dict(type='string', enum=['original', '4k', '2k', 'fhd']),
+              aspect=dict(type='string', enum=['original', '16:9', '4:3', '1:1', '9:16']),
+              fps=dict(type='integer', enum=[24, 25, 30, 50, 60]),
+              frames_per_photo=dict(type='integer', minimum=1, maximum=10),
+              max_mbps=dict(type='integer', minimum=2, maximum=800, description='Maximum bit rate; default by size.'),
+              ten_bit=dict(type='boolean'), hardware=dict(type='boolean', description='Graphics card encoder first (default).'),
+              deflicker=dict(type='string', enum=['off', 'light', 'medium', 'strong'])),
+         required=('output',), tool='make_timelapse')
+def video_timelapse(context, output, paths=None, query=None, keyframes=None, format='h264', resolution='4k',
+                    aspect='original', fps=30, frames_per_photo=1, max_mbps=None, ten_bit=False, hardware=True,
+                    deflicker='light'):
+    from . import timelapse
+    target = Path(output).expanduser().resolve()
+    if not target.parent.is_dir():
+        raise CommandError(f'folder not found: {target.parent}')
+    if target.suffix.lower() != timelapse.FORMATS[format]['suffix']:
+        raise CommandError(f'{format} is written as {timelapse.FORMATS[format]["suffix"]}')
+    if query is not None:
+        try:
+            targets = [r['path'] for r in context.library_db.search(context.catalog, query)]
+        except ValueError as exc:
+            raise CommandError(str(exc))
+    else:
+        targets = _targets(context, paths)
+    targets = [p for p in targets if Path(p).is_file()]
+    if len(targets) < 2:
+        raise CommandError('a time-lapse needs at least 2 photos')
+    context.library_db.add(targets)
+    records = {r['path']: r for r in context.library_db.rows(('paths', targets))}
+    ordered = timelapse.ordered(targets, records)
+    known = set(context.photos())
+    frames = []
+    for path in ordered:
+        edits = context.edits(path) if path in known else None
+        frames.append(dict(path=path, edits=edits, initialized=bool(edits) and context.initialized(path),
+                           edited=bool(edits) and edits != _fresh(edits)))
+    marks = None
+    if keyframes:
+        wanted = {_resolve(p) for p in keyframes}
+        marks = [i for i, frame in enumerate(frames) if frame['path'] in wanted]
+        if not marks:
+            raise CommandError('none of the keyframes is in the sequence')
+    context.notify(f'time-lapse of {len(frames)} photos')
+    result = timelapse.run(frames, dict(output=str(target), format=format, resolution=resolution, aspect=aspect, fps=fps,
+                                        repeat=frames_per_photo, mbps=max_mbps, ten_bit=ten_bit, hardware=hardware,
+                                        deflicker=deflicker, keyframes=marks), context.backend())
+    result['keyframes'] = [frames[i]['path'] for i in result['keyframes']]
+    result['bytes'] = Path(result['output']).stat().st_size
+    return result
 
 
 @command('project.save', 'Save a photo\'s edits as a .lumen project (default: next to the photo).',
