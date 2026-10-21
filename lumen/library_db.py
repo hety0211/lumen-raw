@@ -31,7 +31,7 @@ from .i18n import N_
 
 log = logging.getLogger(__name__)
 
-SCHEMA = 1
+SCHEMA = 2
 #: Supported photo files (as ``commands.SUPPORTED``).
 EXTENSIONS = None
 #: Version of the culling analysis stored with each photo; older results are computed again.
@@ -41,6 +41,10 @@ SKIP_FOLDERS = {'$recycle.bin', 'system volume information', '.lumen-cache', '__
                 '.spotlight-v100', '.fseventsd', '@eadir'}
 #: Photos in one batch of the ExifTool index.
 INDEX_BATCH = 64
+#: Reads of a photo's capture data before it counts as failed (``indexed=-1``) …
+INDEX_RETRIES = 3
+#: … waiting this many seconds times the attempts so far between them.
+INDEX_BACKOFF = 60.
 #: Most photos one import adds.
 IMPORT_LIMIT = 100000
 #: Burst grouping: at most this many seconds between frames of the same camera …
@@ -57,7 +61,10 @@ BUILTIN = (('picked', N_('已留用'), 'flag:pick'), ('stars3', N_('★ 3 以上
 COLUMNS = ('id', 'path', 'folder_id', 'name', 'ext', 'size', 'mtime', 'added', 'indexed', 'captured', 'captured_ts',
            'make', 'model', 'lens', 'iso', 'aperture', 'shutter', 'focal', 'width', 'height', 'orientation',
            'gps_lat', 'gps_lon', 'serial', 'analysis', 'sharpness', 'faces', 'eyes_closed', 'signature', 'face_data',
-           'missing')
+           'missing', 'index_attempts', 'index_after', 'index_error', 'sidecar_mtime')
+#: Columns added by schema 2 (2.0.1) to libraries made by 2.0.0.
+ADDED_COLUMNS = (('index_attempts', 'INTEGER NOT NULL DEFAULT 0'), ('index_after', 'REAL NOT NULL DEFAULT 0'),
+                 ('index_error', 'TEXT'), ('sidecar_mtime', 'REAL'))
 
 
 def extensions():
@@ -81,6 +88,19 @@ def default_path():
 
 def key(path):
     return os.path.normcase(str(Path(path).resolve()))
+
+
+def sidecar_mtime(path):
+    """Modification time of the photo's XMP sidecar (``name.xmp`` or ``name.ext.xmp``), or None."""
+    found = catalog._sidecars(path)
+    try:
+        return found[0].stat().st_mtime if found else None
+    except OSError:
+        return None
+
+
+def _same_time(a, b):
+    return (a is None) == (b is None) and (a is None or abs(a - b) < 1e-3)
 
 
 def capture_time(tags):
@@ -140,10 +160,21 @@ def fields_from_tags(tags):
                 serial=str(tags.get('SerialNumber') or '')[:40])
 
 
+def _read_error(tags):
+    """Why ExifTool's answer for one file is not usable, or None.  No record at all means the
+    file was not read; a record with only an ``Error`` (unknown or damaged file) is a failure
+    too, while a photo that simply has little metadata is fine."""
+    if tags is None:
+        return 'ExifTool returned no data for this file'
+    if tags.get('Error') and not any(k in tags for k in ('ImageSize', 'Make', 'Model', 'DateTimeOriginal', 'CreateDate')):
+        return str(tags['Error'])
+    return None
+
+
 TAGS = ('-Make', '-Model', '-LensModel', '-Lens', '-LensID', '-DateTimeOriginal', '-SubSecDateTimeOriginal', '-CreateDate',
         '-ISO#', '-FNumber#', '-ExposureTime#', '-FocalLength#', '-Orientation#', '-Composite:GPSLatitude#',
         '-Composite:GPSLongitude#', '-ImageSize#', '-SerialNumber', '-XMP-xmp:Rating#', '-XMP-xmp:Label',
-        '-XMP-dc:Subject', '-IPTC:Keywords')
+        '-XMP-dc:Subject', '-IPTC:Keywords', '-Error')
 
 
 def read_tags(paths):
@@ -251,7 +282,9 @@ class LibraryDB:
                 make TEXT, model TEXT, lens TEXT, iso REAL, aperture REAL, shutter REAL, focal REAL,
                 width INTEGER, height INTEGER, orientation INTEGER, gps_lat REAL, gps_lon REAL, serial TEXT,
                 analysis INTEGER NOT NULL DEFAULT 0, sharpness REAL, faces INTEGER, eyes_closed INTEGER,
-                signature BLOB, face_data TEXT, missing INTEGER NOT NULL DEFAULT 0);
+                signature BLOB, face_data TEXT, missing INTEGER NOT NULL DEFAULT 0,
+                index_attempts INTEGER NOT NULL DEFAULT 0, index_after REAL NOT NULL DEFAULT 0, index_error TEXT,
+                sidecar_mtime REAL);
             CREATE INDEX IF NOT EXISTS photos_folder ON photos(folder_id);
             CREATE INDEX IF NOT EXISTS photos_captured ON photos(captured_ts);
             CREATE TABLE IF NOT EXISTS keywords(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE);
@@ -262,6 +295,21 @@ class LibraryDB:
                 created REAL, position INTEGER NOT NULL DEFAULT 0);
         ''')
         db.execute('INSERT OR IGNORE INTO meta(key, value) VALUES (?, ?)', ('schema', str(SCHEMA)))
+        columns = {row[1] for row in db.execute('PRAGMA table_info(photos)')}
+        for name, kind in ADDED_COLUMNS:
+            if name not in columns:
+                try:
+                    db.execute(f'ALTER TABLE photos ADD COLUMN {name} {kind}')
+                except sqlite3.OperationalError as exc:      # added by another process just now
+                    if 'duplicate column' not in str(exc).lower():
+                        raise
+        version = db.execute("SELECT value FROM meta WHERE key='schema'").fetchone()
+        if int(version[0] if version else 1) < 2:
+            # 2.0.0 marked photos as read even when ExifTool failed or the file was missing at the
+            # time: read again the photos that came out without any capture data.
+            db.execute('UPDATE photos SET indexed=0 WHERE indexed=1 AND (missing=1 OR (width IS NULL AND make IS NULL '
+                       'AND captured IS NULL))')
+            db.execute("UPDATE meta SET value=? WHERE key='schema'", (str(SCHEMA),))
 
     def _changed(self, kind, ids=()):
         for listener in list(self.listeners):
@@ -307,9 +355,14 @@ class LibraryDB:
             stack.extend(reversed(folders))
         return found[:limit]
 
-    def add(self, paths, roots=()):
-        """Add photos (and mark ``roots`` as imported folders); returns ``(added ids, all ids)``."""
-        added, ids = [], []
+    def add(self, paths, roots=(), refreshed=None):
+        """Add photos (and mark ``roots`` as imported folders); returns ``(added ids, all ids)``.
+
+        Photos already in the library are checked against the disk: one that came back is no
+        longer missing, one changed by another program (size or time) is read and analysed
+        again, one whose XMP sidecar changed is read again (keywords), and one whose capture data
+        could not be read is tried again.  Their ids go into ``refreshed`` (a list) when given."""
+        added, ids, changed = [], [], []
         now = time.time()
         with self._lock:
             db = self._db()
@@ -321,11 +374,15 @@ class LibraryDB:
                 for path in paths:
                     resolved = Path(path).resolve()
                     name = key(resolved)
-                    row = db.execute('SELECT id, missing FROM photos WHERE key=?', (name,)).fetchone()
+                    row = db.execute('SELECT id, missing, size, mtime, indexed, sidecar_mtime FROM photos WHERE key=?',
+                                     (name,)).fetchone()
                     if row is not None:
                         ids.append(row['id'])
-                        if row['missing']:
-                            db.execute('UPDATE photos SET missing=0 WHERE id=?', (row['id'],))
+                        updates = self._refresh(row, resolved)
+                        if updates:
+                            db.execute(f'UPDATE photos SET {", ".join(f"{k}=?" for k in updates)} WHERE id=?',
+                                       (*updates.values(), row['id']))
+                            changed.append(row['id'])
                         continue
                     try:
                         status = resolved.stat()
@@ -344,20 +401,52 @@ class LibraryDB:
             except BaseException:
                 db.execute('ROLLBACK')
                 raise
-        if added or roots:
-            self._changed('photos', added)
+        if refreshed is not None:
+            refreshed.extend(changed)
+        if added or roots or changed:
+            self._changed('photos', added + changed)
         return added, ids
+
+    @staticmethod
+    def _refresh(row, path):
+        """Column updates for a photo already in the library, from its file and sidecar now."""
+        try:
+            status = path.stat()
+        except OSError:
+            return {}
+        updates = {}
+        if row['missing']:
+            updates['missing'] = 0
+        again = dict(indexed=0, index_attempts=0, index_after=0, index_error=None)
+        if status.st_size != row['size'] or not _same_time(status.st_mtime, row['mtime']):
+            updates.update(size=status.st_size, mtime=status.st_mtime, analysis=0, **again)
+        elif row['indexed'] == -1 or (row['indexed'] == 1 and not _same_time(sidecar_mtime(path), row['sidecar_mtime'])):
+            updates.update(again)
+        return updates
+
+    def reindex(self, ids):
+        """Read the capture data of these photos again (failed ones included)."""
+        ids = list(ids)
+        with self._lock:
+            db = self._db()
+            for start in range(0, len(ids), 500):
+                chunk = ids[start:start + 500]
+                db.execute(f'UPDATE photos SET indexed=0, index_attempts=0, index_after=0, index_error=NULL '
+                           f'WHERE id IN ({",".join("?" * len(chunk))})', chunk)
+        self._changed('photos', ids)
 
     def import_folder(self, folder, recursive=True):
         """Add every supported photo of ``folder``; returns ``(added ids, all ids)``."""
         return self.add(self.scan(folder, recursive), roots=[folder])
 
     def rescan(self, folder_id, recursive=True):
-        """Add new files of a folder and mark files that are gone as missing; ``(added, missing)``."""
+        """Add new files of a folder, mark files that are gone as missing and read changed ones
+        again; ``(added, missing, refreshed)`` ids."""
         folder = self.folder(folder_id)
         if folder is None:
-            return [], []
-        added, ids = self.add(self.scan(folder['path'], recursive)) if Path(folder['path']).is_dir() else ([], [])
+            return [], [], []
+        refreshed = []
+        added, ids = self.add(self.scan(folder['path'], recursive), refreshed=refreshed) if Path(folder['path']).is_dir()             else ([], [])
         missing = []
         for row in self.rows(('folder', folder_id, recursive)):
             gone = not Path(row['path']).is_file()
@@ -366,7 +455,7 @@ class LibraryDB:
             if gone:
                 missing.append(row['id'])
         self._changed('photos', added + missing)
-        return added, missing
+        return added, missing, refreshed
 
     def remove(self, ids):
         """Forget photos (files on disk are not touched)."""
@@ -485,33 +574,56 @@ class LibraryDB:
 
     # -- EXIF index
 
-    def unindexed(self, limit=INDEX_BATCH):
-        return [dict(r) for r in self._db().execute('SELECT id, path FROM photos WHERE indexed=0 AND missing=0 '
-                                                     'ORDER BY id LIMIT ?', (limit,)).fetchall()]
+    def unindexed(self, limit=INDEX_BATCH, now=None):
+        """Photos whose capture data is still to be read: not missing, and a photo whose last
+        read failed only once its pause (``INDEX_BACKOFF`` × attempts) is over."""
+        now = time.time() if now is None else now
+        return [dict(r) for r in self._db().execute(
+            'SELECT id, path FROM photos WHERE indexed=0 AND missing=0 AND index_after<=? '
+            'ORDER BY index_attempts, id LIMIT ?', (now, limit)).fetchall()]
 
     def index(self, rows, ratings=None):
         """Read capture data, XMP ratings and keywords of ``rows`` (``[{id, path}]``) with
         ExifTool.  Ratings found in XMP fill photos ``ratings`` (a ``catalog.Catalog``) does not
-        know yet.  Returns the ids indexed."""
+        know yet.  Returns the ids indexed.
+
+        A photo ExifTool could not read (it failed, timed out, or gave no data or an error for
+        that file) keeps ``indexed=0`` with the reason and is tried again after a pause; after
+        ``INDEX_RETRIES`` attempts it is ``indexed=-1`` until it changes, is rescanned or
+        ``reindex`` asks again.  A photo that is gone is marked missing and read when it is back."""
         if not rows:
             return []
         try:
             tags = read_tags([r['path'] for r in rows])
-        except Exception:
+            failure = None
+        except Exception as exc:
             log.warning('ExifTool index failed', exc_info=True)
-            tags = {}
+            tags, failure = {}, f'{type(exc).__name__}: {exc}'
         imported = {}
-        done = []
+        done, touched = [], []
+        now = time.time()
         with self._lock:
             db = self._db()
             db.execute('BEGIN IMMEDIATE')
             try:
                 for row in rows:
-                    found = tags.get(str(Path(row['path']).resolve()), {})
+                    path = Path(row['path'])
+                    touched.append(row['id'])
+                    if not path.is_file():
+                        db.execute('UPDATE photos SET missing=1 WHERE id=?', (row['id'],))
+                        continue
+                    found = tags.get(str(path.resolve()))
+                    error = failure or _read_error(found)
+                    if error:
+                        db.execute('UPDATE photos SET index_attempts=index_attempts+1, '
+                                   'indexed=CASE WHEN index_attempts+1>=? THEN -1 ELSE 0 END, '
+                                   'index_after=?+?*(index_attempts+1), index_error=? WHERE id=?',
+                                   (INDEX_RETRIES, now, INDEX_BACKOFF, error[:300], row['id']))
+                        continue
                     fields = fields_from_tags(found)
-                    missing = 0 if Path(row['path']).is_file() else 1
-                    db.execute(f'UPDATE photos SET indexed=1, missing=?, {", ".join(f"{k}=?" for k in fields)} WHERE id=?',
-                               (missing, *fields.values(), row['id']))
+                    db.execute(f'UPDATE photos SET indexed=1, missing=0, index_attempts=0, index_after=0, index_error=NULL, '
+                               f'sidecar_mtime=?, {", ".join(f"{k}=?" for k in fields)} WHERE id=?',
+                               (sidecar_mtime(path), *fields.values(), row['id']))
                     words = _keywords(found)
                     if words:
                         self._add_keywords(db, [row['id']], words)
@@ -528,7 +640,7 @@ class LibraryDB:
                 ratings.merge(imported)
             except Exception:
                 log.warning('XMP ratings not merged', exc_info=True)
-        self._changed('indexed', done)
+        self._changed('indexed', touched)
         return done
 
     def index_all(self, ratings=None, cancelled=lambda: False):
@@ -664,13 +776,26 @@ class LibraryDB:
         rows = self.rows(source)
         annotate_bursts(rows)
         annotate_hints(rows)
+        # 2.0.1: ratings by the stored catalog key (resolving every path cost seconds for a large
+        # library), and the edited check only when the query asks for it.
+        metas = ratings.get_keys([row['key'] for row in rows]) if ratings is not None else None
+        wants_edited = edited is not None and any(field == 'edited' for _, field, _, _ in terms)
         result = []
-        for row in rows:
-            meta = ratings.get(row['path']) if ratings is not None else catalog.empty()
+        for i, row in enumerate(rows):
+            meta = metas[i] if metas is not None else catalog.empty()
             row.update(meta)
-            if catalog.matches(terms, row['path'], meta, edited(row['path']) if edited else False, row):
+            if catalog.matches(terms, row['path'], meta, edited(row['path']) if wants_edited else False, row):
                 result.append(row)
         return sort_rows(result, sort)
+
+
+def with_ratings(rows, ratings):
+    """Put rating, flag and label from ``ratings`` (a ``catalog.Catalog``) into ``rows``, by the
+    stored catalog key: no path resolving, so thousands of rows take milliseconds (2.0.1)."""
+    keys = [row.get('key') or catalog.key(row['path']) for row in rows]
+    for row, meta in zip(rows, ratings.get_keys(keys)):
+        row.update(meta)
+    return rows
 
 
 def clean_keywords(names):
@@ -776,33 +901,19 @@ def annotate_hints(rows):
 
 
 def write_keywords_xmp(entries):
-    """Write ``{photo: [keywords]}`` into XMP sidecars (dc:subject, as Lightroom); photos are never
-    modified.  Returns ``(written, errors)``."""
-    from .catalog import _run, sidecar
+    """Write ``{photo: [keywords]}`` into XMP sidecars (dc:subject, as Lightroom) and wait; photos
+    are never modified.  Goes through the one sidecar writer (``catalog.SIDECARS``), so keywords
+    and ratings of a photo never overwrite each other.  Returns ``(written, errors)``."""
     if not entries:
         return [], []
-    lines = []
-    for photo, words in entries.items():
-        lines += ['-charset', 'filename=UTF8', '-overwrite_original', '-XMP-dc:Subject=']
-        lines += [f'-XMP-dc:Subject={w}' for w in words]
-        lines += [str(sidecar(photo).resolve()), '-execute']
-    with tempfile.NamedTemporaryFile('w', suffix='.args', delete=False, encoding='utf-8') as handle:
-        handle.write('\n'.join(lines))
-        arguments = handle.name
-    try:
-        result = _run(['-@', arguments], timeout=max(60, 2 * len(entries)))
-    finally:
-        os.unlink(arguments)
-    written = [p for p in entries if sidecar(p).is_file()]
-    errors = [line for line in result.stderr.decode('utf-8', 'replace').splitlines() if line.strip()
-              and not line.startswith('Warning')]
-    return written, errors
+    writer = catalog.SIDECARS
+    errors = writer.wait(writer.queue(keywords=entries), max(60, 2 * len(entries)))
+    if errors is None:
+        errors = ['XMP sidecars: timed out']
+    return [p for p in entries if catalog.sidecar(p).is_file()], errors
 
 
 def write_keywords_xmp_later(entries):
-    def run():
-        try:
-            write_keywords_xmp(entries)
-        except Exception:
-            log.warning('keyword XMP write failed', exc_info=True)
-    threading.Thread(target=run, name='xmp-keywords', daemon=True).start()
+    """Queue keywords for the sidecars; returns at once (written in order by one thread)."""
+    if entries:
+        catalog.SIDECARS.queue(keywords=entries)

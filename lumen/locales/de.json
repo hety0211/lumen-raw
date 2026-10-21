@@ -1280,5 +1280,7 @@
  "未选关键帧：全部使用第一张的调整": "Kein Schlüsselbild: Alle Bilder verwenden die Bearbeitung des ersten Fotos",
  "请选择已存在的文件夹。": "Wählen Sie einen vorhandenen Ordner.",
  "有自己的调整": "Hat eine eigene Bearbeitung",
- "延时摄影视频…": "Zeitraffer-Video…"
+ "延时摄影视频…": "Zeitraffer-Video…",
+ "重新读取拍摄信息": "Aufnahmedaten erneut lesen",
+ "无法读取拍摄信息：{error}": "Aufnahmedaten nicht lesbar: {error}"
 }

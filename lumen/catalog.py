@@ -214,6 +214,12 @@ class Catalog:
         with self._lock:
             return dict(self._entries.get(key(path), empty()))
 
+    def get_keys(self, keys):
+        """``[fields]`` for catalog keys (``key(path)``, as the library stores them): no file
+        system lookups, so a search over tens of thousands of photos stays fast (2.0.1)."""
+        with self._lock:
+            return [dict(self._entries.get(name) or empty()) for name in keys]
+
     def known(self, path):
         with self._lock:
             return key(path) in self._entries
@@ -482,34 +488,132 @@ def read_xmp(paths):
     return result
 
 
+def _write_sidecars(entries):
+    """Write ``[{photo, fields, keywords}]`` into the sidecars, one ExifTool run per 200 photos;
+    ``fields`` (rating, flag, label) and ``keywords`` (dc:subject) are each written when not
+    None, other tags kept.  Returns the error lines."""
+    errors = []
+    for start in range(0, len(entries), 200):
+        lines = []
+        for entry in entries[start:start + 200]:
+            # Absolute paths never start with '-'; '--' would turn the next '-execute' into a file name.
+            lines += ['-charset', 'filename=UTF8', '-overwrite_original']
+            fields = entry.get('fields')
+            if fields is not None:
+                rating = -1 if fields.get('flag') == 'reject' else int(fields.get('rating') or 0)
+                lines += [f'-XMP-xmp:Rating={rating}', f'-XMP-xmp:Label={XMP_LABELS.get(fields.get("label") or "", "")}']
+            words = entry.get('keywords')
+            if words is not None:
+                lines += ['-XMP-dc:Subject='] + [f'-XMP-dc:Subject={w}' for w in words]
+            lines += [str(sidecar(entry['photo']).resolve()), '-execute']
+        with tempfile.NamedTemporaryFile('w', suffix='.args', delete=False, encoding='utf-8') as handle:
+            handle.write('\n'.join(lines))
+            arguments = handle.name
+        try:
+            result = _run(['-@', arguments], timeout=max(60, 2 * (len(lines) // 6 + 1)))
+        finally:
+            os.unlink(arguments)
+        errors += [line for line in result.stderr.decode('utf-8', 'replace').splitlines() if line.strip()
+                   and not line.startswith('Warning')]
+    return errors
+
+
+class SidecarWriter:
+    """The one writer of XMP sidecars (2.0.1).  Ratings, labels and keywords used to be written by
+    a thread each; two ExifTool processes rewriting the same sidecar keep only the last one's
+    change, and two quick changes could land out of order.  Now every write goes through this
+    queue: one thread writes in order, changes queued meanwhile are merged per photo (the newest
+    rating and the newest keyword list win), and what is queued is written before the program
+    exits."""
+
+    def __init__(self):
+        self._lock = threading.Condition()
+        self._pending = {}              # sidecar key -> {photo, fields, keywords}
+        self._queued = self._done = 0   # requests handed out / written
+        self._thread = None
+        self._exit_hook = False
+        self._results = []              # (last request of a batch, errors)
+
+    def queue(self, ratings=None, keywords=None):
+        """Queue ``{photo: fields}`` and ``{photo: [keywords]}``; returns the request number."""
+        with self._lock:
+            for photo, fields in (ratings or {}).items():
+                self._entry(photo)['fields'] = dict(fields)
+            for photo, words in (keywords or {}).items():
+                self._entry(photo)['keywords'] = list(words)
+            self._queued += 1
+            ticket = self._queued
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, name='xmp-writer', daemon=True)
+                self._thread.start()
+                if not self._exit_hook:
+                    import atexit
+                    atexit.register(self.flush, 30)
+                    self._exit_hook = True
+            self._lock.notify_all()
+        return ticket
+
+    def _entry(self, photo):
+        name = os.path.normcase(str(sidecar(photo).resolve()))
+        return self._pending.setdefault(name, dict(photo=str(photo), fields=None, keywords=None))
+
+    def _run(self):
+        while True:
+            with self._lock:
+                if not self._pending:
+                    self._lock.wait(5)
+                    if not self._pending:
+                        self._thread = None         # idle: the next request starts a new thread
+                        return
+                batch, self._pending = list(self._pending.values()), {}
+                upto = self._queued
+            try:
+                errors = _write_sidecars(batch)
+            except Exception as exc:
+                errors = [f'{type(exc).__name__}: {exc}']
+            if errors:
+                log.warning('XMP sidecars: %s', '; '.join(errors[:5]))
+            with self._lock:
+                self._done = upto
+                self._results = (self._results + [(upto, errors)])[-20:]
+                self._lock.notify_all()
+
+    def wait(self, ticket, timeout=300):
+        """Wait until request ``ticket`` is written; its batch's errors (None on timeout)."""
+        end = time.monotonic() + timeout
+        with self._lock:
+            while self._done < ticket:
+                left = end - time.monotonic()
+                if left <= 0:
+                    return None
+                self._lock.wait(left)
+            return next((errors for upto, errors in self._results if upto >= ticket), [])
+
+    def flush(self, timeout=30):
+        """Wait until everything queued so far is written (at exit, in tests)."""
+        with self._lock:
+            ticket = self._queued
+        return self.wait(ticket, timeout) is not None
+
+
+SIDECARS = SidecarWriter()
+
+
 def write_xmp_later(entries):
-    threading.Thread(target=lambda: write_xmp(entries), name='xmp-write', daemon=True).start()
+    """Queue ratings for the sidecars (``{photo: fields}``); returns at once."""
+    if entries:
+        SIDECARS.queue(ratings=entries)
 
 
 def write_xmp(entries):
-    """Write ``{photo: fields}`` into sidecars (created when missing; other tags kept).
-    Returns ``(written, errors)``."""
+    """Write ``{photo: fields}`` into sidecars (created when missing; other tags kept), through
+    the sidecar queue, and wait.  Returns ``(written, errors)``."""
     if not entries:
         return [], []
-    lines = []
-    for photo, fields in entries.items():
-        target = sidecar(photo)
-        rating = -1 if fields.get('flag') == 'reject' else int(fields.get('rating', 0))
-        label = XMP_LABELS.get(fields.get('label', ''), '')
-        # Absolute paths never start with '-'; '--' would turn the next '-execute' into a file name.
-        lines += ['-charset', 'filename=UTF8', '-overwrite_original', f'-XMP-xmp:Rating={rating}',
-                  f'-XMP-xmp:Label={label}', str(target.resolve()), '-execute']
-    with tempfile.NamedTemporaryFile('w', suffix='.args', delete=False, encoding='utf-8') as handle:
-        handle.write('\n'.join(lines))
-        arguments = handle.name
-    try:
-        result = _run(['-@', arguments], timeout=max(60, 2 * len(entries)))
-    finally:
-        os.unlink(arguments)
-    written = [p for p in entries if sidecar(p).is_file()]
-    errors = [line for line in result.stderr.decode('utf-8', 'replace').splitlines() if line.strip()
-              and not line.startswith('Warning')]
-    return written, errors
+    errors = SIDECARS.wait(SIDECARS.queue(ratings=entries), max(60, 2 * len(entries)))
+    if errors is None:
+        errors = ['XMP sidecars: timed out']
+    return [p for p in entries if sidecar(p).is_file()], errors
 
 
 # --------------------------------------------------------------------------- Lightroom

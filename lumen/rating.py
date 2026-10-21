@@ -441,16 +441,8 @@ class RatingMixin:
             self.read_xmp_async(paths, overwrite=True)
 
     def write_xmp_async(self, paths):
-        entries = {p: self.catalog.get(p) for p in paths}
-
-        def work():
-            try:
-                written, errors = catalog.write_xmp(entries)
-                if errors:
-                    log.warning('XMP write: %s', '; '.join(errors[:5]))
-            except Exception:
-                log.exception('XMP write failed')
-        threading.Thread(target=work, name='xmp-write', daemon=True).start()
+        # 2.0.1: the one sidecar writer, in order with keyword writes (errors are logged there).
+        catalog.write_xmp_later({p: self.catalog.get(p) for p in paths})
 
     def write_selected_xmp(self):
         paths = self.rating_targets()

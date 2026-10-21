@@ -6,7 +6,7 @@
 
 LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Importing, culling, editing, lens corrections, AI denoising / super-resolution / masks, export and time-lapse videos all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing, and once to download the speech model if you use voice instructions.
 
-Current version: **2.0.0** (Windows 2026-10-21). The Mac build is still 1.7.0 (2026-10-19).
+Current version: **2.0.1** (Windows 2026-10-21). The Mac build is still 1.7.0 (2026-10-19).
 
 ![LUMEN RAW 2.0.0 in English: the Library page with the folder tree, smart albums and keywords on the left, the thumbnail grid with stars, pick flags, color labels and a rejected photo, and the selected photo's capture data, sharpness, rating and keywords on the right](docs/screenshots/library-grid-en.png)
 
@@ -16,14 +16,14 @@ Actual application screenshots. The photographs are public test samples: CC0 pho
 
 | System | Download | Requirements |
 |---|---|---|
-| Windows | [`LumenRAW-2.0.0-Setup.exe` (installer, 415 MB) or `LumenRAW-2.0.0-Windows.zip` (portable, 477 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.0.0) | Windows 10 22H2 / Windows 11, x64 |
+| Windows | [`LumenRAW-2.0.1-Setup.exe` (installer, 415 MB) or `LumenRAW-2.0.1-Windows.zip` (portable, 477 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.0.1) | Windows 10 22H2 / Windows 11, x64 |
 | macOS | [`LumenRAW-1.7.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0-macos) (1.7.0) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
 
 There is no Mac build of 2.0.0 yet: the library, culling, preview cache, time-lapse videos, new themes and the smaller download are Windows-only for now; everything up to 1.7.0 is the same on both systems. The file formats did not change in 2.0.0, so projects (`.lumen`) and albums (`.lumenalbum`) move freely between 2.0.0 and 1.7.0; 1.6.x cannot open those saved by 1.7 or later, and older projects open in newer versions unchanged. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
-- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 1.7.0 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
+- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 2.0.0 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
 - **Portable:** extract and run `LumenRAW-Windows\LumenRAW.exe`. Keep the `_internal` folder next to the exe. The portable build follows the system language until you choose one.
 - Both include Python, ExifTool, fonts, the eleven AI models, the video encoders and the lensfun lens database, and work fully offline. The speech model for voice instructions (about 240 MB) is downloaded the first time you click **Voice**; when you upgrade from 1.5 – 1.7, the installer keeps the model those versions bundled, so it is not downloaded again.
 - 2.0.0 is less than half the size of 1.7.0 (installer 880 → 415 MB, portable 950 → 477 MB), mainly because the AI models are stored at half precision (results differ by about 0.001 %, at the same speed), unused Qt parts were left out and the speech model is no longer bundled.
@@ -73,7 +73,8 @@ The **Library** page (`G`; `D` returns to **Develop**) is LUMEN RAW's own catalo
 
 - **Search and smart albums:** the search box and **New Smart Album…** take the filter syntax of the filmstrip plus `keyword:` (a name, `any` or `none`; quote names with spaces), `camera:`, `lens:`, `iso`, `f`, `focal`, `date:2026-10` or `date>=2026-10-01`, `faces`, `eyes:closed`, `sharpness<30`, `burst` / `burst:best`, and the words `blurry`, `sharp`, `best`, `closed` and `missing`. Plain words search file names, keywords, cameras and lenses. Eight smart albums are built in: picked, ★3 and up, rejected, possibly blurry, possibly closed eyes, bursts, best of each burst and no keywords.
 - **Capture data, ratings and keywords** are read by ExifTool, 64 photos at a time, with sub-second capture times. Stars, labels and keywords already in XMP sidecars or embedded XMP (from Lightroom, Bridge or the camera) appear in the grid. With **Write XMP Sidecars Automatically When Ratings Change** on, keywords are written to the sidecars too (`dc:subject`, as Lightroom does); the photos themselves are never written.
-- **Folders** can be rescanned (new photos are added, moved or deleted files marked as missing) or removed from the library.
+- **Folders** can be rescanned (new photos are added, moved or deleted files marked as missing, and since 2.0.1 photos or XMP sidecars changed by another program are read again) or removed from the library.
+- **Unreadable files:** when ExifTool cannot read a photo (a damaged file, a drive that is not connected), it is tried again a few minutes later; after three attempts the info panel shows why, and a rescan or right-click → **Read Capture Data Again** tries once more.
 
 ## Culling
 
@@ -380,7 +381,7 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 2.0.0, 539 regression tests pass on Windows with 12 skipped (macOS-only and similar). Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 2.0.1, 548 regression tests pass on Windows with 12 skipped (macOS-only and similar). Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.

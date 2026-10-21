@@ -1280,5 +1280,7 @@
  "未选关键帧：全部使用第一张的调整": "Aucune image clé : toutes les images utilisent les réglages de la première photo",
  "请选择已存在的文件夹。": "Choisissez un dossier existant.",
  "有自己的调整": "A ses propres réglages",
- "延时摄影视频…": "Vidéo en accéléré…"
+ "延时摄影视频…": "Vidéo en accéléré…",
+ "重新读取拍摄信息": "Relire les données de prise de vue",
+ "无法读取拍摄信息：{error}": "Données de prise de vue illisibles : {error}"
 }

@@ -1280,5 +1280,7 @@
  "未选关键帧：全部使用第一张的调整": "No keyframe: every frame uses the first photo's edits",
  "请选择已存在的文件夹。": "Choose an existing folder.",
  "有自己的调整": "Has edits of its own",
- "延时摄影视频…": "Time-Lapse Video…"
+ "延时摄影视频…": "Time-Lapse Video…",
+ "重新读取拍摄信息": "Read Capture Data Again",
+ "无法读取拍摄信息：{error}": "Capture data could not be read: {error}"
 }

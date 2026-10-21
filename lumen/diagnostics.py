@@ -185,7 +185,7 @@ def library_and_culling(w, app, source, destination):
     db.add([source])
     db.index_all(w.catalog)
     row = db.record(source)
-    if row is None or not row['indexed']:
+    if row is None or row['indexed'] != 1:
         raise RuntimeError('library index failed')
     analyser = culling.faces()
     if analyser is None:

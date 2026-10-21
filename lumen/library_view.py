@@ -649,6 +649,9 @@ class InfoPanel(QWidget):
             lines.append(str(Path(row['path']).parent))
             if row.get('missing'):
                 lines.append(tr('文件已移动或删除'))
+            elif row.get('indexed') == -1:
+                # 2.0.1: ExifTool could not read it (tried INDEX_RETRIES times); the reason, kept short.
+                lines.append(tr('无法读取拍摄信息：{error}', error=(row.get('index_error') or '')[:80]))
             self.details.setText('\n'.join(lines))
         self.hints.setText(hint_text(row))
         counts = collections.Counter(k for r in rows for k in (r.get('keywords') or ()))
@@ -1153,8 +1156,7 @@ class LibraryModeMixin:
                 self.library_update_timer.start()
             return
         if kind == 'ratings':
-            for row in self.library_model.rows:
-                row.update(self.catalog.get(row['path']))
+            library_db.with_ratings(self.library_model.rows, self.catalog)
             self.library_model.refresh_all()
             self.info_timer.start()
             spec, query = self.library_query()
@@ -1396,6 +1398,7 @@ class LibraryModeMixin:
         self.add_rating_actions(menu)
         menu.addAction(tr('添加关键词…'), self.edit_keywords_dialog).setEnabled(count > 0)
         menu.addAction(tr('重新分析清晰度与闭眼'), self.reanalyse_selection).setEnabled(count > 0)
+        menu.addAction(tr('重新读取拍摄信息'), self.reindex_selection).setEnabled(count > 0)
         menu.addSeparator()
         menu.addAction(tr('从 XMP 读取评级'), self.read_selected_xmp).setEnabled(count > 0)
         menu.addAction(tr('评级写入 XMP 附属文件'), self.write_selected_xmp).setEnabled(count > 0)
@@ -1413,6 +1416,14 @@ class LibraryModeMixin:
         rows = self.library_db.rows(('ids', ids))
         self.previews_forget(rows)
         self.library_worker.want_analysis([dict(id=r['id'], path=r['path']) for r in rows], first=True)
+
+    def reindex_selection(self):
+        """2.0.1: read capture data, XMP ratings and keywords of the selected photos again
+        (photos ExifTool could not read included)."""
+        ids = self.library_db.ids_of(self.library_targets())
+        if ids:
+            self.library_db.reindex(ids)
+            self.library_worker.want_index()
 
     def previews_forget(self, rows):
         self.thumb_images.forget([r['path'] for r in rows])
@@ -1438,7 +1449,9 @@ class LibraryModeMixin:
         menu.exec(position)
 
     def rescan_folder(self, folder_id):
-        added, missing = self.library_db.rescan(folder_id)
+        added, missing, refreshed = self.library_db.rescan(folder_id)
+        if refreshed:           # 2.0.1: changed by another program: new thumbnails too
+            self.thumb_images.forget([r['path'] for r in self.library_db.rows(('ids', refreshed))])
         self.library_worker.want_index()
         self.refresh_sources()
         self.refresh_library_grid()
@@ -1556,8 +1569,7 @@ class LibraryModeMixin:
             rows = self.library_db.rows(('paths', paths))
             library_db.annotate_bursts(rows)
             library_db.annotate_hints(rows)
-            for row in rows:
-                row.update(self.catalog.get(row['path']))
+            library_db.with_ratings(rows, self.catalog)
             current = self.source_path
         rows = [r for r in rows if not r.get('missing')]
         if not rows:

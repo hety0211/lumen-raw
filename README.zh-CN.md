@@ -6,7 +6,7 @@
 
 LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows 和 Apple 芯片 Mac，无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。导入、选片、调色、镜头校正、AI 降噪 / 超分 / 蒙版、导出和延时视频全部在本机离线完成；只有你主动使用云端大模型修图时才会联网发送指令和参数，使用语音指令时会下载一次语音识别模型。
 
-当前版本：**2.0.0**（Windows 2026-10-21）。Mac 版仍为 1.7.0（2026-10-19）。
+当前版本：**2.0.1**（Windows 2026-10-21）。Mac 版仍为 1.7.0（2026-10-19）。
 
 ![LUMEN RAW 2.0.0「图库」页：左侧为文件夹树、智能相册与关键词，中间的缩略图网格显示星级、留用旗标、色标和被排除的照片，右侧为所选照片的拍摄信息、清晰度、评级与关键词](docs/screenshots/library-grid.png)
 
@@ -16,14 +16,14 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 
 | 系统 | 下载 | 要求 |
 |---|---|---|
-| Windows | [`LumenRAW-2.0.0-Setup.exe`（安装版，415 MB）或 `LumenRAW-2.0.0-Windows.zip`（便携版，477 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.0.0) | Windows 10 22H2 / Windows 11，x64 |
+| Windows | [`LumenRAW-2.0.1-Setup.exe`（安装版，415 MB）或 `LumenRAW-2.0.1-Windows.zip`（便携版，477 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.0.1) | Windows 10 22H2 / Windows 11，x64 |
 | macOS | [`LumenRAW-1.7.0-macOS-arm64.dmg`](https://github.com/hety0211/lumen-raw/releases/tag/v1.7.0-macos)（1.7.0） | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
 
 2.0.0 暂时没有 Mac 版：图库、选片、预览缓存、延时视频、新主题和更小的安装包目前只有 Windows 版；1.7.0 及以前的功能两个系统相同。2.0.0 没有改变文件格式，工程（`.lumen`）和选片集（`.lumenalbum`）在 2.0.0 与 1.7.0 之间可以互相打开；1.7 及以后保存的无法在 1.6.x 中打开，旧工程在新版本中照常打开，画面不变。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **Windows**
 
-- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 1.7.0。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
+- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 2.0.0。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
 - **便携版：** 解压后运行 `LumenRAW-Windows\LumenRAW.exe`。`_internal` 文件夹必须留在 exe 旁边。便携版的界面语言默认跟随系统。
 - 两种包都自带 Python 运行环境、ExifTool、字体、11 个 AI 模型、视频编码器和 lensfun 镜头数据库，可完全离线使用。语音指令用的识别模型（约 240 MB）在第一次点「语音」时下载；从 1.5 – 1.7 升级安装时，安装程序会保留旧版自带的模型，不必重新下载。
 - 2.0.0 的安装包不到 1.7.0 的一半（安装版 880 → 415 MB，便携版 950 → 477 MB），主要是 AI 模型改以半精度存放（结果相差约十万分之一，速度不变）、去掉了用不到的 Qt 组件，以及语音模型不再随包。
@@ -73,7 +73,8 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 
 - **搜索与智能相册：** 搜索框和「新建智能相册…」使用与选片集筛选相同的写法，另外支持 `keyword:`（名称、`any` 或 `none`，含空格的名称加引号）、`camera:`、`lens:`、`iso`、`f`、`focal`、`date:2026-10` 或 `date>=2026-10-01`、`faces`、`eyes:closed`、`sharpness<30`、`burst` / `burst:best`，以及词语 `blurry`、`sharp`、`best`、`closed`、`missing`。直接输入的文字同时查找文件名、关键词、相机和镜头。内置八个智能相册：已留用、★3 以上、已排除、可能模糊、可能闭眼、连拍组、连拍中最佳、没有关键词。
 - **拍摄信息、评级与关键词** 由 ExifTool 每批 64 张在后台读取，拍摄时间精确到亚秒。XMP 附属文件或内嵌 XMP 中已有的星级、色标和关键词（Lightroom、Bridge 或相机写下的）会直接出现在网格中。开启「评级变化时自动写入 XMP 附属文件」时，关键词也写入附属文件（`dc:subject`，与 Lightroom 相同）；照片本身永远不会被写入。
-- **文件夹** 可以「重新扫描」（加入新照片，标出已移动或删除的文件），也可以从图库移除。
+- **文件夹** 可以「重新扫描」（加入新照片，标出已移动或删除的文件；2.0.1 起被其他软件改过的照片或 XMP 附属文件也会重新读取），也可以从图库移除。
+- **读不出信息的文件：** ExifTool 读不了某张照片时（文件损坏、移动硬盘没接好），几分钟后会自动再试；连续 3 次失败后信息栏会说明原因，重新扫描或右键「重新读取拍摄信息」会再试一次。
 
 ## 选片
 
@@ -380,7 +381,7 @@ cd lumen-raw
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **测试：** 2.0.0 的回归测试在 Windows 上 539 项通过、12 项跳过（macOS 专属等）。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
+- **测试：** 2.0.1 的回归测试在 Windows 上 548 项通过、12 项跳过（macOS 专属等）。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 - **界面翻译：** 代码中的界面文字为简体中文原文，经 `tr()` 查找 `lumen/locales/<语言>.json`；`python tools/i18n_catalog.py` 检查各语言的缺漏和占位符。新增界面文字后请同时补充各语言的译文。
 - **Windows 发布构建：** `build-release.cmd` 依次执行测试、DirectML 检查、便携版 ZIP 和 Inno Setup 安装包。
 - **macOS 发布构建：** `./build-macos.command` 依次执行测试、Metal / Core ML 自检、PyInstaller、临时签名、冒烟测试和 DMG，输出在 `.publish/v<版本>/macos/`。

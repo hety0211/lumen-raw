@@ -1280,5 +1280,7 @@
  "未选关键帧：全部使用第一张的调整": "Ningún fotograma clave: todos usan los ajustes de la primera foto",
  "请选择已存在的文件夹。": "Elija una carpeta existente.",
  "有自己的调整": "Tiene ajustes propios",
- "延时摄影视频…": "Vídeo time-lapse…"
+ "延时摄影视频…": "Vídeo time-lapse…",
+ "重新读取拍摄信息": "Volver a leer los datos de captura",
+ "无法读取拍摄信息：{error}": "No se pudieron leer los datos de captura: {error}"
 }

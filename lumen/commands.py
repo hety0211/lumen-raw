@@ -472,8 +472,7 @@ def catalog_analyze(context, paths=None, query=None, limit=300):
     rows = db.rows(('paths', targets))
     library_db.annotate_bursts(rows)
     library_db.annotate_hints(rows)
-    for row in rows:
-        row.update(context.catalog.get(row['path']))
+    library_db.with_ratings(rows, context.catalog)
     bursts = {}
     for row in rows:
         if row.get('burst'):

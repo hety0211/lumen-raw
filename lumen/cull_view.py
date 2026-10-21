@@ -356,9 +356,10 @@ class CullWindow(QWidget):
         library_db.annotate_bursts(rows)
         library_db.annotate_hints(rows)
         found = {r['path']: r for r in rows}
-        for path in self.paths:
-            row = found.get(path) or dict(path=path, name=path.rsplit('\\', 1)[-1].rsplit('/', 1)[-1], id=None)
-            row.update(self.window.catalog.get(path))
+        fresh = [found.get(path) or dict(path=path, name=path.rsplit('\\', 1)[-1].rsplit('/', 1)[-1], id=None)
+                 for path in self.paths]
+        library_db.with_ratings(fresh, self.window.catalog)
+        for path, row in zip(self.paths, fresh):
             if path in self.rows:
                 self.rows[path].clear()
                 self.rows[path].update(row)
@@ -375,8 +376,7 @@ class CullWindow(QWidget):
         self.right.update()
 
     def ratings_changed(self):
-        for path in self.paths:
-            self.rows[path].update(self.window.catalog.get(path))
+        library_db.with_ratings([self.rows[p] for p in self.paths], self.window.catalog)
         self.strip_model.refresh_all()
         self.update_header()
 
