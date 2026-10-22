@@ -538,8 +538,8 @@ CHANGES = dict(type='object', description=(
     'curve [[input, output] 0…255, 3–8 points incl. 0 and 255]; '
     'lut {path: ".cube file (1D or 3D LUT)", amount 0…100} to apply a creative LUT, {amount} to change its strength, '
     'null to remove it; '
-    'masks [{region: sky|subject|person|background|foreground|top|bottom|center|edges, adjustments {…}}] '
-    '(sky…foreground are detected locally by AI; at most 4 new masks; existing masks: {index, adjustments}).'))
+    'masks [{region: sky|subject|person|background|foreground|water|vegetation|mountain|building|ground|top|bottom|center|edges, adjustments {…}}] '
+    '(sky…ground are detected locally by AI; at most 4 new masks; existing masks: {index, adjustments}).'))
 
 
 def _original(context, path):
@@ -565,10 +565,10 @@ def _regions(context, path, plan, fine=True):
     with ``fine`` refine their edges on the original (1.7.0)."""
     if not plan.regions:
         return nl_edit.attach_regions(plan, [])
-    from . import lens, selection
+    from . import selection
     source, _ = context.source(path)
     edits = context.edits(path)
-    rgb = engine.develop_view(lens.correct(source, edits), edits)
+    rgb = engine.selection_view(source, edits)
     alphas = []
     for kind, _ in plan.regions:
         try:

@@ -1,9 +1,13 @@
-"""Ordered, non-destructive inpainting and aligned cloning in source coordinates."""
+"""Ordered, non-destructive inpainting, aligned cloning and AI removal in source coordinates."""
 import cv2
 import numpy as np
 
 
 def _window(op, h, w):
+    if op['kind'] == 'remove':
+        # 2.1.0: the stored patch decides what an AI removal covers (see lumen/remove.py).
+        from . import remove
+        return None, None, remove.window(op['patch'], h, w)
     pts = np.asarray(op['points']) * [w - 1, h - 1]
     radius = max(1., op['radius'] * min(h, w))
     margin = int(np.ceil(radius * 2 + 8))
@@ -21,6 +25,21 @@ def _reads(op, window, h, w):
     sx0, sy0 = max(0, int(np.floor(x0 + dx)) - 1), max(0, int(np.floor(y0 + dy)) - 1)
     sx1, sy1 = min(w, int(np.ceil(x1 - 1 + dx)) + 2), min(h, int(np.ceil(y1 - 1 + dy)) + 2)
     return [window] + ([(sx0, sy0, sx1, sy1)] if sx0 < sx1 and sy0 < sy1 else [])
+
+
+def stroke(op, h, w):
+    """Coverage of a brush operation over its window ``(x0, y0, x1, y1)`` of a frame ``h × w``:
+    the painted stroke, feathered inward so pixels outside it stay exactly intact."""
+    pts, radius, window = _window(dict(op, kind='heal'), h, w)
+    x0, y0, x1, y1 = window
+    mask = np.zeros((y1 - y0, x1 - x0), np.uint8)
+    local = np.round(pts - [x0, y0]).astype(np.int32)
+    r = max(1, round(radius))
+    cv2.polylines(mask, [local], False, 255, r * 2, cv2.LINE_8)
+    for p in (local[0], local[-1]):
+        cv2.circle(mask, tuple(p), r, 255, -1)
+    distance = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
+    return np.minimum(1, distance / max(1, radius * op['feather'] / 100)), mask, radius, window
 
 
 def _union(a, b):
@@ -56,17 +75,15 @@ def apply(source, operations, rect=None):
     nx0, ny0, nx1, ny1 = needed
     out = source[ny0:ny1, nx0:nx1].copy()
     for op in ops:
-        pts, radius, (x0, y0, x1, y1) = _window(op, h, w)
-        rh, rw = y1 - y0, x1 - x0
-        mask = np.zeros((rh, rw), np.uint8)
-        local = np.round(pts - [x0, y0]).astype(np.int32)
-        r = max(1, round(radius))
-        cv2.polylines(mask, [local], False, 255, r * 2, cv2.LINE_8)
-        for p in (local[0], local[-1]):
-            cv2.circle(mask, tuple(p), r, 255, -1)
-        # Feather inward: pixels outside the painted stroke remain exactly intact.
-        distance = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
-        alpha = np.minimum(1, distance / max(1, radius * op['feather'] / 100)) * op['opacity'] / 100
+        if op['kind'] == 'remove':
+            from . import remove
+            x0, y0, x1, y1 = remove.window(op['patch'], h, w)
+            if x0 < x1 and y0 < y1:
+                current = out[y0 - ny0:y1 - ny0, x0 - nx0:x1 - nx0]
+                current[:] = remove.composite(current, op['patch'], op['opacity'], h, w)
+            continue
+        coverage, mask, radius, (x0, y0, x1, y1) = stroke(op, h, w)
+        alpha = coverage * op['opacity'] / 100
         current = out[y0 - ny0:y1 - ny0, x0 - nx0:x1 - nx0]
         if op['kind'] == 'clone':
             dx, dy = np.asarray(op['offset']) * [w - 1, h - 1]

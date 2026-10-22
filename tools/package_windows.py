@@ -36,7 +36,9 @@ def main():
     required = {'lumen.ico', 'notosanssc.ttf', 'exiftool.exe',
                 'realesrgan-x4plus.onnx', 'realesr-general-x4v3.onnx',
                 'nafnet-sidd.onnx', 'drunet-color.onnx', 'ffdnet-color.onnx',
-                'skyseg.onnx', 'person-deeplab.onnx', 'u2netp.onnx', 'midas-small.onnx'}
+                'skyseg.onnx', 'person-deeplab.onnx', 'u2netp.onnx', 'midas-small.onnx',
+                # 2.1.0: AI removal, picked objects and landscape masks.
+                'inpaint-lama.onnx', 'object-encoder.onnx', 'object-decoder.onnx', 'landscape-seg.onnx'}
     missing = required - names
     if missing:
         raise SystemExit('Frozen app is missing runtime resources: ' + ', '.join(sorted(missing)))

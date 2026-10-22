@@ -30,7 +30,7 @@ SERVER = dict(name='lumen-raw', title='LUMEN RAW', version=__version__)
 INSTRUCTIONS = '''LUMEN RAW is a RAW photo editor (landscape and travel). Typical flow:
 1. list_photos (library, ratings) or add_photos (files/folders), then open_photo.
 2. get_edits shows current values; apply_edits sets final values (not increments) as one undoable step.
-   Local masks: masks=[{"region": "sky", "adjustments": {...}}] (sky/subject/person/background/foreground are found by local AI).
+   Local masks: masks=[{"region": "sky", "adjustments": {...}}] (sky/subject/person/background/foreground and, since 2.1.0, water/vegetation/mountain/building/ground are found by local AI).
 3. render_preview returns a JPEG to check the result; compare with original=true.
 4. export_photo / export_photos write files; save_project keeps the edits (.lumen) without exporting.
 5. rate_photos / flag_photos / label_photos organise the library (0–5 stars, pick/reject, colour labels).

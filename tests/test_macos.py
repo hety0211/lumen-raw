@@ -159,9 +159,13 @@ def test_coreml_housekeeping_removes_models_left_by_dead_workers(monkeypatch, tm
 def test_platform_folders(monkeypatch, tmp_path):
     monkeypatch.setattr(host, 'MACOS', True)
     monkeypatch.setattr(Path, 'home', lambda: tmp_path)
+    monkeypatch.delenv('LOCALAPPDATA', raising=False)
     assert host.data_folder() == tmp_path / 'Library' / 'Application Support' / 'LUMEN RAW'
     assert host.log_folder() == tmp_path / 'Library' / 'Logs' / 'LUMEN RAW'
     assert host.cache_folder() == tmp_path / 'Library' / 'Caches' / 'LUMEN RAW'
+    # 2.1.0: LOCALAPPDATA, never set on macOS, moves the data folder (the tests' own folders).
+    monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'Tests'))
+    assert host.data_folder() == tmp_path / 'Tests' / 'LUMEN RAW'
     monkeypatch.setattr(host, 'MACOS', False)
     monkeypatch.setenv('LOCALAPPDATA', str(tmp_path / 'Local'))
     # Windows keeps the 1.3 locations: logs and gpu-compat.json under %LOCALAPPDATA%\LUMEN RAW.

@@ -53,8 +53,8 @@ def describe_system():
     if sys.platform == 'darwin':
         return _describe_macos(log)
     try:
-        from . import compute, winml
-        import onnxruntime as ort
+        from . import compute, winml, performance
+        ort = performance.onnxruntime()
         log.info('Windows build %s · onnxruntime %s · providers %s', winml.windows_build(), ort.__version__,
                  ', '.join(ort.get_available_providers()))
         for index, name, dedicated, vendor, *driver in compute.dxgi_adapters():
@@ -68,7 +68,8 @@ def _describe_macos(log):
     """macOS version, chip and Metal device, plus the ONNX Runtime build (1.3.1)."""
     try:
         import platform
-        import onnxruntime as ort
+        from . import performance
+        ort = performance.onnxruntime()
         from . import metal
         log.info('macOS %s %s · onnxruntime %s · providers %s', metal.macos_version(), platform.machine(),
                  ort.__version__, ', '.join(ort.get_available_providers()))

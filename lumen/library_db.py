@@ -219,6 +219,21 @@ def read_tags(paths):
     return result
 
 
+def damaged(error):
+    """True for SQLite's "corrupt" and "not a database" errors only (2.1.0).  A database another
+    process holds locked, a read-only folder or a full disk raise errors of the same class; treated
+    as damage, a healthy library was moved aside and its write-ahead log deleted."""
+    name = getattr(error, 'sqlite_errorname', '') or ''
+    if name:
+        return name.startswith(('SQLITE_CORRUPT', 'SQLITE_NOTADB'))
+    text = str(error).lower()
+    return 'malformed' in text or 'not a database' in text
+
+
+#: Attempts to open a library another process holds locked (each waits the 15 s busy timeout).
+OPEN_ATTEMPTS = 3
+
+
 class LibraryDB:
     """The catalog database.  Every method may be called from any thread."""
 
@@ -229,17 +244,32 @@ class LibraryDB:
         self._connections = []
         self.listeners = []
         with self._lock:
-            try:
-                self._setup(self._db())
-            except sqlite3.DatabaseError:
-                # A damaged file (a crash of the disk, a copy cut short): keep it aside, start anew.
-                self.close()
-                aside = self.path.with_name(f'{self.path.stem}.damaged-{time.strftime("%Y%m%d-%H%M%S")}{self.path.suffix}')
-                log.error('library database %s is damaged; moved to %s', self.path, aside)
-                os.replace(self.path, aside)
-                for suffix in ('-wal', '-shm'):
-                    Path(str(self.path) + suffix).unlink(missing_ok=True)
-                self._setup(self._db())
+            for attempt in range(OPEN_ATTEMPTS):
+                try:
+                    self._setup(self._db())
+                    return
+                except sqlite3.DatabaseError as error:
+                    self.close()
+                    if damaged(error):
+                        self._set_aside(error)
+                        self._setup(self._db())
+                        return
+                    busy = getattr(error, 'sqlite_errorname', '').startswith(('SQLITE_BUSY', 'SQLITE_LOCKED')) or \
+                        'locked' in str(error).lower()
+                    if not busy or attempt == OPEN_ATTEMPTS - 1:
+                        raise    # locked, read-only, disk full: the library stays as it is
+
+    def _set_aside(self, error):
+        """A damaged file (a crash of the disk, a copy cut short): keep it and its write-ahead log
+        aside, untouched, and start anew."""
+        stamp = time.strftime('%Y%m%d-%H%M%S')
+        aside = self.path.with_name(f'{self.path.stem}.damaged-{stamp}{self.path.suffix}')
+        log.error('library database %s is damaged (%s); moved to %s', self.path, error, aside)
+        os.replace(self.path, aside)
+        for suffix in ('-wal', '-shm'):
+            journal = Path(str(self.path) + suffix)
+            if journal.exists():
+                os.replace(journal, Path(str(aside) + suffix))
 
     # -- connections
 

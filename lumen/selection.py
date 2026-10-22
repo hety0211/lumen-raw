@@ -1,5 +1,6 @@
-"""Offline open-source semantic / saliency masks and contiguous color selection."""
+"""Offline open-source semantic / saliency masks, picked objects and contiguous color selection."""
 import base64
+import threading
 from functools import lru_cache
 from pathlib import Path
 import cv2
@@ -76,13 +77,34 @@ def stored(mask, shape):
     return raster
 
 
-@lru_cache(maxsize=4)
+#: 2.1.0: landscape groups in the order of the network's output (tools/convert_landscape.py).
+LANDSCAPE = ('water', 'vegetation', 'mountain', 'building', 'ground')
+MODELS = {'sky':'skyseg.onnx','person':'person-deeplab.onnx','background':'u2netp.onnx',
+          'subject':'u2netp.onnx','foreground':'midas-small.onnx','landscape':'landscape-seg.onnx',
+          'object-encoder':'object-encoder.onnx','object-decoder':'object-decoder.onnx'}
+#: The 2.1.0 networks run on the CPU: about 0.2–0.5 s, faster than DirectML on the test machine
+#: and no first-use GPU compilation for a single image; their working memory is returned after
+#: each run (no ONNX Runtime arena, see ``compute.Session``).
+CPU_ONLY = ('landscape', 'object-encoder', 'object-decoder')
+
+
 def session(kind, cuda=False):
+    """The ONNX Runtime session of a mask kind; the five landscape kinds share one (2.1.0: the cache
+    key was taken before they were mapped to it, so each made its own copy of the network)."""
+    kind = 'landscape' if kind in LANDSCAPE else kind
+    return _session(kind, bool(cuda) and kind not in CPU_ONLY)
+
+
+@lru_cache(maxsize=8)
+def _session(kind, cuda):
     from . import compute
-    filename = {'sky':'skyseg.onnx','person':'person-deeplab.onnx','background':'u2netp.onnx',
-                'subject':'u2netp.onnx','foreground':'midas-small.onnx'}[kind]
-    path = Path(__file__).resolve().parents[1]/'assets/models'/filename
+    path = Path(__file__).resolve().parents[1]/'assets/models'/MODELS[kind]
+    if kind in CPU_ONLY:
+        return compute.session(path,False,arena=False)
     return compute.session(path,cuda)
+
+
+session.cache_clear = _session.cache_clear
 
 
 def refine(alpha, rgb, sharpen=True):
@@ -120,8 +142,10 @@ def refine(alpha, rgb, sharpen=True):
 
 #: Long edge of a fine mask (1.7.0): the original is refined at most at this size.
 FINE_EDGE = 4096
-#: Network input size per kind (the models have fixed inputs).
-NETWORK = dict(sky=320, person=384, background=320, subject=320, foreground=256)
+#: Network input size per kind (the models have fixed inputs); for the landscape network the
+#: long side of its output (1/8 of a 512-pixel short side), for objects that of the decoder's mask.
+NETWORK = dict(sky=320, person=384, background=320, subject=320, foreground=256,
+               **{kind: 96 for kind in LANDSCAPE}, object=256)
 
 
 def _blur(x, sigma):
@@ -220,7 +244,7 @@ def fine(alpha, rgb, network=320, grow=.05, shrink=.05):
 
 
 #: Kinds the fine pass refines: depth ("foreground") keeps its deliberate ramp, colour picks are hard.
-FINE_KINDS = ('sky', 'person', 'background', 'subject')
+FINE_KINDS = ('sky', 'person', 'background', 'subject') + LANDSCAPE + ('object',)
 
 
 def fine_size(width, height):
@@ -230,13 +254,14 @@ def fine_size(width, height):
 
 
 def fine_guide(source, edits):
-    """The developed, lens-corrected original at ``fine_size`` (display values 0–1), the image the
-    fine pass looks at; ``source`` is the decoded original (any size larger than the preview)."""
-    from . import engine, lens
+    """The developed, lens-corrected and retouched original at ``fine_size`` (display values 0–1),
+    the image the fine pass looks at; ``source`` is the decoded original (any size larger than the
+    preview)."""
+    from . import engine
     h, w = source.shape[:2]
     size = fine_size(w, h)
     small = cv2.resize(np.asarray(source, np.float32), size, interpolation=cv2.INTER_AREA) if size != (w, h) else source
-    return engine.develop_view(lens.correct(small, edits), edits)
+    return engine.selection_view(small, edits)
 
 
 def refine_fine(kind, alpha, guide):
@@ -252,7 +277,28 @@ def refine_fine(kind, alpha, guide):
     return fine(alpha, guide, NETWORK[kind])
 
 
+def landscape(rgb):
+    """Probability of each ``LANDSCAPE`` group, shape (5, h, w) at 1/8 of the network input: the
+    image with a 512-pixel short side (ADE20K evaluation), the long side a multiple of 32."""
+    h, w = rgb.shape[:2]
+    short, long = LANDSCAPE_SHORT, min(LANDSCAPE_LONG, int(np.ceil(max(h, w) / min(h, w) * LANDSCAPE_SHORT / 32)) * 32)
+    size = (long, short) if w >= h else (short, long)
+    x = cv2.resize(np.asarray(rgb, np.float32), size, interpolation=cv2.INTER_AREA)
+    x = (x - np.array([.485,.456,.406],np.float32))/np.array([.229,.224,.225],np.float32)
+    sess = session('landscape')
+    prediction = sess.run(None, {'image': np.ascontiguousarray(x.transpose(2,0,1)[None], np.float32)})[0][0]
+    if not np.isfinite(prediction).all():
+        raise ValueError(tr('识别模型返回无效结果。'))
+    return prediction
+
+
+LANDSCAPE_SHORT, LANDSCAPE_LONG = 512, 1536
+
+
 def automatic(rgb, kind, cuda=False):
+    if kind in LANDSCAPE:
+        prediction = landscape(rgb)[LANDSCAPE.index(kind)]
+        return refine(np.clip(prediction, 0, 1), rgb), session(kind).get_providers()[0]
     sess = session('background' if kind=='subject' else kind,cuda)
     size = 256 if kind == 'foreground' else (384 if kind == 'person' else 320)
     x = cv2.resize(rgb,(size,size),interpolation=cv2.INTER_AREA).astype(np.float32)
@@ -272,6 +318,75 @@ def automatic(rgb, kind, cuda=False):
     if kind == 'background':
         alpha = 1-alpha
     return alpha, sess.get_providers()[0]
+
+
+#: 2.1.0: picked objects (EfficientViT-SAM L0): the encoder sees the image with its long side at
+#: ``OBJECT_INPUT`` pixels; the decoder answers each click in about 15 ms from its embedding.
+OBJECT_INPUT, OBJECT_FRAME = 512, 1024
+_embedding = {}
+_embedding_lock = threading.Lock()
+
+
+def object_embedding(rgb, key=None):
+    """The encoder's embedding of ``rgb`` (display sRGB 0–1); the last one is kept under ``key``."""
+    with _embedding_lock:
+        if key is not None and _embedding.get('key') == key:
+            return _embedding['value']
+    h, w = rgb.shape[:2]
+    scale = OBJECT_INPUT / max(h, w)
+    nh, nw = max(1, round(h * scale)), max(1, round(w * scale))
+    x = cv2.resize(np.clip(np.asarray(rgb, np.float32), 0, 1) * 255, (nw, nh), interpolation=cv2.INTER_AREA)
+    x = (x - np.array([123.675, 116.28, 103.53], np.float32)) / np.array([58.395, 57.12, 57.375], np.float32)
+    padded = np.zeros((OBJECT_INPUT, OBJECT_INPUT, 3), np.float32)
+    padded[:nh, :nw] = x
+    value = session('object-encoder').run(None, {'input_image': np.ascontiguousarray(padded.transpose(2, 0, 1)[None])})[0]
+    if not np.isfinite(value).all():
+        raise ValueError(tr('识别模型返回无效结果。'))
+    if key is not None:
+        with _embedding_lock:
+            _embedding.update(key=key, value=value)
+    return value
+
+
+def _object_probability(embedding, points, h, w):
+    """The decoder's probability of the object at ``points`` over an ``h × w`` photo, at the
+    photo's size in the 1024 frame."""
+    scale = OBJECT_FRAME / max(h, w)
+    coords = np.array([[[x * w * scale, y * h * scale] for x, y, _ in points]], np.float32)
+    labels = np.array([[label for *_, label in points]], np.float32)
+    logits = session('object-decoder').run(None, {'image_embeddings': embedding, 'point_coords': coords,
+                                                  'point_labels': labels})[0][0, 0]
+    if not np.isfinite(logits).all():
+        raise ValueError(tr('识别模型返回无效结果。'))
+    # The decoder's 256-pixel mask spans the padded 1024 frame; the photo fills its top left.
+    frame = cv2.resize(logits, (OBJECT_FRAME, OBJECT_FRAME), interpolation=cv2.INTER_LINEAR)
+    frame = frame[:max(1, round(h * scale)), :max(1, round(w * scale))]
+    return (1 / (1 + np.exp(-np.clip(frame, -30, 30)))).astype(np.float32)
+
+
+def object_mask(rgb, points, key=None):
+    """Mask of the object at ``points`` (``[x, y, label]``, normalised; label 1 adds the object
+    under the click, 0 takes it away), aligned with the edges of ``rgb``.
+
+    Given only points, the decoder can leave an island of the object under a subtracting click
+    (a part of the third of three loaves), so that object, as the click alone selects it, is taken
+    away as well; not when it contains an adding click: then the click marks a part of the
+    selected object (a paw of the cat) and the decoder's answer stands."""
+    if not points:
+        raise ValueError(tr('请在画面上点击要选择的物体。'))
+    embedding = object_embedding(rgb, key)
+    h, w = rgb.shape[:2]
+    probability = _object_probability(embedding, points, h, w)
+    added = [(x, y) for x, y, label in points if label]
+    for x, y, label in points:
+        if label:
+            continue
+        own = _object_probability(embedding, [[x, y, 1]], h, w)
+        oh, ow = own.shape
+        if any(own[min(oh - 1, int(py * oh)), min(ow - 1, int(px * ow))] > .5 for px, py in added):
+            continue
+        probability = np.minimum(probability, 1 - own)
+    return refine(probability, rgb)
 
 
 def color_region(rgb, point, tolerance=18):

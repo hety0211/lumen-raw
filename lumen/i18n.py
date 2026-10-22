@@ -55,7 +55,7 @@ def normalize(code):
 def settings_path():
     # Same folder as host.data_folder(); host translates strings at import, so it cannot be used here.
     import sys
-    if sys.platform == 'darwin':
+    if sys.platform == 'darwin' and not os.environ.get('LOCALAPPDATA'):
         return Path.home() / 'Library' / 'Application Support' / 'LUMEN RAW' / 'settings.ini'
     base = os.environ.get('LOCALAPPDATA') or str(Path.home() / '.local' / 'state')
     return Path(base) / 'LUMEN RAW' / 'settings.ini'

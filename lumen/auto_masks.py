@@ -4,13 +4,16 @@
 preview), then a fine pass refines its edges on the original photograph in the background
 (``selection.fine``) and replaces it — one more undo step.  Masks of older projects can be
 refined with 精细化所选蒙版.
+
+2.1.0: landscape masks (water, vegetation, mountains, buildings, ground) and objects picked with
+a click (Shift adds to the selected object, Alt takes away).
 """
 import copy
 import time
 from PySide6.QtWidgets import QHBoxLayout, QPushButton, QLabel, QCheckBox, QComboBox
 from .widgets import AdjustSlider
 from .scheduler import Activity as A
-from . import engine, model, selection, lens, viewport
+from . import engine, model, selection, viewport, host
 from .i18n import tr, setting, save_setting
 
 #: settings.ini key of the fine-edge option (on by default).
@@ -33,6 +36,18 @@ class AutoMaskMixin:
             b=self.button(text,lambda checked=False,k=kind:self.create_auto_mask(k))
             second.addWidget(b);self.ai_mask_buttons.append(b)
         layout.addLayout(second)
+        # 2.1.0: landscape groups, one network for all five.
+        for kinds in ((('水面','water'),('植被','vegetation'),('山体','mountain')),(('建筑','building'),('地面','ground'))):
+            row=QHBoxLayout()
+            for text,kind in kinds:
+                b=self.button(tr(text),lambda checked=False,k=kind:self.create_auto_mask(k))
+                row.addWidget(b);self.ai_mask_buttons.append(b)
+            layout.addLayout(row)
+        self.object_button=QPushButton(tr('点选物体'))
+        self.object_button.setCheckable(True)
+        self.object_button.setToolTip(tr('单击画面中的物体生成蒙版；Shift + 单击加选，{OPTION} + 单击减选所选物体蒙版。', OPTION=host.OPTION))
+        self.object_button.toggled.connect(self.object_selection_mode)
+        layout.addWidget(self.object_button)
         self.color_region_button=QPushButton(tr('点选相似颜色区域'))
         self.color_region_button.setCheckable(True)
         self.color_region_button.toggled.connect(self.color_selection_mode)
@@ -41,7 +56,8 @@ class AutoMaskMixin:
         self.color_tolerance.default_value=18
         self.color_tolerance.setValue(18)
         layout.addWidget(self.color_tolerance)
-        tip=QLabel(tr('主体识别显著对象；近景按相对深度估算较近区域。\n背景为主体的反选。自动蒙版可用画笔修整，结果随工程保存。'))
+        tip=QLabel(tr('主体识别显著对象；近景按相对深度估算较近区域。\n背景为主体的反选。自动蒙版可用画笔修整，结果随工程保存。')+
+                   tr('\n水面、植被、山体、建筑、地面按风光语义识别；点选物体可识别任意单个物体。'))
         tip.setWordWrap(True);tip.setObjectName('subtle');layout.addWidget(tip)
         self.refine_mask_check=QCheckBox(tr('画笔修整自动蒙版'))
         self.refine_mask_check.toggled.connect(self.update_tool)
@@ -61,8 +77,70 @@ class AutoMaskMixin:
     def color_selection_mode(self,checked):
         if checked:
             self.wb_button.setChecked(False)
+            self.object_button.setChecked(False)
             self.statusBar().showMessage(tr('点击画面中的颜色区域；容差越大，连通选区越宽。'))
         self.update_tool()
+
+    def object_selection_mode(self,checked):
+        if checked:
+            self.wb_button.setChecked(False)
+            self.color_region_button.setChecked(False)
+            self.statusBar().showMessage(tr('单击要选择的物体；Shift + 单击加选，{OPTION} + 单击减选。', OPTION=host.OPTION))
+        self.update_tool()
+
+    def pick_object(self,point,mode):
+        """2.1.0: a click with 点选物体: a new object mask, or one more click of the selected one."""
+        if self.source is None or not self.work.can_start(A.SELECTION):return
+        selected=self.selected_mask()
+        if mode!='new' and (selected is None or selected['kind']!='object'):
+            if mode=='subtract':
+                return self.statusBar().showMessage(tr('先单击选择一个物体，再用 {OPTION} + 单击减选。', OPTION=host.OPTION))
+            mode='new'
+        if mode=='new':
+            if len(self.edits['masks'])>=32:
+                return self.error(tr('最多支持 32 个蒙版。'))
+            points=[list(point)+[1]]
+        else:
+            points=copy.deepcopy(selected['points'])+[list(point)+[0 if mode=='subtract' else 1]]
+            if len(points)>model.OBJECT_POINTS:
+                return self.statusBar().showMessage(tr('一个物体蒙版最多 {count} 次点选。', count=model.OBJECT_POINTS))
+        self.work.begin(A.SELECTION)
+        token,source,corrections=self.document_token,self.source,copy.deepcopy(self.edits)
+        index=self.current_mask if mode!='new' else None
+        previous=copy.deepcopy(selected['points']) if mode!='new' else None
+        key=(token,engine._key(corrections.get('develop',{}),corrections.get('lens'),corrections.get('retouch'),engine.process_version(corrections)))
+        self.statusBar().showMessage(tr('正在识别物体…'))
+        def work():
+            rgb=engine.selection_view(source,corrections)
+            return selection.object_mask(rgb,points,key)
+        def ready(alpha):
+            self.work.end(A.SELECTION)
+            if token!=self.document_token:return
+            if float((alpha>.5).mean())<.00005:
+                return self.statusBar().showMessage(tr('没有识别到物体；可换个位置点击，或用画笔蒙版。'))
+            if index is not None:
+                masks=self.edits['masks']
+                if not (0<=index<len(masks) and masks[index]['kind']=='object' and masks[index].get('points')==previous):
+                    return
+            self.commit()
+            raster=selection.encode(alpha)
+            if index is None:
+                mask=model.new_mask('object',len(self.edits['masks'])+1)
+                mask.update(raster=raster,feather=3.,points=points)
+                self.edits['masks'].append(mask)
+                self.current_mask=len(self.edits['masks'])-1
+            else:
+                mask=self.edits['masks'][index]
+                mask.update(raster=raster,points=points)
+            self.refresh()
+            self.changed();self.commit()
+            self.statusBar().showMessage(tr('已选择{name} · Shift + 单击加选，{OPTION} + 单击减选', name=mask['name'], OPTION=host.OPTION))
+            if self.fine_mask_check.isChecked():
+                self.refine_masks_later([('object',raster)])
+        def fail(text):
+            self.work.end(A.SELECTION)
+            if token==self.document_token:self.error(tr('物体识别失败：')+text)
+        self.job(work,ready,fail)
 
     def pick_color_region(self,point):
         self.create_auto_mask('color',point)
@@ -82,8 +160,8 @@ class AutoMaskMixin:
         tolerance=self.color_tolerance.spin.value()
         self.statusBar().showMessage(tr('正在本地识别选区…'))
         def work():
-            # Masks are drawn on the lens-corrected frame (1.5.1).
-            rgb=engine.develop_view(lens.correct(source,corrections),corrections)
+            # Masks are drawn on the lens-corrected frame (1.5.1), retouched (2.1.0).
+            rgb=engine.selection_view(source,corrections)
             if kind=='color':
                 alpha=selection.color_region(rgb,point,tolerance)
                 provider=tr('连通颜色选择')

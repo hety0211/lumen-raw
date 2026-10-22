@@ -32,25 +32,28 @@ class Activity(enum.Enum):
     RENDER = 'render'            # preview render in flight
     DETAIL = 'detail'            # original-resolution detail render
     THUMBNAILS = 'thumbnails'    # filmstrip thumbnail batch
+    REMOVAL = 'removal'          # AI removal filling on its own thread (2.1.0)
 
 
 A = Activity
-#: Foreground work that blocks closing the window.
-EXCLUSIVE = frozenset({A.LOADING, A.EXPORTING, A.AI, A.SELECTION})
+#: Foreground work that blocks closing the window.  2.1.0: a pending AI removal too (its result would be
+#: lost); it does not block opening another photo: the result goes to the photo it was made on.
+EXCLUSIVE = frozenset({A.LOADING, A.EXPORTING, A.AI, A.SELECTION, A.REMOVAL})
 #: Activities that must be idle before the key may start.
 BLOCKED_BY = {
     A.LOADING: frozenset({A.LOADING, A.EXPORTING, A.AI}),
-    A.EXPORTING: frozenset({A.LOADING, A.EXPORTING, A.AI, A.SELECTION}),
-    A.AI: frozenset({A.LOADING, A.EXPORTING, A.AI, A.SELECTION}),
+    A.EXPORTING: frozenset({A.LOADING, A.EXPORTING, A.AI, A.SELECTION, A.REMOVAL}),
+    A.AI: frozenset({A.LOADING, A.EXPORTING, A.AI, A.SELECTION, A.REMOVAL}),
     A.SELECTION: frozenset({A.LOADING, A.AI, A.SELECTION}),
     A.RENDER: frozenset({A.LOADING, A.AI, A.RENDER}),
     A.DETAIL: frozenset({A.LOADING, A.EXPORTING, A.AI, A.DETAIL}),
     A.THUMBNAILS: frozenset({A.AI, A.THUMBNAILS}),
+    A.REMOVAL: frozenset(),
 }
 LABELS = {A.LOADING: tr('正在读取'), A.EXPORTING: tr('正在导出'), A.AI: tr('AI / 合成处理中'),
           A.SELECTION: tr('正在识别蒙版'), A.RENDER: tr('正在更新预览'), A.DETAIL: tr('正在读取原图细节'),
-          A.THUMBNAILS: tr('正在生成缩略图')}
-ORDER = (A.AI, A.EXPORTING, A.LOADING, A.SELECTION, A.DETAIL, A.RENDER, A.THUMBNAILS)
+          A.THUMBNAILS: tr('正在生成缩略图'), A.REMOVAL: tr('正在 AI 移除')}
+ORDER = (A.AI, A.EXPORTING, A.LOADING, A.SELECTION, A.REMOVAL, A.DETAIL, A.RENDER, A.THUMBNAILS)
 
 
 class WorkState(QObject):
@@ -181,6 +184,11 @@ class JobScheduler(QObject):
 
     def _finish(self, job):
         self.jobs.discard(job)
+        # 2.1.0: the job's signals hold its callbacks (connections) and they hold the job, a cycle
+        # Python cannot see through Qt: every finished job kept its closures and whatever they
+        # captured (the window, the original-resolution image of each photo zoomed into).
+        job.fn = None
+        job.signals.deleteLater()
         if self.active is job:
             self.active = None
         if self.closing:

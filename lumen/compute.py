@@ -343,9 +343,14 @@ def _gpu_kernels_in_profile(path, provider):
 
 
 class Session:
-    """Session facade: first inference verifies GPU kernels; failures retry on CPU."""
-    def __init__(self, path, accelerated=True, excluded=(), on_attempt=None, status=None):
-        import onnxruntime as ort
+    """Session facade: first inference verifies GPU kernels; failures retry on CPU.
+
+    ``arena=False`` (2.1.0) returns a CPU session's working memory after every run instead of
+    keeping it in ONNX Runtime's arena: LaMa holds 2.7 GB after one 1024-pixel fill with the
+    arena, 3.7 GB after two, and ~5 % slower without it."""
+    def __init__(self, path, accelerated=True, excluded=(), on_attempt=None, status=None, arena=True):
+        ort = performance.onnxruntime()
+        self.arena = arena
         self.path = path if isinstance(path, bytes) else str(path)
         self.label = '<in-memory graph>' if isinstance(path, bytes) else Path(self.path).name
         self.ort = ort
@@ -363,7 +368,7 @@ class Session:
             try:
                 if on_attempt:
                     on_attempt(provider)
-                options = performance.session_options()
+                options = self._options()
                 plugin = isinstance(providers, PluginDevices)
                 if plugin:
                     # Plugin EPs claim whole subgraphs; the provider list is the verification.
@@ -400,9 +405,15 @@ class Session:
             if on_attempt:
                 on_attempt('CPUExecutionProvider')
             self._session = ort.InferenceSession(self.path,
-                sess_options=performance.session_options(), providers=['CPUExecutionProvider'])
+                sess_options=self._options(), providers=['CPUExecutionProvider'])
             if accelerated:
                 self.warning = (tr('GPU 初始化失败：') + last_error) if last_error else tr('当前 ONNX 环境没有可用的 GPU 执行设备。')
+
+    def _options(self):
+        options = performance.session_options()
+        if not getattr(self, 'arena', True):
+            options.enable_cpu_mem_arena = False
+        return options
 
     def _cpu_fallback(self, warning):
         log.warning('ONNX CPU fallback for %s: %s', getattr(self, 'label', self.path), warning)
@@ -412,7 +423,7 @@ class Session:
             except Exception:
                 pass
         self._session = self.ort.InferenceSession(self.path,
-            sess_options=performance.session_options(), providers=['CPUExecutionProvider'])
+            sess_options=self._options(), providers=['CPUExecutionProvider'])
         self.provider, self.device, self._verified = 'CPUExecutionProvider', '', True
         self.warning = warning
         state.report(self.provider, detail=tr('{threads} 线程 · ONNX CPU', threads=performance.THREADS), warning=self.warning)
@@ -461,16 +472,16 @@ def isolation_enabled():
     return os.environ.get('LUMEN_AI_ISOLATION', '1') != '0' and requested_mode() != 'cpu'
 
 
-def session(path, accelerated=True):
+def session(path, accelerated=True, arena=True):
     # Preserve the tiny ONNX stand-in used by the tiling contract test.
-    import onnxruntime as ort
+    ort = performance.onnxruntime()
     if not hasattr(ort, 'SessionOptions'):
         return ort.InferenceSession(str(path), providers=['CPUExecutionProvider'])
     if accelerated and not isinstance(path, bytes) and isolation_enabled() and not in_worker():
         # A GPU driver fault in a neural model must not take the editor down.
         from .ai_worker import RemoteSession
         return RemoteSession(path)
-    return Session(path, accelerated)
+    return Session(path, accelerated, arena=arena)
 
 
 _IN_WORKER = False

@@ -15,6 +15,7 @@ import collections
 import json
 import logging
 import os
+import sqlite3
 import threading
 from pathlib import Path
 
@@ -25,7 +26,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QBoxLayout, QCom
                                QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
                                QListView, QMenu,
                                QMessageBox, QPushButton, QSlider, QSplitter, QStyle, QStyledItemDelegate, QToolButton,
-                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QButtonGroup, QCheckBox)
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QButtonGroup, QCheckBox, QSizePolicy)
 
 from . import catalog, host, i18n, library_db, preview_cache, theme
 from .i18n import tr, N_
@@ -85,6 +86,14 @@ def camera_text(row):
 
 
 # --------------------------------------------------------------------------- model and delegate
+
+
+def file_format(row):
+    """'raw', 'jpeg' or 'other' (PNG, TIFF) for a library row, by its file extension (2.1.0)."""
+    from .engine import RAW_EXTENSIONS
+    ext = (row.get('ext') or Path(row['path']).suffix).lower()
+    return 'raw' if ext in RAW_EXTENSIONS else 'jpeg' if ext in ('.jpg', '.jpeg') else 'other'
+
 
 class LibraryModel(QAbstractListModel):
     def __init__(self, parent=None):
@@ -735,7 +744,17 @@ class _Relay(QObject):
 
 class LibraryModeMixin:
     def init_library_mode(self):
-        self.library_db = library_db.LibraryDB()
+        try:
+            self.library_db = library_db.LibraryDB()
+        except sqlite3.Error as error:
+            # 2.1.0: the library stays untouched (e.g. another LUMEN RAW process holds it locked); this
+            # session uses a temporary one.
+            import tempfile
+            log.error('library database unavailable: %s', error)
+            note = tr('图库数据库暂时无法打开（{error}），本次使用临时图库，原图库保持不变。关闭其他 LUMEN RAW 窗口或命令行后重新启动即可恢复。',
+                      error=error)
+            self.library_db = library_db.LibraryDB(Path(tempfile.mkdtemp(prefix='lumen-library-')) / 'library.db')
+            QTimer.singleShot(0, self, lambda: QMessageBox.warning(self, 'LUMEN RAW', note))
         self.previews = preview_cache.default()
         self.previews.paused = lambda: self.work.busy(A.AI, A.EXPORTING)
         from .library_tasks import LibraryWorker
@@ -808,37 +827,17 @@ class LibraryModeMixin:
         middle = QVBoxLayout(center)
         middle.setContentsMargins(0, 0, 0, 0)
         middle.setSpacing(0)
+        # 2.1.0: two rows: the title and its count above, the filters below (one row overflowed
+        # at 1280 pixels once the RAW / JPEG boxes were added; a long folder title is clipped).
         bar = QHBoxLayout()
-        bar.setContentsMargins(14, 8, 14, 8)
+        bar.setContentsMargins(14, 8, 14, 0)
         self.library_title = QLabel(tr('全部照片'))
         self.library_title.setObjectName('section')
-        bar.addWidget(self.library_title)
+        self.library_title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        bar.addWidget(self.library_title, 3)
         self.library_summary = QLabel()
         self.library_summary.setObjectName('subtle')
-        bar.addWidget(self.library_summary, 1)
-        self.library_filter = QComboBox()
-        for title, _ in QUICK_FILTERS + LIBRARY_FILTERS:
-            self.library_filter.addItem(tr(title))
-        self.library_filter.setToolTip(tr('筛选图库'))
-        self.library_filter.currentIndexChanged.connect(lambda _: self.refresh_library_grid())
-        bar.addWidget(self.library_filter)
-        self.library_search = QLineEdit()
-        self.library_search.setPlaceholderText(tr('搜索：文件名、关键词、相机 或 rating>=3 keyword:海边'))
-        self.library_search.setToolTip(tr('与智能相册的条件相同；直接输入文字时同时查找文件名、关键词、相机与镜头。'))
-        self.library_search.setClearButtonEnabled(True)
-        self.library_search.setFixedWidth(250)
-        self.library_search.textChanged.connect(lambda _: self.library_refresh_timer.start())
-        bar.addWidget(self.library_search)
-        self.library_sort = QComboBox()
-        for _, title in SORTS:
-            self.library_sort.addItem(tr(title))
-        self.library_sort.setToolTip(tr('排序'))
-        self.library_sort.currentIndexChanged.connect(lambda _: self.refresh_library_grid())
-        bar.addWidget(self.library_sort)
-        self.collapse_bursts = QCheckBox(tr('折叠连拍'))
-        self.collapse_bursts.setToolTip(tr('每组连拍只显示最佳的一张（睁眼且最清晰）'))
-        self.collapse_bursts.toggled.connect(lambda _: self.refresh_library_grid())
-        bar.addWidget(self.collapse_bursts)
+        bar.addWidget(self.library_summary, 2)
         self.thumb_slider = QSlider(Qt.Orientation.Horizontal)
         self.thumb_slider.setRange(THUMB_MIN, THUMB_MAX)
         self.thumb_slider.setValue(self.library_thumb_edge)
@@ -847,6 +846,47 @@ class LibraryModeMixin:
         self.thumb_slider.valueChanged.connect(self.set_thumbnail_size)
         bar.addWidget(self.thumb_slider)
         middle.addLayout(bar)
+        filters = QHBoxLayout()
+        filters.setContentsMargins(14, 6, 14, 8)
+        self.library_filter = QComboBox()
+        for title, _ in QUICK_FILTERS + LIBRARY_FILTERS:
+            self.library_filter.addItem(tr(title))
+        self.library_filter.setToolTip(tr('筛选图库'))
+        self.library_filter.currentIndexChanged.connect(lambda _: self.refresh_library_grid())
+        filters.addWidget(self.library_filter)
+        self.library_search = QLineEdit()
+        self.library_search.setPlaceholderText(tr('搜索：文件名、关键词、相机 或 rating>=3 keyword:海边'))
+        self.library_search.setToolTip(tr('与智能相册的条件相同；直接输入文字时同时查找文件名、关键词、相机与镜头。'))
+        self.library_search.setClearButtonEnabled(True)
+        self.library_search.setMinimumWidth(140)
+        self.library_search.setMaximumWidth(320)
+        self.library_search.textChanged.connect(lambda _: self.library_refresh_timer.start())
+        filters.addWidget(self.library_search, 1)
+        self.library_sort = QComboBox()
+        for _, title in SORTS:
+            self.library_sort.addItem(tr(title))
+        self.library_sort.setToolTip(tr('排序'))
+        self.library_sort.currentIndexChanged.connect(lambda _: self.refresh_library_grid())
+        filters.addWidget(self.library_sort)
+        self.collapse_bursts = QCheckBox(tr('折叠连拍'))
+        self.collapse_bursts.setToolTip(tr('每组连拍只显示最佳的一张（睁眼且最清晰）'))
+        self.collapse_bursts.toggled.connect(lambda _: self.refresh_library_grid())
+        filters.addWidget(self.collapse_bursts)
+        # 2.1.0: RAW and JPEG files (e.g. a camera's RAW + JPEG pairs) shown together or one kind
+        # at a time; the grid and the culling view that starts from it show the same photos.
+        self.format_checks = {}
+        filters.addSpacing(14)
+        for kind, tip in (('raw', tr('显示 RAW 文件（含 DNG）。RAW 与 JPEG 至少保留一种；PNG、TIFF 始终显示。')),
+                          ('jpeg', tr('显示 JPEG 文件。RAW 与 JPEG 至少保留一种；PNG、TIFF 始终显示。'))):
+            check = QCheckBox(kind.upper())
+            check.setChecked(True)
+            check.setToolTip(tip)
+            check.toggled.connect(self.library_formats_changed)
+            filters.addWidget(check)
+            filters.addSpacing(4)
+            self.format_checks[kind] = check
+        filters.addStretch()
+        middle.addLayout(filters)
         self.library_model = LibraryModel(self)
         self.grid = GridView()
         self.grid.setModel(self.library_model)
@@ -984,6 +1024,7 @@ class LibraryModeMixin:
             found = tree.find(['all'])
         tree.setCurrentItem(found)
         self.library_title.setText(found.text(0).split('  ')[0])
+        self.library_title.setToolTip(self.library_title.text())
         tree.blockSignals(False)
 
     def choose_library_source(self, source):
@@ -992,6 +1033,7 @@ class LibraryModeMixin:
         self.library_source = tuple(source)
         item = self.source_tree.currentItem()
         self.library_title.setText(item.text(0).split('  ')[0] if item else tr('全部照片'))
+        self.library_title.setToolTip(self.library_title.text())
         self.refresh_library_grid(scroll_top=True)
 
     def source_rows_spec(self):
@@ -1036,6 +1078,9 @@ class LibraryModeMixin:
         self.library_search.style().polish(self.library_search)
         if rows is None:
             return
+        shown = {kind for kind, check in self.format_checks.items() if check.isChecked()}
+        if len(shown) < len(self.format_checks):
+            rows = [r for r in rows if file_format(r) in shown | {'other'}]
         if self.collapse_bursts.isChecked():
             rows = [r for r in rows if not r.get('burst') or r.get('best')]
             for r in rows:
@@ -1053,6 +1098,13 @@ class LibraryModeMixin:
         self.library_summary.setText(tr('  {n} 张', n=len(rows)) + (tr(' · 图库共 {total} 张', total=total) if total != len(rows) else ''))
         self.want_library_work(rows)
         self.update_library_info()
+
+    def library_formats_changed(self, *_):
+        """The kind still shown cannot be turned off as well (an empty grid would only puzzle)."""
+        raw, jpeg = self.format_checks['raw'], self.format_checks['jpeg']
+        raw.setEnabled(jpeg.isChecked())
+        jpeg.setEnabled(raw.isChecked())
+        self.refresh_library_grid()
 
     def want_library_work(self, rows):
         unanalysed = [dict(id=r['id'], path=r['path']) for r in rows if r.get('analysis', 0) < library_db.ANALYSIS

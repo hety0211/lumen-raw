@@ -202,7 +202,8 @@ def lfr(features, window=7, shift=6):
 
 class Recognizer:
     def __init__(self, folder=None, threads=4):
-        import onnxruntime as ort
+        from . import performance
+        ort = performance.onnxruntime()
         folder = Path(folder or model_folder())
         model, tokens = folder / MODEL_NAME, folder / TOKENS_NAME
         options = ort.SessionOptions()

@@ -75,7 +75,8 @@ def install_archive(archive, root, manifest):
 
 #: 1.5.0: assets fetched file by file from a pinned upstream revision (not part of the bundle).
 #: 2.0.0: the culling hints' face models (YuNet from OpenCV Zoo on GitHub, MediaPipe Face Mesh).
-DIRECT_MANIFESTS = ('assets/speech-assets.json', 'assets/culling-assets.json')
+#: 2.1.0: AI removal, picked objects and landscape masks.
+DIRECT_MANIFESTS = ('assets/speech-assets.json', 'assets/culling-assets.json', 'assets/editing-assets.json')
 DIRECT_HOSTS = ('https://huggingface.co/', 'https://github.com/')
 
 

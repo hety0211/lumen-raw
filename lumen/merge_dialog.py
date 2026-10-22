@@ -117,7 +117,7 @@ class MergeDialog(QDialog):
 
     def wait_for_idle(self):
         if self.cancel_event.is_set():self.finished_work();return
-        if self.owner.jobs:QTimer.singleShot(30,self.wait_for_idle);return
+        if self.owner.jobs:QTimer.singleShot(30,self,self.wait_for_idle);return
         self.owner.reset_resolution();self.owner.update_display()
         def work():
             target=None

@@ -24,8 +24,9 @@ def effects():
     return dict(vignette=0., midpoint=50., feather=70., grain=0., grain_size=30.)
 
 
-#: Recipe format written by this version; 6 adds ``process`` (1.6.0), 7 ``lut`` (1.7.0).
-VERSION = 7
+#: Recipe format written by this version; 6 adds ``process`` (1.6.0), 7 ``lut`` (1.7.0), 8 AI
+#: removal in ``retouch`` and the landscape and object masks (2.1.0).
+VERSION = 8
 #: Process version of new photos: 2 is the scene-referred pipeline of 1.6.0 (see engine).
 PROCESS = 2
 
@@ -47,9 +48,19 @@ def lens_defaults():
     return defaults()
 
 
+#: 2.1.0: landscape masks, one network for all five (lumen/selection.py), and picked objects.
+LANDSCAPE_KINDS = ('water', 'vegetation', 'mountain', 'building', 'ground')
+#: Masks stored as a raster (AI selections and colour picks); ``object`` also keeps its clicks.
+RASTER_KINDS = ('sky', 'person', 'background', 'color', 'subject', 'foreground') + LANDSCAPE_KINDS + ('object',)
+#: Clicks of an object mask: ``[x, y, label]`` (1 adds, 0 removes).
+OBJECT_POINTS = 32
+
+
 def new_mask(kind, index):
     names = dict(brush=tr('画笔'), linear=tr('线性渐变'), radial=tr('径向渐变'), luminance=tr('亮度范围'), sky=tr('天空'),
-                 person=tr('人物'), background=tr('背景'), color=tr('相似颜色'), subject=tr('主体'), foreground=tr('近景'))
+                 person=tr('人物'), background=tr('背景'), color=tr('相似颜色'), subject=tr('主体'), foreground=tr('近景'),
+                 water=tr('水面'), vegetation=tr('植被'), mountain=tr('山体'), building=tr('建筑'), ground=tr('地面'),
+                 object=tr('物体'))
     return dict(name=f'{names[kind]} {index}',
                 kind=kind, enabled=True, invert=False, opacity=100., feather=50.,
                 start=[.25, .25], end=[.75, .75], strokes=[], adjustments=adjustments(),
@@ -73,7 +84,7 @@ def validate(data):
             base[k] = number(a.get(k, 0), -5 if k == 'exposure' else -100,
                              5 if k == 'exposure' else 100)
         return base
-    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5, 6, 7):
+    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5, 6, 7, 8):
         raise ValueError(tr('不支持的工程版本。'))
     r = recipe()
     # Projects before 1.6.0 have no process version: they keep rendering as they always did.
@@ -117,11 +128,16 @@ def validate(data):
     if not isinstance(ops, list) or len(ops) > 500:
         raise ValueError(tr('最多支持 500 个修复笔划。'))
     for op in ops:
-        if op.get('kind') not in ('heal', 'clone') or not 1 <= len(op.get('points', [])) <= 50000:
+        if op.get('kind') not in ('heal', 'clone', 'remove') or not 1 <= len(op.get('points', [])) <= 50000:
             raise ValueError(tr('无效修复笔划。'))
         item = dict(kind=op['kind'], enabled=bool(op.get('enabled', True)),
                     points=[point(p) for p in op['points']], radius=number(op['radius'], .001, .1),
                     opacity=number(op.get('opacity', 100), 0, 100), feather=number(op.get('feather', 50), 0, 100))
+        if op['kind'] == 'remove':
+            # 2.1.0: the LaMa fill computed when the removal was made (lumen/remove.py).
+            from . import remove
+            item['patch'] = remove.validate(op.get('patch'))
+            item['picked'] = bool(op.get('picked', False))
         if op['kind'] == 'clone':
             offset = op['offset']
             if not isinstance(offset, list) or len(offset) != 2:
@@ -168,17 +184,26 @@ def validate(data):
     if len(masks) > 32:
         raise ValueError(tr('最多支持 32 个蒙版。'))
     for m in masks:
-        if m['kind'] not in ('brush', 'linear', 'radial', 'luminance', 'sky', 'person', 'background', 'color', 'subject', 'foreground'):
+        if m['kind'] not in ('brush', 'linear', 'radial', 'luminance') + RASTER_KINDS:
             raise ValueError(tr('不支持的蒙版。'))
         item = new_mask(m['kind'], 1)
         item.update(name=str(m['name'])[:80], enabled=bool(m.get('enabled', True)),
                     invert=bool(m.get('invert', False)), opacity=number(m['opacity'], 0, 100),
                     feather=number(m['feather'], 0, 100), start=point(m['start']), end=point(m['end']),
                     adjustments=adj(m['adjustments']))
-        if m['kind'] in ('sky','person','background','color','subject','foreground'):
+        if m['kind'] in RASTER_KINDS:
             from .selection import decode
             decode(m.get('raster'))
             item['raster'] = m['raster']
+        if m['kind'] == 'object':
+            clicks = m.get('points', [])
+            if not isinstance(clicks, list) or not 1 <= len(clicks) <= OBJECT_POINTS:
+                raise ValueError(tr('不支持的蒙版。'))
+            item['points'] = []
+            for c in clicks:
+                if not isinstance(c, list) or len(c) != 3 or c[2] not in (0, 1) or isinstance(c[2], bool):
+                    raise ValueError(tr('无效坐标。'))
+                item['points'].append(point(c[:2]) + [int(c[2])])
         levels = m.get('luminance_range', [50., 100.])
         if len(levels) != 2:
             raise ValueError(tr('无效亮度范围。'))
@@ -197,25 +222,48 @@ def validate(data):
     return r
 
 
-#: Largest project file read (1.7.0: fine AI masks are up to 4096 pixels; 32 MB before).
-PROJECT_BYTES = 128 * 1024 * 1024
+#: Largest project file written and read (1.7.0: fine AI masks are up to 4096 pixels; 32 MB before).
+#: 2.1.0: 512 MB like albums (AI removal patches), and checked before a save replaces the file:
+#: until then a project could be saved that LUMEN RAW then refused to open.
+PROJECT_BYTES = 512 * 1024 * 1024
+
+
+def stored_source(source, folder):
+    """The photo's path as project and album files store it: relative to their folder with '/'
+    (2.1.0: Windows wrote ``RAW\\IMG.ARW``, which macOS read as one file name), or absolute on
+    another drive."""
+    import os
+    try:
+        return Path(os.path.relpath(Path(source).resolve(), Path(folder).resolve())).as_posix()
+    except ValueError:
+        return str(Path(source).resolve())
+
+
+def source_path(stored, folder):
+    """The photo a stored path names, read on any system: a relative path written by older versions
+    on Windows (``RAW\\IMG.ARW``) is found on macOS too."""
+    import os
+    import re
+    text = str(stored)
+    if os.sep == '/' and '\\' in text and not re.match(r'^[A-Za-z]:\\|^\\\\', text):
+        text = text.replace('\\', '/')
+    return (Path(folder) / text).resolve()
 
 
 def save_project(path, source, edits, snapshots=None):
-    import os
     path = Path(path)
-    source = Path(source).resolve()
-    try:
-        relative = os.path.relpath(source, path.parent.resolve())
-    except ValueError:
-        relative = str(source)
+    relative = stored_source(source, path.parent)
     snapshots = validate_snapshots(snapshots or [])
     # 1.7.0: LUT tables and mask rasters are stored once, however many snapshots use them.
     recipes, tables = pack([validate(edits)] + [s['edits'] for s in snapshots])
     payload = dict(application='LUMEN RAW', source=relative, edits=recipes[0],
                    snapshots=[dict(s, edits=e) for s, e in zip(snapshots, recipes[1:])], **tables)
+    data = json.dumps(payload, ensure_ascii=False, indent=2).encode('utf-8')
+    if len(data) > PROJECT_BYTES:
+        raise ValueError(tr('工程过大（{size} MB，上限 {limit} MB），未保存，原工程文件保持不变；可删除部分 AI 移除或快照后再保存。',
+                            size=len(data) // 2 ** 20, limit=PROJECT_BYTES // 2 ** 20))
     tmp = path.with_suffix(path.suffix + '.tmp')
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+    tmp.write_bytes(data)
     tmp.replace(path)
 
 
@@ -227,7 +275,7 @@ def load_project(path, include_snapshots=False):
     if data.get('application') not in ('LUMEN RAW', 'Lumen ARW'):
         raise ValueError(tr('这不是 LUMEN RAW 工程。'))
     tables = stored_tables(data)
-    source = (path.parent / data['source']).resolve()
+    source = source_path(data['source'], path.parent)
     result = (str(source), validate(unpack(data['edits'], tables)))
     return (*result, validate_snapshots(data.get('snapshots', []), tables)) if include_snapshots else result
 
@@ -240,17 +288,29 @@ def pack(recipes):
     from . import lut
     recipes, luts_ = lut.pack(recipes)
     rasters, result = {}, []
+    def ref(text):
+        digest = hashlib.blake2b(text.encode('ascii'), digest_size=12).hexdigest()
+        rasters[digest] = text
+        return digest
     for edits in recipes:
         masks = edits.get('masks', []) if isinstance(edits, dict) else []
         if any(isinstance(m.get('raster'), str) for m in masks):
             packed = []
             for m in masks:
                 if isinstance(m.get('raster'), str):
-                    ref = hashlib.blake2b(m['raster'].encode('ascii'), digest_size=12).hexdigest()
-                    rasters[ref] = m['raster']
-                    m = {k: v for k, v in m.items() if k != 'raster'} | dict(raster_ref=ref)
+                    m = {k: v for k, v in m.items() if k != 'raster'} | dict(raster_ref=ref(m['raster']))
                 packed.append(m)
             edits = dict(edits, masks=packed)
+        # 2.1.0: AI removal patches are stored the same way.
+        ops = edits.get('retouch', []) if isinstance(edits, dict) else []
+        if any(isinstance(o.get('patch'), dict) and isinstance(o['patch'].get('png'), str) for o in ops):
+            packed = []
+            for o in ops:
+                if isinstance(o.get('patch'), dict) and isinstance(o['patch'].get('png'), str):
+                    patch = {k: v for k, v in o['patch'].items() if k != 'png'} | dict(png_ref=ref(o['patch']['png']))
+                    o = dict(o, patch=patch)
+                packed.append(o)
+            edits = dict(edits, retouch=packed)
         result.append(edits)
     tables = {}
     if luts_:
@@ -277,19 +337,30 @@ def unpack(edits, tables):
     from . import lut
     tables = tables or {}
     edits = lut.unpack(edits, tables.get('luts', {}))
+    rasters = tables.get('rasters', {})
+    def stored(ref):
+        raster = rasters.get(ref)
+        digest = hashlib.blake2b(raster.encode('ascii'), digest_size=12).hexdigest() if isinstance(raster, str) else None
+        if digest != ref:
+            raise ValueError(tr('工程中的蒙版数据缺失或已损坏。'))
+        return raster
     masks = edits.get('masks', []) if isinstance(edits, dict) else []
     if any(isinstance(m, dict) and 'raster_ref' in m for m in masks):
-        rasters = tables.get('rasters', {})
         restored = []
         for m in masks:
             if isinstance(m, dict) and 'raster_ref' in m:
-                raster = rasters.get(m['raster_ref'])
-                digest = hashlib.blake2b(raster.encode('ascii'), digest_size=12).hexdigest() if isinstance(raster, str) else None
-                if digest != m['raster_ref']:
-                    raise ValueError(tr('工程中的蒙版数据缺失或已损坏。'))
-                m = {k: v for k, v in m.items() if k != 'raster_ref'} | dict(raster=raster)
+                m = {k: v for k, v in m.items() if k != 'raster_ref'} | dict(raster=stored(m['raster_ref']))
             restored.append(m)
         edits = dict(edits, masks=restored)
+    ops = edits.get('retouch', []) if isinstance(edits, dict) else []
+    if any(isinstance(o, dict) and isinstance(o.get('patch'), dict) and 'png_ref' in o['patch'] for o in ops):
+        restored = []
+        for o in ops:
+            if isinstance(o, dict) and isinstance(o.get('patch'), dict) and 'png_ref' in o['patch']:
+                patch = {k: v for k, v in o['patch'].items() if k != 'png_ref'} | dict(png=stored(o['patch']['png_ref']))
+                o = dict(o, patch=patch)
+            restored.append(o)
+        edits = dict(edits, retouch=restored)
     return edits
 
 

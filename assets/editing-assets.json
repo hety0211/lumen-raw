@@ -1,0 +1,34 @@
+{
+  "version": "2.1.0",
+  "note": "AI removal, picked objects and landscape masks, bundled and run offline on the CPU. LaMa big-lama (Apache-2.0, advimman/lama; ONNX by smile-forge with its Fourier units as matrix products, weights unchanged) fills removals (lumen/remove.py). EfficientViT-SAM L0 (Apache-2.0, MIT Han Lab; official ONNX export) selects the object under a click. EfficientViT-Seg B2 ADE20K (Apache-2.0, MIT Han Lab) has no ONNX upstream: tools/convert_landscape.py exports it from efficientvit_seg_b2_ade20k.pt (huggingface.co/han-cai/efficientvit-seg revision cf3ccaf, sha256 fabfa716…b510) with the ADE20K classes summed into five landscape groups; the file is published on LUMEN RAW's own GitHub release. Pinned revisions; packages store the weights as float16 (tools/compact_models.py).",
+  "files": [
+    {
+      "path": "assets/models/inpaint-lama.onnx",
+      "url": "https://huggingface.co/smile-forge/big-lama-onnx/resolve/4211d2c742f0e3c1076f7e53fcea6cc374addbe8/inpainter/inpainter.onnx",
+      "bytes": 208851664,
+      "sha256": "ef85edd865769c03c753b5faa066be713a46a9c80c8f77954c67c0bb3a4ba2ff"
+    },
+    {
+      "path": "assets/models/object-encoder.onnx",
+      "url": "https://huggingface.co/mit-han-lab/efficientvit-sam/resolve/a2f0c5929196a13ef1ffc9338d3f9e482e1e0e68/onnx/l0_encoder.onnx",
+      "bytes": 123112917,
+      "sha256": "7a37ebd16e65c31253416e33897e7e6b07699127765d538e99ecbfaa3ad1e727"
+    },
+    {
+      "path": "assets/models/object-decoder.onnx",
+      "url": "https://huggingface.co/mit-han-lab/efficientvit-sam/resolve/a2f0c5929196a13ef1ffc9338d3f9e482e1e0e68/onnx/l0_decoder.onnx",
+      "bytes": 16470362,
+      "sha256": "053e72c5703736a8a8a92482c9990c4a26dde9dcb7ff26b05843cf0bc433f42f"
+    },
+    {
+      "path": "assets/models/landscape-seg.onnx",
+      "url": "https://github.com/hety0211/lumen-raw/releases/download/editing-models-1/landscape-seg.onnx",
+      "bytes": 61391343,
+      "sha256": "b0bd6a00d47ca19bc8c2ab4c17b9a9bc0d4f58544a338c8c6f269331d2c26a62",
+      "weights": "https://huggingface.co/han-cai/efficientvit-seg/resolve/cf3ccaf9cbaf670a2cb283612773546824ca0aa1/efficientvit_seg_b2_ade20k.pt",
+      "weights_sha256": "fabfa7163e35d14888690969cd852069f399137be39697bfe5165f03ea76b510",
+      "source": "https://github.com/mit-han-lab/efficientvit/tree/de7d7733cc0329f391b33f1f459271562ec27bd5",
+      "conversion": "python tools/convert_landscape.py <efficientvit checkout> efficientvit_seg_b2_ade20k.pt landscape-seg.onnx (PyTorch 2.14.1 legacy exporter, opset 17; largest difference to PyTorch 4.3e-06)"
+    }
+  ]
+}

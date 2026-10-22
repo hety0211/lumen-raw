@@ -117,6 +117,14 @@ def test_unused_qt_files_are_left_out_of_the_packages(path, windows, macos):
     assert bundle.unused(path, 'macos') is macos
 
 
+def test_symlinks_to_unused_qt_frameworks_go_with_them():
+    toc = [('QtQuick', 'PySide6/Qt/lib/QtQuick.framework/Versions/A/QtQuick', 'SYMLINK'),
+           ('PySide6/Qt/lib/QtQuick.framework/Versions/A/QtQuick', '/x/QtQuick', 'BINARY'),
+           ('QtCore', 'PySide6/Qt/lib/QtCore.framework/Versions/A/QtCore', 'SYMLINK'),
+           ('PySide6/Qt/lib/QtCore.framework/Versions/A/QtCore', '/x/QtCore', 'BINARY')]
+    assert [e[0] for e in bundle.trim(toc, 'macos')] == ['QtCore', 'PySide6/Qt/lib/QtCore.framework/Versions/A/QtCore']
+
+
 def test_onnx_runtime_tooling_is_not_collected():
     assert bundle.runtime_module('onnxruntime.capi._pybind_state')
     assert not bundle.runtime_module('onnxruntime.transformers.models.bert')
@@ -277,7 +285,13 @@ def test_cpu_strips_give_the_same_render_as_one_strip(version, monkeypatch):
     assert stages
     monkeypatch.setattr(engine, 'STRIP_PIXELS', 1 << 40)
     single = engine.process(source, e, backend)
-    np.testing.assert_array_equal(many, single)
+    import platform
+    if platform.machine().lower() in ('x86_64', 'amd64'):
+        np.testing.assert_array_equal(many, single)
+    else:
+        # 2.1.0 (first macOS run): NumPy's ARM vector maths may round the last bit differently
+        # with the array length (2 of 1.4 million values, 2.4e-7 on an M1).
+        np.testing.assert_allclose(many, single, rtol=0, atol=1e-6)
 
 
 def test_strip_spec_samples_the_local_tone_context_at_the_strip_rows():

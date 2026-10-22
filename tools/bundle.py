@@ -24,7 +24,7 @@ EXCLUDES = ['cupy', 'torch', 'torchvision', 'onnx', 'sympy', 'tkinter', '_tkinte
 ORT_TOOLING = ('onnxruntime.transformers', 'onnxruntime.tools', 'onnxruntime.quantization', 'onnxruntime.training')
 ORT_EXCLUDED_DATAS = ['**/transformers/**', '**/tools/**', '**/quantization/**', '**/training/**']
 #: Assets read only by the build tools, or fetched at run time.
-SKIP_ASSETS = {'runtime-assets.json', 'culling-assets.json', 'models'}
+SKIP_ASSETS = {'runtime-assets.json', 'culling-assets.json', 'editing-assets.json', 'models'}
 #: Interface languages (lumen/i18n.py); Qt's own strings (dialog buttons) come from qtbase_<code>.qm.
 QT_LANGUAGES = ('zh_CN', 'zh_TW', 'ja', 'ko', 'de', 'fr', 'es', 'ru')
 #: Bundled Qt files the app never loads (matched against the destination path, lower case).
@@ -82,5 +82,10 @@ def unused(destination, platform='windows'):
 
 
 def trim(entries, platform='windows'):
-    """A PyInstaller TOC without the unused Qt files; entries are (destination, source, kind)."""
-    return [entry for entry in entries if not unused(entry[0], platform)]
+    """A PyInstaller TOC without the unused Qt files; entries are (destination, source, kind).
+
+    2.1.0: a symbolic link goes with the file it points to.  On macOS PyInstaller adds one per
+    framework at the top of the bundle (``('QtQuick', '…/QtQuick.framework/Versions/A/QtQuick',
+    'SYMLINK')``); left pointing at a trimmed framework, ``codesign --verify`` rejected the app."""
+    return [entry for entry in entries if not unused(entry[0], platform)
+            and not (len(entry) > 2 and entry[2] == 'SYMLINK' and unused(entry[1], platform))]

@@ -161,7 +161,8 @@ def video_encoding(destination):
 
 def models_load():
     """2.0.0: every bundled model opens in ONNX Runtime (a truncated file once reached a package)."""
-    import onnxruntime as ort
+    from . import performance
+    ort = performance.onnxruntime()
     from pathlib import Path
     folder = Path(__file__).resolve().parents[1] / 'assets' / 'models'
     loaded = {}
@@ -171,7 +172,7 @@ def models_load():
         session = ort.InferenceSession(str(path), providers=['CPUExecutionProvider'])
         loaded[path.name] = [i.name for i in session.get_inputs()]
         del session
-    if len(loaded) < 11:
+    if len(loaded) < 15:
         raise RuntimeError(f'only {len(loaded)} models bundled: {sorted(loaded)}')
     return {name: inputs for name, inputs in loaded.items()}
 

@@ -188,12 +188,16 @@ def test_a_library_made_by_2_0_0_is_upgraded_and_repaired(tmp_path):
 def test_sidecar_writes_never_overlap_and_the_newest_change_wins(tmp_path, monkeypatch):
     running, peak, batches = [0], [0], []
     lock = threading.Lock()
+    # 2.1.0: the first write holds the writer until everything below is queued; the test used to
+    # rely on the writer being slower than eight threads (not so on an M1).
+    gate = threading.Event()
 
     def slow_write(entries):
         with lock:
             running[0] += 1
             peak[0] = max(peak[0], running[0])
-        time.sleep(.05)
+        gate.wait(10)
+        time.sleep(.02)
         batches.append([dict(e) for e in entries])
         with lock:
             running[0] -= 1
@@ -212,6 +216,7 @@ def test_sidecar_writes_never_overlap_and_the_newest_change_wins(tmp_path, monke
     for t in threads:
         t.join()
     last = writer.queue(ratings={photo_path: dict(rating=5, flag='', label='red')})
+    gate.set()
     assert writer.wait(last, 10) == [] and writer.flush(10)
     assert peak[0] == 1                                           # one ExifTool at a time
     final = [e for batch in batches for e in batch if e['photo'] == photo_path][-1]

@@ -206,13 +206,15 @@ def _keychain_write(value):
 
 
 def keychain_keys():
-    """provider -> key from the keychain item; empty when it is missing or access is denied."""
+    """provider -> key from the keychain item ({} when there is none), or None when the keychain
+    refuses to be read.  2.1.0: the two differ: a save never replaces an item it could not read
+    (it holds every provider's key)."""
     global _keychain_cache
     try:
         data = _keychain_read()
         keys = json.loads(data.decode('utf-8')) if data else {}
     except (OSError, ValueError):
-        return {}
+        return None
     _keychain_cache = {str(k): str(v) for k, v in keys.items()} if isinstance(keys, dict) else {}
     return dict(_keychain_cache)
 
@@ -301,8 +303,11 @@ def load_settings(path=None):
                 entry['model'] = PROVIDERS[key][3]
     if in_keychain and KEYCHAIN:
         keys = keychain_keys()
+        if keys is None:
+            # Not read (access refused): the keys stay where they are; save_settings keeps them.
+            result['keychain_unread'] = list(in_keychain)
         for key in in_keychain:
-            result['providers'][key]['key'] = keys.get(key, '')
+            result['providers'][key]['key'] = (keys or {}).get(key, '')
     return result
 
 
@@ -310,10 +315,20 @@ def save_settings(settings, path=None):
     path = Path(path or settings_path())
     path.parent.mkdir(parents=True, exist_ok=True)
     data = copy.deepcopy(settings)
+    unread = set(data.pop('keychain_unread', None) or ())
     keys = {name: entry['key'] for name, entry in data['providers'].items() if entry.get('key')}
-    in_keychain = KEYCHAIN and keychain_store(keys)
-    for entry in data['providers'].values():
-        entry['key'] = 'keychain:' if in_keychain and entry.get('key') else protect_key(entry.get('key', ''))
+    in_keychain = False
+    if KEYCHAIN:
+        stored = dict(_keychain_cache) if _keychain_cache is not None and not unread else keychain_keys()
+        if stored is not None:
+            # Keys that could not be read when the settings were loaded stay unless replaced.
+            keys = {name: key for name, key in stored.items() if name in unread} | keys
+            in_keychain = keychain_store(keys)
+    for name, entry in data['providers'].items():
+        if name in unread and not entry.get('key') and not in_keychain:
+            entry['key'] = 'keychain:'    # still in the keychain, read again next time
+        else:
+            entry['key'] = 'keychain:' if in_keychain and entry.get('key') else protect_key(entry.get('key', ''))
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
     if os.name != 'nt':
@@ -374,10 +389,25 @@ ZONES = [('shadows', N_('暗部')), ('midtones', N_('中间调')), ('highlights'
 REGIONS = {
     'sky': (N_('天空'), 'sky'), 'subject': (N_('主体'), 'subject'), 'person': (N_('人物'), 'person'),
     'background': (N_('背景'), 'background'), 'foreground': (N_('近景'), 'foreground'),
+    # 2.1.0: landscape groups.
+    'water': (N_('水面'), 'water'), 'vegetation': (N_('植被'), 'vegetation'), 'mountain': (N_('山体'), 'mountain'),
+    'building': (N_('建筑'), 'building'), 'ground': (N_('地面'), 'ground'),
     'top': (N_('上方渐变'), 'linear'), 'bottom': (N_('下方渐变'), 'linear'),
     'center': (N_('中心径向'), 'radial'), 'edges': (N_('四周径向'), 'radial'),
 }
-AI_REGIONS = ('sky', 'subject', 'person', 'background', 'foreground')
+AI_REGIONS = ('sky', 'subject', 'person', 'background', 'foreground', 'water', 'vegetation', 'mountain', 'building', 'ground')
+#: Other names of regions a reply may use.
+REGION_ALIASES = {
+    '天空': 'sky', '主体': 'subject', '人物': 'person', '人像': 'person', '背景': 'background', '近景': 'foreground',
+    '前景': 'foreground', 'people': 'person', 'portrait': 'person',
+    '水面': 'water', '水': 'water', '湖面': 'water', '海面': 'water', '河流': 'water', 'sea': 'water', 'lake': 'water',
+    'river': 'water', '植被': 'vegetation', '植物': 'vegetation', '树木': 'vegetation', '树': 'vegetation',
+    '草地': 'vegetation', '森林': 'vegetation', 'trees': 'vegetation', 'tree': 'vegetation', 'grass': 'vegetation',
+    'forest': 'vegetation', 'plants': 'vegetation', '山体': 'mountain', '山': 'mountain', '山脉': 'mountain',
+    '岩石': 'mountain', 'mountains': 'mountain', 'hills': 'mountain', 'rocks': 'mountain', '建筑': 'building',
+    '建筑物': 'building', '房屋': 'building', '楼': 'building', 'buildings': 'building', 'architecture': 'building',
+    '地面': 'ground', '路面': 'ground', '沙滩': 'ground', '土地': 'ground', 'road': 'ground', 'sand': 'ground',
+}
 MAX_NEW_MASKS = 4
 ALIASES = {
     '曝光': 'exposure', 'brightness': 'exposure', '亮度': 'exposure', '对比度': 'contrast', '对比': 'contrast',
@@ -1004,8 +1034,7 @@ def plan(edits, reply, files=False):
                     notes.append(tr('没有序号为 {index} 的蒙版', index=index))
                 continue
             region = str(request.get('region', '')).strip().lower()
-            region = {'天空': 'sky', '主体': 'subject', '人物': 'person', '人像': 'person', '背景': 'background',
-                      '近景': 'foreground', '前景': 'foreground', 'people': 'person', 'portrait': 'person'}.get(region, region)
+            region = REGION_ALIASES.get(region, region)
             if region not in REGIONS:
                 notes.append(tr('不支持的区域：{region}', region=region or tr('（未指定）')))
                 continue

@@ -2,7 +2,6 @@
 import copy
 import io
 import json
-import os
 import threading
 from pathlib import Path
 import numpy as np
@@ -209,7 +208,7 @@ class LibraryMixin:
     def batch_export(self):
         """Export every selected photo with its own edits (1.4.1)."""
         paths=[p for p in self.selected_paths() if p in self.documents]
-        if not paths or not self.work.can_start(A.EXPORTING):
+        if not paths or self.removal_busy() or not self.work.can_start(A.EXPORTING):
             return
         self.stash_document()
         from .batch_export import BatchExportDialog,run
@@ -271,6 +270,7 @@ class LibraryMixin:
         """2.0.0: a time-lapse video of a sequence of the 选片集; keyframes carry their edits."""
         from . import timelapse
         from .timelapse_dialog import TimelapseDialog
+        if self.removal_busy():return
         if self.work.busy(A.AI) or not self.work.can_start(A.EXPORTING):
             self.statusBar().showMessage(tr('请等待当前读取或导出完成。'));return
         paths=[p for p in (paths or self.timelapse_paths()) if Path(p).is_file() and Path(p).suffix.lower()!='.lumen']
@@ -418,6 +418,7 @@ class LibraryMixin:
         self.statusBar().showMessage(tr('已套用到 {count} 张照片 · 保留各自裁切、蒙版、修复与相机显影基准', count=count))
 
     def save_album(self,checked=False,path=None):
+        if self.removal_busy():return False
         self.stash_document()
         if not self.documents and not self.library_structure_dirty:return False
         if path is None:
@@ -428,8 +429,7 @@ class LibraryMixin:
         try:
             documents=[];recipes=[]
             for document in self.documents.values():
-                try:source=os.path.relpath(document['path'],path.parent.resolve())
-                except ValueError:source=document['path']
+                source=model.stored_source(document['path'],path.parent)
                 snapshots=model.validate_snapshots(document['snapshots'])
                 recipes+=[model.validate(document['edits'])]+[s['edits'] for s in snapshots]
                 documents.append(dict(source=source,snapshots=snapshots,initialized=document['initialized'],
@@ -457,7 +457,7 @@ class LibraryMixin:
             self.error(str(exc));return False
 
     def open_album(self,path):
-        if not self.confirm_close_library():return
+        if self.removal_busy() or not self.confirm_close_library():return
         try:
             path=Path(path)
             if path.stat().st_size>ALBUM_BYTES:raise ValueError(tr('选片集过大。'))
@@ -466,7 +466,7 @@ class LibraryMixin:
                 raise ValueError(tr('无效选片集。'))
             records={};ratings={};tables=model.stored_tables(data)
             for item in data['documents']:
-                source=str((path.parent/item['source']).resolve())
+                source=str(model.source_path(item['source'],path.parent))
                 try:ratings[source]=catalog.validate({k:item[k] for k in ('rating','flag','label') if k in item})
                 except ValueError:pass
                 record=new_document(source)

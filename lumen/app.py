@@ -97,7 +97,7 @@ class ComputeStatusBar(QStatusBar):
         self.message_label.setToolTip(self._message)
         self._elide()
         if timeout:
-            QTimer.singleShot(timeout, lambda: self.clearMessage() if self._message == message else None)
+            QTimer.singleShot(timeout, self, lambda: self.clearMessage() if self._message == message else None)
 
     def currentMessage(self):
         return self._message
@@ -107,7 +107,7 @@ class ComputeStatusBar(QStatusBar):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        QTimer.singleShot(0, self._elide)
+        QTimer.singleShot(0, self, self._elide)
 
     def _elide(self):
         self.message_label.setText(self.message_label.fontMetrics().elidedText(
@@ -149,7 +149,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.pool.setMaxThreadCount(performance.MAX_THREADS)
         self.work = WorkState(self)
         self.scheduler = JobScheduler(self.pool, self)
-        self.scheduler.drained.connect(lambda: QTimer.singleShot(0, self.close))
+        self.scheduler.drained.connect(lambda: QTimer.singleShot(0, self, self.close))
         self.render_cache = engine.RenderCache()
         # 1.6.1 (issue #6): the wheel scrolls panels without changing controls passing under the pointer.
         WheelGuard.install(QApplication.instance())
@@ -273,6 +273,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.canvas.stroke_finished.connect(self.stroke_finished)
         self.canvas.sampled.connect(self.pick_wb)
         self.canvas.picked.connect(self.pick_grade_color)
+        self.canvas.object_picked.connect(self.object_clicked)
         l.addWidget(self.canvas, 1)
         footer = QHBoxLayout()
         footer.setContentsMargins(18, 12, 18, 12)
@@ -377,7 +378,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.exposure_curve.changed.connect(self.exposure_curve_changed)
         self.exposure_curve.committed.connect(self.commit)
         l.addWidget(self.exposure_curve)
-        l.addWidget(note(tr('曲线任意位置拖动，局部平滑调整并联动黑色／暗部／亮部／白色 · Shift 拖动整体曝光 · 双击还原')))
+        l.addWidget(note(tr('曲线任意位置拖动，局部平滑调整并联动黑色／暗部／亮部／白色 · Shift 拖动整体曝光 · 双击还原')+
+                         tr(' · 两端的黑点、白点可自由拖动，整根曲线随之伸缩')))
         for pair in ((('exposure',tr('曝光 EV')),('contrast',tr('对比度'))),(('shadows',tr('暗部')),('highlights',tr('亮部'))),(('blacks',tr('黑色')),('whites',tr('白色')))):
             row=QHBoxLayout()
             for key,title in pair:
@@ -695,6 +697,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.canvas.image = None
             self.edits = edits
             self.clear_clone_source()
+            self.sync_pending_removals()    # 2.1.0: removals still filling are drawn over their own photo
             self.project_path = project
             self.saved_edits = copy.deepcopy(edits)
             self.snapshots = snapshots
@@ -767,6 +770,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             result, before = output
             if before is not None and source is self.source and self._original[0] != original_key:
                 self._original = (original_key, before)
+                # 2.1.0: where the unedited photo's tones lie, behind the exposure curve.
+                self.exposure_curve.set_histogram(before)
             if token == self.generation:
                 self.rendered = result
                 self.histogram.set_image(engine.crop_rotate(result, self.edits))
@@ -962,6 +967,10 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             reference = self.preview_reference() if mask['kind'] == 'luminance' else None
             alpha = engine.mask_alpha(mask,self.source.shape,reference)
             self.canvas.set_overlay(engine.crop_rotate(alpha,self.edits) if self.final_view.isChecked() else alpha)
+        elif self.source is not None and self.tabs.currentIndex() == 8 and getattr(self, 'removal_overlay', None) is not None:
+            # 2.1.0: the object an AI removal is filling.
+            alpha = self.removal_overlay
+            self.canvas.set_overlay(engine.crop_rotate(alpha,self.edits) if self.final_view.isChecked() else alpha)
         else:
             self.canvas.set_overlay(None)
 
@@ -974,8 +983,11 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.canvas.tool = 'sample'
         elif hasattr(self, 'grade_pick_button') and self.grade_pick_button.isChecked() and self.tabs.currentIndex() == 6:
             self.canvas.tool = 'pick'
+        elif hasattr(self, 'object_button') and self.object_button.isChecked() and self.tabs.currentIndex() == 4:
+            self.canvas.tool = 'object'
         elif self.tabs.currentIndex() == 8:
-            self.canvas.tool = 'heal' if self.retouch_tool.currentIndex() == 0 else 'clone'
+            from .revision import RETOUCH_TOOLS
+            self.canvas.tool = RETOUCH_TOOLS[self.retouch_tool.currentIndex()]
             self.canvas.brush_radius = self.retouch_controls['size'].spin.value() / 200
         elif self.tabs.currentIndex() == 5:
             self.canvas.tool = 'view' if self.final_view.isChecked() else 'crop'
@@ -986,7 +998,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
             self.canvas.mask_geometry = [mask['start'], mask['end']]
         else:
             self.canvas.tool = 'view'
-        self.canvas.setCursor(Qt.CursorShape.CrossCursor if self.canvas.tool in ('sample','color','pick') else Qt.CursorShape.ArrowCursor)
+        self.canvas.setCursor(Qt.CursorShape.CrossCursor if self.canvas.tool in ('sample','color','pick','object') else Qt.CursorShape.ArrowCursor)
         self.canvas.update()
 
     def tab_changed(self, *_):
@@ -1021,12 +1033,22 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         if stroke.get('kind') in ('heal', 'clone'):
             self.add_retouch(stroke)
             return
+        if stroke.get('kind') == 'remove':
+            self.start_removal(stroke)
+            return
         mask = self.selected_mask()
         if mask and (mask['kind']=='brush' or 'raster' in mask):
             mask['strokes'].append(stroke)
             self.update_overlay()
             self.changed()
             self.commit()
+
+    def object_clicked(self, point, mode):
+        """2.1.0: a click with the object tool: remove it (retouch) or select it (masks)."""
+        if self.tabs.currentIndex() == 8:
+            self.pick_removal(point)
+        elif self.tabs.currentIndex() == 4:
+            self.pick_object(point, mode)
 
     def ratio_changed(self, index):
         self.canvas.ratio = [None, self.source.shape[1] / self.source.shape[0] if self.source is not None else 1.5,
@@ -1121,7 +1143,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.update_display()
 
     def save(self):
-        if self.source is None or self.loading:
+        if self.source is None or self.loading or self.removal_busy():
             return False
         path = self.project_path
         if not path:
@@ -1148,6 +1170,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         if self.work.busy(A.SELECTION):
             self.statusBar().showMessage(tr('正在生成蒙版，请完成后再导出。'))
             return
+        if self.work.active(A.REMOVAL):
+            self.statusBar().showMessage(tr('正在 AI 移除，请完成后再导出。'))
+            return
         if self.source is None or not self.work.can_start(A.EXPORTING):
             return
         dialog = ExportDialog(self, self.source_path, enhance)
@@ -1169,6 +1194,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         if self.work.busy(A.AI):return
         if self.work.busy(A.SELECTION):
             self.statusBar().showMessage(tr('正在生成蒙版，请完成后再导出。'))
+            return
+        if self.work.active(A.REMOVAL):
+            self.statusBar().showMessage(tr('正在 AI 移除，请完成后再导出。'))
             return
         if not self.work.can_start(A.EXPORTING):
             return

@@ -11,8 +11,24 @@ def configure():
     import cv2
     cv2.setNumThreads(THREADS)
 
-def session_options():
+_QUIET=False
+
+def onnxruntime():
+    """``onnxruntime`` with its own telemetry turned off (2.1.0).  On macOS ONNX Runtime's
+    Microsoft telemetry (1DS) posts events over HTTP from background threads: a reply arriving
+    while the process exited locked a destroyed mutex and aborted the app as it quit (2 of 4
+    smoke runs).  Only ``ORT_DISABLE_TELEMETRY`` keeps those threads from starting;
+    ``disable_telemetry_events`` stops the events.  LUMEN RAW works offline: off everywhere."""
+    global _QUIET
+    os.environ.setdefault('ORT_DISABLE_TELEMETRY','1')   # its uploader threads (see lumen/__init__.py)
     import onnxruntime as ort
+    if not _QUIET and hasattr(ort, 'disable_telemetry_events'):
+        ort.disable_telemetry_events()
+        _QUIET=True
+    return ort
+
+def session_options():
+    ort=onnxruntime()
     options=ort.SessionOptions()
     options.intra_op_num_threads=THREADS
     options.inter_op_num_threads=1

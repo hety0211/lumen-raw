@@ -98,7 +98,8 @@ class Faces:
     """Face detection and eye openness; one per process (``faces()``), safe across threads."""
 
     def __init__(self, detector=DETECTOR, landmarks=LANDMARKS):
-        import onnxruntime as ort
+        from . import performance
+        ort = performance.onnxruntime()
         self.detector_path = str(detector)
         options = ort.SessionOptions()
         options.intra_op_num_threads = 2

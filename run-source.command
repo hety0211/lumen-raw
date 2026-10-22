@@ -8,8 +8,12 @@ if [ ! -x .venv-macos/bin/python ]; then
     "$PYTHON_BASE" -m venv .venv-macos || exit 1
 fi
 PY=.venv-macos/bin/python
-if ! "$PY" -c "import numpy, cv2, PIL, rawpy, PySide6.QtMultimedia, tifffile, onnxruntime, Metal" >/dev/null 2>&1; then
+# 2.1.0: install again whenever requirements-macos.txt changed since the last install (e.g. PyAV for
+# time-lapse videos, new in 2.0), not only when an older module is missing.
+if ! cmp -s requirements-macos.txt .venv-macos/lumen-requirements.txt || \
+   ! "$PY" -c "import numpy, cv2, PIL, rawpy, PySide6.QtMultimedia, tifffile, onnxruntime, Metal, av" >/dev/null 2>&1; then
     "$PY" -m pip install --disable-pip-version-check --no-cache-dir -r requirements-macos.txt || exit 1
+    cp requirements-macos.txt .venv-macos/lumen-requirements.txt
 fi
 "$PY" tools/fetch_assets.py --verify-only >/dev/null 2>&1 || "$PY" tools/fetch_assets.py || exit 1
 "$PY" tools/fetch_exiftool.py || exit 1

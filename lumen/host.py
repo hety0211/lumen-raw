@@ -33,8 +33,10 @@ def keys(text):
 
 
 def data_folder():
-    """Per-user application data (``gpu-compat.json``)."""
-    if MACOS:
+    """Per-user application data (``gpu-compat.json``).  ``LOCALAPPDATA``, never set on macOS,
+    moves it there too: the tests give each one its own folder (2.1.0; until then tests wrote
+    the Mac's real settings)."""
+    if MACOS and not os.environ.get('LOCALAPPDATA'):
         return Path.home() / 'Library' / 'Application Support' / 'LUMEN RAW'
     base = os.environ.get('LOCALAPPDATA') or str(Path.home() / '.local' / 'state')
     return Path(base) / 'LUMEN RAW'

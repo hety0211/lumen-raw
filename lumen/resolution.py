@@ -71,13 +71,15 @@ class ResolutionMixin:
         return self._original[1]
 
     def preview_reference(self):
-        """Developed preview after lens corrections: what luminance masks select from (1.5.1)."""
+        """Developed preview after lens corrections (1.5.1) and retouching (2.1.0): what luminance
+        masks select from."""
         lens_key = lens.key(self.edits.get('lens'))
-        if lens_key is None:
+        if lens_key is None and not self.edits.get('retouch'):
             return self.preview_original()
-        key = (self.document_token, engine._key(self.edits.get('develop', {}), lens_key, engine.process_version(self.edits)))
+        key = (self.document_token, engine._key(self.edits.get('develop', {}), lens_key, self.edits.get('retouch'),
+                                                engine.process_version(self.edits)))
         if self._reference[0] != key:
-            self._reference = (key, engine.develop_view(lens.correct(self.source, self.edits), self.edits))
+            self._reference = (key, engine.selection_view(self.source, self.edits))
         return self._reference[1]
 
     def detail_keys(self):

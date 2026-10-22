@@ -74,7 +74,8 @@ def ensure(ep_name=TENSORRT_RTX, vendor=NVIDIA, allow_download=True, status=None
             if not supported():
                 raise RuntimeError(f'Windows ML execution providers need Windows 11 24H2 (build {MIN_BUILD}+); '
                                    f'this is build {windows_build()}')
-            import onnxruntime as ort
+            from . import performance
+            ort = performance.onnxruntime()
             if not hasattr(ort, 'register_execution_provider_library'):
                 raise RuntimeError(f'onnxruntime {ort.__version__} cannot load plugin execution providers')
             from windowsml import EpCatalog

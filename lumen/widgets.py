@@ -608,6 +608,8 @@ class Canvas(QWidget):
     color_sampled = Signal(object)
     #: 1.7.0: the colour-grading eyedropper (tool 'pick').
     picked = Signal(object)
+    #: 2.1.0: a click on an object (tool 'object'): point and 'new', 'add' (Shift) or 'subtract' (Alt).
+    object_picked = Signal(object, str)
     viewport_changed = Signal()
     files_dropped = Signal(list)
 
@@ -631,6 +633,8 @@ class Canvas(QWidget):
         self.start = None
         self.end = None
         self.stroke = None
+        #: 2.1.0: AI removal strokes still being filled, drawn until they are done.
+        self.pending = []
         self.pan = None
         self.pointer = None
         self.mask_geometry = None
@@ -769,6 +773,12 @@ class Canvas(QWidget):
         if e.button() == Qt.MouseButton.LeftButton and self.tool in ('sample','color','pick') and self.image_rect().contains(e.position()):
             dict(sample=self.sampled, color=self.color_sampled, pick=self.picked)[self.tool].emit(self.pos(e.position()))
             return
+        if e.button() == Qt.MouseButton.LeftButton and self.tool == 'object' and self.image_rect().contains(e.position()):
+            modifiers = e.modifiers()
+            mode = ('subtract' if modifiers & Qt.KeyboardModifier.AltModifier else
+                    'add' if modifiers & Qt.KeyboardModifier.ShiftModifier else 'new')
+            self.object_picked.emit(self.pos(e.position()), mode)
+            return
         if e.button() == Qt.MouseButton.LeftButton and self.split:
             line = self.image_rect().left() + self.split_position * self.image_rect().width()
             if abs(e.position().x() - line) < 20:
@@ -790,9 +800,9 @@ class Canvas(QWidget):
             return
         self.start = self.pos(e.position())
         self.end = self.start[:]
-        if self.tool in ('brush', 'heal', 'clone'):
+        if self.tool in ('brush', 'heal', 'clone', 'remove'):
             self.stroke = dict(points=[self.start], radius=self.brush_radius, erase=self.erase)
-            if self.tool in ('heal', 'clone'):
+            if self.tool in ('heal', 'clone', 'remove'):
                 self.stroke['kind'] = self.tool
             if self.tool == 'clone':
                 if self.clone_offset is None:
@@ -959,14 +969,17 @@ class Canvas(QWidget):
                 p.drawLine(a, b)
             p.drawEllipse(a, 5, 5)
             p.drawEllipse(b, 5, 5)
-        if self.stroke:
-            p.setPen(QPen(QColor(183, 151, 255, 120), max(2, self.brush_radius * self.brush_scale * min(r.width(), r.height()) * 2),
+        for stroke, colour in [(s, QColor(232, 176, 74, 110)) for s in self.pending] + \
+                              ([(self.stroke, QColor(183, 151, 255, 120))] if self.stroke else []):
+            p.setPen(QPen(colour, max(2, stroke['radius'] * self.brush_scale * min(r.width(), r.height()) * 2),
                          Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
-            path = QPainterPath(self.screen(self.stroke['points'][0]))
-            for pt in self.stroke['points'][1:]:
+            path = QPainterPath(self.screen(stroke['points'][0]))
+            for pt in stroke['points'][1:]:
                 path.lineTo(self.screen(pt))
+            if len(stroke['points']) == 1:
+                path.lineTo(self.screen(stroke['points'][0]) + QPointF(.01, 0))
             p.drawPath(path)
-        if self.pointer and self.tool in ('brush', 'heal', 'clone') and r.contains(self.pointer):
+        if self.pointer and self.tool in ('brush', 'heal', 'clone', 'remove') and r.contains(self.pointer):
             radius = self.brush_radius * self.brush_scale * min(r.width(), r.height())
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.setPen(QPen(QColor('#ffffff'), 1))

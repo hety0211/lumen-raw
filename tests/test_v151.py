@@ -277,7 +277,8 @@ def test_a_fresh_process_starts_in_the_saved_language(tmp_path):
     env = dict(os.environ, LOCALAPPDATA=str(tmp_path), PYTHONIOENCODING='utf-8')
     env.pop('LUMEN_LANGUAGE', None)
     folder = tmp_path
-    if sys.platform == 'darwin':  # ~/Library/Application Support there, not LOCALAPPDATA
+    if sys.platform == 'darwin':  # ~/Library/Application Support there (LOCALAPPDATA is never set)
+        env.pop('LOCALAPPDATA', None)
         env['HOME'] = str(tmp_path)
         folder = tmp_path / 'Library' / 'Application Support'
     (folder / 'LUMEN RAW').mkdir(parents=True)

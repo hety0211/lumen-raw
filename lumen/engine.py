@@ -23,7 +23,7 @@ from typing import NamedTuple
 import cv2
 import numpy as np
 from PIL import Image, ImageCms, ImageOps
-from .model import COLORS
+from .model import COLORS, RASTER_KINDS
 from . import white_balance, retouch, develop, selection, dng, photo_metadata
 from . import curves as tone_curves
 from . import large_image, performance, compute, gpu_graphs, lens, color, tone, lut
@@ -276,6 +276,13 @@ def develop_view(source, edits):
     return np.clip(to_srgb(develop.apply(clip01(source), settings)), 0, 1)
 
 
+def selection_view(source, edits):
+    """``develop_view`` of the lens-corrected, retouched frame: what AI selections and luminance
+    masks look at.  2.1.0: retouching is included, so an object removed with AI is neither found
+    again nor kept in a mask as a ghost."""
+    return develop_view(retouch.apply(lens.correct(source, edits), edits.get('retouch', [])), edits)
+
+
 def load_embedded(path, limit, info, metadata=None, known=True):
     """Sensor data LibRaw cannot decode (e.g. Nikon "High Efficiency" NEF): open the camera's
     full-size embedded JPEG instead, as an 8-bit sRGB photograph (1.4.1).
@@ -429,7 +436,7 @@ class Backend:
                 log.info('CuPy unavailable', exc_info=True)
         if self.xp is np:
             try:
-                import onnxruntime as ort
+                ort = performance.onnxruntime()
                 adapter = compute.preferred_adapter()
                 if compute.requested_mode() in ('auto', 'dml') and adapter and \
                         'DmlExecutionProvider' in ort.get_available_providers():
@@ -776,7 +783,7 @@ def mask_alpha(mask, shape, reference=None, area=None):
     area = area or Area(w, h, 0, 0, w, h)
     ah, aw = area.shape
     feather = mask['feather'] / 100
-    if mask['kind'] in ('sky','person','background','color','subject','foreground'):
+    if mask['kind'] in RASTER_KINDS:
         alpha = selection.raster_alpha(mask,shape,area)
         for stroke in mask.get('strokes',[]):
             brush = dict(mask,kind='brush',opacity=100,invert=False,strokes=[dict(stroke,erase=False)])
@@ -1018,8 +1025,9 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
         x = cache.get('global', _key(detail_key, color_key), lambda: backend.color(tonal, edits, space if version == 2 else None))
     masks = [m for m in edits['masks'] if m['enabled'] and any(m['adjustments'].values())]
     if masks:
-        reference_key = _key(develop_settings, lens_key, version)
-        mask_reference = cache.get('reference', reference_key, lambda: develop_view(corrected, edits)) \
+        reference_key = _key(develop_settings, lens_key, version, edits.get('retouch', []))
+        mask_reference = cache.get('reference', reference_key,
+                                   lambda: develop_view(retouch.apply(corrected, edits.get('retouch', [])), edits)) \
             if any(m['kind'] == 'luminance' for m in masks) else None
         x = x.copy()  # stage results are shared with the cache
         for mask in masks:
@@ -1110,7 +1118,7 @@ def process_region(source, edits, backend=None, rect=None, detail_scale=1., deha
         check()
         x = backend.color(x, edits, space if version == 2 else None)
     if masks:
-        reference = develop_view(corrected[area.y0:area.y1, area.x0:area.x1], edits) \
+        reference = develop_view(retouch.apply(corrected, edits.get('retouch', []), (area.x0, area.y0, area.x1, area.y1)), edits) \
             if any(m['kind'] == 'luminance' for m in masks) else None
         x = x.copy()
         for mask in masks:

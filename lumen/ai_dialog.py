@@ -99,7 +99,7 @@ class EnhancementDialog(QDialog):
     def wait_for_idle(self):
         if self.cancel_event.is_set():self.finished_work();return
         if self.owner.jobs:
-            QTimer.singleShot(30,self.wait_for_idle);return
+            QTimer.singleShot(30,self,self.wait_for_idle);return
         w=self.owner;request=self._request
         # Free full-frame caches before allocating the potentially 4x larger copy.
         w.reset_resolution();w.update_display()
