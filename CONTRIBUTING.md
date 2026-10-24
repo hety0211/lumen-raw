@@ -6,10 +6,10 @@ Bug reports, reproducible examples, documentation improvements, and focused pull
 
 ## Local development
 
-1. Use Windows and Python 3.12 x64, or an Apple silicon Mac with Python 3.12 (`requirements-macos.txt`, then also `python tools/fetch_exiftool.py`); create a virtual environment.
-2. Install `requirements-dev.txt` (Windows) and run `python tools/fetch_assets.py`.
-3. Run `python -m pytest tests -q`. The full suite includes actual local model inference and requires runtime assets.
-4. Run `python main.py` to inspect changes in the desktop application.
+1. Use Windows with Python 3.12 x64, an Apple silicon Mac with Python 3.12 (`requirements-macos.txt`, then also `python tools/fetch_exiftool.py`), or x86_64 Linux with Python 3.12 (`requirements.txt`; `requirements-linux-gpu.txt` adds the CUDA 13 / cuDNN 9 ONNX Runtime and CuPy native kernels). On Linux, `./run-source.sh` creates the environment and restores the assets. Create a virtual environment otherwise.
+2. Install `requirements-dev.txt` (Windows) or `requirements-linux-dev.txt` (Linux) and run `python tools/fetch_assets.py`.
+3. Run `python -m pytest tests -q` (Linux: `LD_LIBRARY_PATH` is prepared by `run-source.sh`; the build script and `main.py` also handle it). The full suite includes actual local model inference and requires runtime assets.
+4. Run `python main.py` to inspect changes in the desktop application. Linux release builds use `tools/build_linux.sh --sample photo.DNG`.
 
 Keep image processing off the UI thread. Preserve original photographs, avoid overwriting output names, and retain compatibility with existing `.lumen` / `.lumenalbum` recipes. Add meaningful regression coverage for processing, state, and I/O changes.
 

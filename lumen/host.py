@@ -1,8 +1,9 @@
 """Host platform: per-user folders and the few interface words that differ on macOS (1.3.1).
 
 Windows keeps its 1.3 locations (``%LOCALAPPDATA%\\LUMEN RAW``).  macOS uses the
-standard ``~/Library`` folders.  Qt maps ``Ctrl`` shortcuts to the Command key
-and ``Alt`` to Option on macOS, so only the displayed names change.
+standard ``~/Library`` folders; Linux uses ``~/.local/state/LUMEN RAW``.
+Qt maps ``Ctrl`` shortcuts to the Command key and ``Alt`` to Option on macOS, so only
+the displayed names change.
 """
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from .i18n import tr
 
 MACOS = sys.platform == 'darwin'
 WINDOWS = os.name == 'nt'
+LINUX = sys.platform.startswith('linux')
 #: CFBundleIdentifier of the macOS app (LumenRAW-macOS.spec); names its ~/Library/Caches folder.
 BUNDLE_ID = 'io.github.hety0211.lumenraw'
 
@@ -22,9 +24,15 @@ OPTION = 'Option' if MACOS else 'Alt'
 #: Canvas navigation hint: trackpads pan with two fingers and zoom with a pinch.
 NAVIGATION = tr('双指滑动平移，捏合或滚轮缩放') if MACOS else tr('中键平移，滚轮放大')
 #: Acceleration choice in the right panel and the enhancement dialog note.
-ACCELERATION = tr('自动加速（Metal / Core ML）') if MACOS else tr('自动加速（DirectML / TensorRT for RTX）')
-GPU_NOTE = (tr('自动模式在 Apple 芯片的 GPU 上运行（Metal / Core ML），失败则使用 CPU。') if MACOS
-            else tr('自动模式会尝试 AMD DirectML 或 NVIDIA CUDA，失败则使用 CPU。'))
+if MACOS:
+    ACCELERATION = tr('自动加速（Metal / Core ML）')
+    GPU_NOTE = tr('自动模式在 Apple 芯片的 GPU 上运行（Metal / Core ML），失败则使用 CPU。')
+elif LINUX:
+    ACCELERATION = tr('自动加速（CUDA / ONNX Runtime）')
+    GPU_NOTE = tr('自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。')
+else:
+    ACCELERATION = tr('自动加速（DirectML / TensorRT for RTX）')
+    GPU_NOTE = tr('自动模式会尝试 AMD DirectML 或 NVIDIA CUDA，失败则使用 CPU。')
 
 
 def keys(text):

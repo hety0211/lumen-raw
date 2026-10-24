@@ -159,7 +159,7 @@ def test_graphics_card_encoders_are_tried_first_and_the_cpu_takes_over(tmp_path,
     monkeypatch.setattr(timelapse.Encoder, '_probe', probe)
     encoder = timelapse.Encoder(tmp_path / 'v.mp4', 'h264', (64, 64), 30, hardware=True)
     encoder.abort()
-    assert tried == list(timelapse.FORMATS['h264']['hardware']) + ['libx264'] and not list(tmp_path.iterdir())
+    assert tried == timelapse.platform_hardware(timelapse.FORMATS['h264']['hardware']) + ['libx264'] and not list(tmp_path.iterdir())
     monkeypatch.setattr(timelapse.Encoder, '_probe', lambda self, codec: (_ for _ in ()).throw(RuntimeError('broken')))
     with pytest.raises(timelapse.EncoderError):
         timelapse.Encoder(tmp_path / 'w.mp4', 'h264', (64, 64), 30)

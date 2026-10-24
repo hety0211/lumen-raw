@@ -59,9 +59,9 @@ def asset_datas(root, platform='windows'):
     for item in sorted((root / 'assets').iterdir()):
         if item.name in SKIP_ASSETS:
             continue
-        if item.name == 'exiftool' and platform == 'macos':
-            # Windows' exiftool.exe with its Strawberry Perl is not shipped on macOS; the Perl
-            # ExifTool from tools/fetch_exiftool.py runs with /usr/bin/perl instead.
+        if item.name == 'exiftool' and platform in ('macos', 'linux'):
+            # Windows' exiftool.exe with its Strawberry Perl is not shipped on macOS or Linux;
+            # the Perl ExifTool from tools/fetch_exiftool.py runs with the system perl instead.
             pairs.append((str(item / 'unix'), 'assets/exiftool/unix'))
         elif item.is_dir():
             pairs.append((str(item), f'assets/{item.name}'))

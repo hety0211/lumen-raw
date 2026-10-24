@@ -1333,5 +1333,16 @@
  "工程过大（{size} MB，上限 {limit} MB），未保存，原工程文件保持不变；可删除部分 AI 移除或快照后再保存。": "Das Projekt ist zu groß ({size} MB, Grenze {limit} MB) und wurde nicht gespeichert; die vorhandene Projektdatei bleibt unverändert. Einige KI-Entfernungen oder Schnappschüsse löschen und erneut speichern.",
  "已 AI 移除 {name} · {seconds} 秒 · 打开这张照片可隐藏、删除或撤销": "In {name} mit KI entfernt · {seconds} s · das Foto öffnen, um auszublenden, zu löschen oder rückgängig zu machen",
  "正在 AI 移除，请稍候再试。": "KI-Entfernen läuft; gleich noch einmal versuchen.",
- "正在 AI 移除": "KI-Entfernen"
+ "正在 AI 移除": "KI-Entfernen",
+ "没有可用的 {gpu_label}，已使用 CPU。": "Kein {gpu_label} verfügbar; die CPU wird verwendet.",
+ "自动加速（CUDA / ONNX Runtime）": "Automatische Beschleunigung (CUDA / ONNX Runtime)",
+ "自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。": "Der automatische Modus versucht NVIDIA CUDA und verwendet bei einem Fehler die CPU.",
+ "CUDA 内核仅在 Linux 上启用": "CUDA-Kernel sind nur unter Linux verfügbar",
+ "系统没有可用的 CUDA 设备": "Kein CUDA-Gerät verfügbar",
+ "CUDA 显影需要 RGB 图像": "CUDA-Entwicklung benötigt ein RGB-Bild",
+ "CUDA 第二阶段内核不可用：{error}": "Der CUDA-Kernel für Stufe 2 ist nicht verfügbar: {error}",
+ "CUDA 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）": "Der CUDA-Selbsttest weicht von der CPU-Referenz ab (maximaler Fehler {error:.2g})",
+ "缺少 CuPy（cupy-cuda13x）": "CuPy (cupy-cuda13x) fehlt",
+ "CUDA 内核编译失败：{error}": "CUDA-Kernel konnte nicht kompiliert werden: {error}",
+ "CUDA · {name} · 逐像素显影": "CUDA · {name} · pixelweise Entwicklung"
 }

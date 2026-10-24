@@ -1333,5 +1333,16 @@
  "工程过大（{size} MB，上限 {limit} MB），未保存，原工程文件保持不变；可删除部分 AI 移除或快照后再保存。": "專案過大（{size} MB，上限 {limit} MB），未儲存，原專案檔保持不變；可刪除部分 AI 移除或快照後再儲存。",
  "已 AI 移除 {name} · {seconds} 秒 · 打开这张照片可隐藏、删除或撤销": "已 AI 移除 {name} · {seconds} 秒 · 開啟這張照片可隱藏、刪除或復原",
  "正在 AI 移除，请稍候再试。": "正在 AI 移除，請稍候再試。",
- "正在 AI 移除": "正在 AI 移除"
+ "正在 AI 移除": "正在 AI 移除",
+ "没有可用的 {gpu_label}，已使用 CPU。": "沒有可用的 {gpu_label}，已使用 CPU。",
+ "自动加速（CUDA / ONNX Runtime）": "自動加速（CUDA / ONNX Runtime）",
+ "自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。": "自動模式會嘗試 NVIDIA CUDA，失敗則使用 CPU。",
+ "CUDA 内核仅在 Linux 上启用": "CUDA 核心僅在 Linux 上啟用",
+ "系统没有可用的 CUDA 设备": "系統沒有可用的 CUDA 裝置",
+ "CUDA 显影需要 RGB 图像": "CUDA 顯影需要 RGB 影像",
+ "CUDA 第二阶段内核不可用：{error}": "CUDA 第二階段核心不可用：{error}",
+ "CUDA 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）": "CUDA 自檢結果與 CPU 參考不一致（最大誤差 {error:.2g}）",
+ "缺少 CuPy（cupy-cuda13x）": "缺少 CuPy（cupy-cuda13x）",
+ "CUDA 内核编译失败：{error}": "CUDA 核心編譯失敗：{error}",
+ "CUDA · {name} · 逐像素显影": "CUDA · {name} · 逐像素顯影"
 }
