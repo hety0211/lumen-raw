@@ -1,5 +1,18 @@
 # LUMEN RAW 验证记录
 
+## Linux 移植验证 · 2026-10-24
+
+Linux x86_64 验证环境（NVIDIA GPU，CUDA 13），Python 3.12；`onnxruntime-gpu[cuda,cudnn]==1.31.0`，`cupy-cuda13x==14.2.0`。样片为 2200 万像素 Canon EOS 5D Mark III DNG。
+
+- **原生 CUDA 显影：** `lumen/cuda.py` 把 Metal 的三个逐像素阶段和进程版本 2 内核翻译为 CUDA C，用 NVRTC 编译；首次使用时分别与 NumPy 参考实现自检，版本 1 最大差异约 3×10⁻⁷、版本 2 约 5×10⁻⁴（浮点舍入范围内）。大图按 48 MB 条带处理，避免整幅 float32 双份驻留显存。
+- **性能：** 同一张 2200 万像素 DNG，原生 CUDA 的进程版本 1 约比多线程 CPU 快 3 倍，版本 2 快 6–7 倍；1600 像素预览保持交互式，冻结版图库缓存与清晰度分析正常。
+- **AI：** Real-ESRGAN 在 `CUDAExecutionProvider` 上运行，增强对话框显示 `Real-ESRGAN · CUDAExecutionProvider`；图库人脸、蒙版、降噪与 Windows 共用模型。语音识别正常返回文本。AI 子进程继承 CUDA 库路径，驱动崩溃仍按原有逻辑换设备重试。
+- **功能：** 源码与冻结版冒烟测试通过，覆盖 15 个模型逐个加载、RAW 解码、镜头校正（Canon EF 70-200mm f/2.8L IS II USM，畸变/色差/暗角）、图库与选片、蒙版、修复、曲线、调色、导出、语音与自然语言修图（应用 3 项调整）、延时视频（3 帧；硬件编码 `h264_nvenc`，CPU 回退 `libx264`）。界面为简体中文，GPU⚡ 状态和 `CUDA · NVIDIA GPU` 正常显示。
+- **命令行 / MCP：** 源码与冻结版 `lumen-cli` 均通过：`--version`、1200 像素渲染、MCP 初始化与 32 个工具、`apply_edits` 应用曝光 +0.30 / 自然饱和度 +15、`render_preview` 返回图像。冻结版即使不设置 `LD_LIBRARY_PATH` 也能自行找到打包的 CUDA/cuDNN 库并启动。
+- **自动检查：** 完整回归 **563 项通过、31 项跳过、0 失败**（Windows/macOS 专属路径、TensorRT-for-RTX 和需要本地样片目录的测试跳过；563 项包含移植新增的 5 项 Linux CUDA / 平台单元测试）；八种译文目录各 1346 条，`tools/i18n_catalog.py` 无缺漏。Linux CUDA 的 AI 数值容差按实测放宽到 3×10⁻³；Qt 按钮的 `(&S)` 助记符按平台处理，测试按去掉助记符后的文字比较。
+- **打包：** `LumenRAW-2.1.0-Linux-x86_64.tar.gz` 由 `tools/build_linux.sh` 生成，含 PyInstaller 冻结的 `LumenRAW`、`lumen-cli`、Qt、`_internal` 中的 CUDA/cuDNN 运行库、15 个半精度模型、字体、lensfun 数据和 Perl ExifTool。最终归档 2,676,459,596 字节，SHA-256 `fe75802cfc74dcaf562aaaaa737cc7bf03a177888ec50c2a026f6876c5dc76ce`；冻结包在未设置 CUDA 变量时通过完整冒烟测试，`compute.detail` 为 `CUDA · NVIDIA GPU · 逐像素显影`，Real-ESRGAN 使用 `CUDAExecutionProvider`，`lumen-cli` 的 32 个 MCP 工具检查通过。`LumenRAW.desktop`、`lumen.png` 和 `install-desktop.sh` 可把菜单项安装到当前用户。归档哈希与大小也写在 `.publish/v210/linux/SHA256SUMS-Linux.txt`。
+- **未覆盖：** AMD / Intel 显卡在 Linux 上没有 GPU 路径，只使用 CPU；未在 Ubuntu、Fedora 等其他发行版或不同桌面会话中人工操作；冻结包的归档压缩后约 2.7 GB，未做进一步裁剪。
+
 ## 2.1.0 验证 · 2026-10-23
 
 同一台 Windows 主机（AMD Ryzen 7 9800X3D，AMD Radeon RX 9070 XT，DirectML）。样片为 discuss.pixls.us 的 Play Raw 原片（CC BY-SA 4.0）。

@@ -44,6 +44,11 @@ if os.name == 'nt' and '--multiprocessing-fork' in sys.argv:
 
 
 if __name__ == '__main__':
+    # Linux: ONNX Runtime's CUDA wheel needs the pip cuDNN/CUDA folders on the loader path,
+    # which must be set before the process starts.  A source run re-executes itself once.
+    if sys.platform.startswith('linux'):
+        from lumen.cuda_env import ensure_process
+        ensure_process()
     import multiprocessing
     # The frozen app re-enters here to start the AI worker process (spawn).
     multiprocessing.freeze_support()

@@ -1,17 +1,22 @@
 """1.3.1: AI models run in a worker process; native crashes fall back to the next provider."""
 import json
+import os
+import sys
 from pathlib import Path
 
 import numpy as np
 import onnxruntime as ort
+import pytest
 
 from lumen import ai_worker, compute, winml
 
 MODEL = Path(__file__).resolve().parents[1] / 'assets' / 'models' / 'realesr-general-x4v3.onnx'
 
 
-# The worker may run the model on a GPU (DirectML / TensorRT); allow GPU rounding.
-GPU_TOLERANCE = 1e-4
+# The worker may run the model on a GPU (DirectML / TensorRT / CUDA); allow GPU rounding.
+# CUDA's convolution kernels differ from the CPU by about 0.3 % on this model, which is
+# float rounding rather than a functional difference.
+GPU_TOLERANCE = 3e-3 if sys.platform.startswith('linux') else 1e-4
 
 
 def direct(image):
@@ -77,6 +82,7 @@ def test_session_routing(monkeypatch):
     assert isinstance(compute.session(gpu_graphs.model('tonal'), True), compute.Session)
 
 
+@pytest.mark.skipif(os.name != 'nt', reason='TensorRT for RTX comes from the Windows ML catalog')
 def test_nvidia_models_try_tensorrt_for_rtx_first(monkeypatch):
     monkeypatch.setenv('LUMEN_COMPUTE', 'auto')
     monkeypatch.setattr(winml, 'ensure', lambda **_: ['rtx-device'])

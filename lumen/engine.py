@@ -413,6 +413,7 @@ class Backend:
         self.xp = np
         self.use_dml = False
         self.metal = None
+        self.cuda = None
         self._sessions = {}
         self.name = 'CPU · NumPy / OpenCV'
         self.warning = ''
@@ -434,18 +435,39 @@ class Backend:
                     self.name = 'CUDA · ' + (name.decode() if isinstance(name, bytes) else str(name)) + tr('（实验）')
             except Exception:
                 log.info('CuPy unavailable', exc_info=True)
-        if self.xp is np:
+        if self.xp is np and sys.platform.startswith('linux'):
+            self._init_cuda()
+        if self.xp is np and self.cuda is None:
             try:
                 ort = performance.onnxruntime()
+                available = ort.get_available_providers()
                 adapter = compute.preferred_adapter()
-                if compute.requested_mode() in ('auto', 'dml') and adapter and \
-                        'DmlExecutionProvider' in ort.get_available_providers():
+                mode = compute.requested_mode()
+                if mode in ('auto', 'dml') and adapter and 'DmlExecutionProvider' in available:
                     self.use_dml = True
                     self.name = 'DirectML · ' + adapter[1]
+                elif mode in ('auto', 'cuda') and 'CUDAExecutionProvider' in available and \
+                        compute.cuda_runtime_ready() and (adapter is not None or mode == 'cuda'):
+                    # Without CuPy (or when its kernels failed) the pointwise ONNX graphs run
+                    # through the CUDA execution provider.  Windows keeps DirectML above;
+                    # macOS uses its Metal kernels.
+                    self.use_dml = True
+                    self.name = 'CUDA · ' + (adapter[1] if adapter else 'ONNX Runtime')
             except Exception:
-                log.info('DirectML detection failed', exc_info=True)
-        if self.xp is np and not self.use_dml:
-            self.warning = tr('没有可用的 DirectML / CUDA，已使用 CPU。')
+                log.info('GPU pixel graph detection failed', exc_info=True)
+        if self.xp is np and self.cuda is None and not self.use_dml:
+            self.warning = tr('没有可用的 {gpu_label}，已使用 CPU。', gpu_label=self.gpu_label)
+
+    def _init_cuda(self):
+        """Compile the native CUDA kernels; failure leaves the ONNX / CPU paths in place."""
+        if compute.requested_mode() not in ('auto', 'cuda'):
+            return
+        from . import cuda
+        self.cuda = cuda.pipeline()
+        if self.cuda is None:
+            log.info('CUDA pixel kernels unavailable: %s', cuda.last_error())
+        else:
+            self.name = 'CUDA · ' + self.cuda.name
 
     def _init_metal(self):
         from . import metal
@@ -460,22 +482,26 @@ class Backend:
 
     @property
     def gpu_label(self):
-        return 'Metal' if self.metal is not None or sys.platform == 'darwin' else 'DirectML'
+        if self.metal is not None or sys.platform == 'darwin':
+            return 'Metal'
+        return 'CUDA' if self.cuda is not None or sys.platform.startswith('linux') else 'DirectML'
 
     @property
     def gpu_pointwise(self):
-        """True while the fused stages run on the GPU (DirectML graphs or Metal kernels)."""
-        return self.use_dml or self.metal is not None
+        """True while the fused stages run on the GPU (DirectML graphs, Metal or CUDA kernels)."""
+        return self.use_dml or self.metal is not None or self.cuda is not None
 
     @property
     def gpu_version2(self):
-        """True when the process-2 stages run on the GPU (Metal checks them separately)."""
-        return self.use_dml or (self.metal is not None and self.metal.version2)
+        """True when the process-2 stages run on the GPU (each pipeline tests it separately)."""
+        return (self.use_dml or (self.metal is not None and self.metal.version2)
+                or (self.cuda is not None and self.cuda.version2))
 
     def _disable_gpu(self, warning):
         self.name = tr('CPU · {gpu_label} 回退', gpu_label=self.gpu_label)
         self.use_dml = False
         self.metal = None
+        self.cuda = None
         self.warning = warning
         log.warning('GPU pixel graphs disabled: %s', warning)
         compute.state.report('CPUExecutionProvider', warning=warning)
@@ -488,6 +514,11 @@ class Backend:
     def _run_graph(self, kind, image, inputs):
         """Channel-last 1024² tiles: pointwise graphs have no boundary effects.  Inputs the
         size of the image (process 2's local tone coefficients) are tiled with it."""
+        if self.cuda is not None:
+            out = self.cuda.run(kind, image, inputs)
+            compute.state.report('CUDAExecutionProvider', self.cuda.name,
+                                 tr('CUDA · {name} · 逐像素显影', name=self.cuda.name))
+            return out
         if self.metal is not None:
             from .metal import PROVIDER
             out = self.metal.run(kind, image, inputs)

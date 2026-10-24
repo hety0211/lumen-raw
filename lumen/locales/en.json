@@ -1333,5 +1333,16 @@
  "工程过大（{size} MB，上限 {limit} MB），未保存，原工程文件保持不变；可删除部分 AI 移除或快照后再保存。": "The project is too large ({size} MB, limit {limit} MB) and was not saved; the existing project file is unchanged. Delete some AI removals or snapshots and save again.",
  "已 AI 移除 {name} · {seconds} 秒 · 打开这张照片可隐藏、删除或撤销": "Removed with AI in {name} · {seconds} s · open that photo to hide, delete or undo it",
  "正在 AI 移除，请稍候再试。": "AI removal in progress; try again in a moment.",
- "正在 AI 移除": "AI removal"
+ "正在 AI 移除": "AI removal",
+ "没有可用的 {gpu_label}，已使用 CPU。": "No {gpu_label} available; using the CPU.",
+ "自动加速（CUDA / ONNX Runtime）": "Automatic acceleration (CUDA / ONNX Runtime)",
+ "自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。": "Automatic mode tries NVIDIA CUDA and falls back to the CPU.",
+ "CUDA 内核仅在 Linux 上启用": "CUDA kernels are enabled on Linux only",
+ "系统没有可用的 CUDA 设备": "No CUDA device is available",
+ "CUDA 显影需要 RGB 图像": "CUDA development needs an RGB image",
+ "CUDA 第二阶段内核不可用：{error}": "The CUDA process-2 kernel is unavailable: {error}",
+ "CUDA 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）": "The CUDA self-test does not match the CPU reference (maximum error {error:.2g})",
+ "缺少 CuPy（cupy-cuda13x）": "CuPy (cupy-cuda13x) is missing",
+ "CUDA 内核编译失败：{error}": "CUDA kernel compilation failed: {error}",
+ "CUDA · {name} · 逐像素显影": "CUDA · {name} · per-pixel development"
 }

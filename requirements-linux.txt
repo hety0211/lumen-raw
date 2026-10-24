@@ -1,0 +1,3 @@
+# Linux x86_64 source environment (Python 3.12).  This is the CPU baseline; for an NVIDIA
+# GPU install requirements-linux-gpu.txt afterwards (run-source.sh does this automatically).
+-r requirements.txt

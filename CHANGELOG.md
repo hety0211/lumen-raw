@@ -1,5 +1,17 @@
 # 更新记录
 
+## Linux 移植（未发布）· 2026-10-24
+
+Linux x86_64 版移植了 2.1.0 的完整功能：图库与快速选片、显影、镜头校正、AI 移除 / 降噪 / 超分 / 蒙版、自然语言修图、延时视频、命令行与 MCP。Windows 与 macOS 的代码路径保持原样，Linux 的差异集中在平台目录、GPU 后端和打包。
+
+- **原生 CUDA 显影：** 新增 `lumen/cuda.py`，把 Metal 内核翻译为 CUDA C，用 NVRTC 在首次使用时编译，并对进程版本 1 和 2 分别与 CPU 结果自检；不一致或初始化失败时自动回退 ONNX Runtime 的 CUDA 执行提供器，再失败则用 CPU。大图按条带处理，小显存的笔记本显卡也能显影 6000 万像素照片。
+- **性能：** 在 Linux CUDA 路径上，2200 万像素 DNG 的进程版本 1 约比多线程 CPU 快 3 倍，进程版本 2 快 6–7 倍；1600 像素预览保持交互式。与 CPU 的最大差异分别约 3×10⁻⁷ 和 5×10⁻⁴。
+- **AI 模型：** `onnxruntime-gpu[cuda,cudnn]==1.31.0`（CUDA 13 + cuDNN 9）提供 `CUDAExecutionProvider`；Real-ESRGAN、降噪、蒙版等与 Windows 的 DirectML 路径共用同一套模型和校验。`lumen/cuda_env.py` 为 pip 安装的 CUDA / cuDNN 库建立不带版本号的符号链接，并在进程启动前设置 `LD_LIBRARY_PATH`（源码运行由 `main.py` 自动重启一次，冻结版同样处理）。
+- **Linux 集成：** 数据、设置、日志和缓存放在 `~/.local/state/LUMEN RAW`；API Key 保存在仅本人可读（0600）的设置文件中。ExifTool 使用 Perl 版，需要系统安装 `perl`。视频编码优先尝试 NVENC，再回退 x264 / x265 / SVT-AV1。界面翻译、GPU 状态、内存检测、文件管理器与命令行均按 Linux 适配。
+- **测试：** Linux 完整回归 **563 项通过、31 项跳过**（Windows / macOS 专属路径和需要本地样片目录的测试；含移植新增的 5 项 CUDA / 平台测试）；八种译文各 1346 条，无缺漏。源码冒烟测试与冻结包冒烟测试均通过：15 个模型、图库与选片、镜头校正、语音识别、自然语言修图、NVENC 视频编码；`lumen-cli` 的 MCP 列出 32 个工具。
+- **打包：** `LumenRAW-linux.spec`、`tools/build_linux.sh` 和 `tools/package_linux.py` 生成 `LumenRAW-2.1.0-Linux-x86_64.tar.gz`（2,676,459,596 字节，SHA-256 `fe75802cfc74dcaf562aaaaa737cc7bf03a177888ec50c2a026f6876c5dc76ce`）、桌面菜单项和 SHA-256；首次源码运行由 `run-source.sh` 自动创建 `.venv-linux`、安装 CPU 或 CUDA 依赖并恢复资源。CUDA 运行库使归档约 2.7 GB。
+- **未覆盖：** AMD / Intel 显卡在 Linux 上只使用 CPU（没有 ROCm 或 oneAPI 路径）；图形界面已启动验证，但没有在每款桌面环境上人工检查；没有在 Ubuntu / Fedora 等发行版上重复安装验证。
+
 ## 2.1.0 · 2026-10-23
 
 2.1.0 新增 AI 移除、五种风光语义蒙版、点选物体蒙版，以及曝光曲线上可自由拖动的黑点与白点。AI 功能都在本机离线运行，新增 4 个模型（打包后约 200 MB，权重以 float16 存放）。

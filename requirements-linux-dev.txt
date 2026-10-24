@@ -1,0 +1,4 @@
+# Linux build and test tools (not bundled into the app).  Install after requirements-linux.txt
+# (or requirements-linux-gpu.txt); `tools/build_linux.sh` does this automatically.
+pytest>=8,<10
+pyinstaller>=6.12,<7

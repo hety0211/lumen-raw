@@ -3,6 +3,7 @@ strips, faster gamut mapping and the amber dark / light themes."""
 import hashlib
 import json
 import os
+import re
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -400,7 +401,9 @@ def test_qt_dialog_buttons_follow_the_interface_language(app, monkeypatch):
     try:
         box = QMessageBox()
         box.setStandardButtons(QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Cancel)
-        assert {b.text() for b in box.buttons()} == {'保存', '取消'}
+        # Qt adds keyboard mnemonics on Linux; Windows and macOS hide them.
+        texts = {re.sub(r'\(&\w\)$', '', button.text()) for button in box.buttons()}
+        assert texts == {'保存', '取消'}
     finally:
         app.removeTranslator(translator)
     monkeypatch.setattr(i18n, '_language', 'en')

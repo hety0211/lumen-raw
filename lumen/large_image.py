@@ -101,7 +101,16 @@ def _macos_available_memory():
 
 def available_memory():
     if sys.platform=='darwin':return _macos_available_memory()
-    if os.name!='nt':return None
+    if os.name!='nt':
+        # Linux: MemAvailable already accounts for reclaimable page cache and swap headroom.
+        try:
+            with open('/proc/meminfo',encoding='ascii') as stream:
+                for line in stream:
+                    if line.startswith('MemAvailable:'):
+                        return int(line.split()[1])*1024
+        except (OSError,ValueError,IndexError):
+            pass
+        return None
     import ctypes
     class Status(ctypes.Structure):
         _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(k,ctypes.c_ulonglong) for k in ('total','avail','page','freepage','virt','freevirt','ext')]
