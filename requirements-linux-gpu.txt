@@ -1,0 +1,14 @@
+# Linux NVIDIA GPU environment (CUDA 13 + cuDNN 9), Python 3.12 x86_64.
+#
+# Install AFTER requirements-linux.txt, and remove the CPU ONNX Runtime wheel first:
+#   .venv-linux/bin/python -m pip uninstall -y onnxruntime
+#   .venv-linux/bin/python -m pip install -r requirements-linux-gpu.txt
+#
+# ONNX Runtime 1.31's Linux CUDA wheel is built for CUDA 13 and cuDNN 9.  The pip extras
+# below install both under site-packages/nvidia; lumen.cuda_env puts those folders on the
+# dynamic-loader path before ONNX Runtime starts.
+numpy>=2.2,<2.6
+onnxruntime-gpu[cuda,cudnn]==1.31.0
+# The native pixel kernels (lumen/cuda.py) use CuPy; without it the ONNX CUDA graph path is
+# still available, but native kernels are the faster route for full-size photos.
+cupy-cuda13x==14.2.0

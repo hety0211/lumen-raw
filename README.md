@@ -4,9 +4,9 @@
 
 [中文说明](README.zh-CN.md) · [Downloads](https://github.com/hety0211/lumen-raw/releases) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
-LUMEN RAW is a local desktop editor for landscape and travel photography on Windows and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Importing, culling, editing, lens corrections, AI object removal / denoising / super-resolution / masks, export and time-lapse videos all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing, and once to download the speech model if you use voice instructions.
+LUMEN RAW is a local desktop editor for landscape and travel photography on Windows, Linux (x86_64) and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Importing, culling, editing, lens corrections, AI object removal / denoising / super-resolution / masks, export and time-lapse videos all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing, and once to download the speech model if you use voice instructions.
 
-Current version: **2.1.0** (Windows and macOS, 2026-10-23).
+Current version: **2.1.0** (Windows, Linux and macOS, 2026-10-23).
 
 ![LUMEN RAW 2.0.0 in English: the Library page with the folder tree, smart albums and keywords on the left, the thumbnail grid with stars, pick flags, color labels and a rejected photo, and the selected photo's capture data, sharpness, rating and keywords on the right](docs/screenshots/library-grid-en.png)
 
@@ -18,8 +18,11 @@ Actual application screenshots. The photographs are public test samples: CC0 pho
 |---|---|---|
 | Windows | [`LumenRAW-2.1.0-Setup.exe` (installer, 597 MB) or `LumenRAW-2.1.0-Windows.zip` (portable, 665 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.0) | Windows 10 22H2 / Windows 11, x64 |
 | macOS | [`LumenRAW-2.1.0-macOS-arm64.dmg` (654 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.0-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
+| Linux | Build from source (below); `tools/build_linux.sh --sample photo.DNG` creates a portable `LumenRAW-2.1.0-Linux-x86_64.tar.gz` | x86_64, Python 3.12; NVIDIA CUDA 13 driver optional |
 
-Windows and macOS have the same features again: the Mac build 2.1.0 is the first since 1.7.0 and also brings 2.0's library, culling, preview cache, time-lapse videos and themes. 2.1.0 saves projects (`.lumen`) and albums (`.lumenalbum`) in format 8 (for AI removals and the new masks): 2.1.0 opens every older project, but 2.0.1 and earlier cannot open those saved by 2.1.0. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+Windows, Linux and macOS have the same features: the Mac build 2.1.0 is the first since 1.7.0 and also brings 2.0's library, culling, preview cache, time-lapse videos and themes. 2.1.0 saves projects (`.lumen`) and albums (`.lumenalbum`) in format 8 (for AI removals and the new masks): 2.1.0 opens every older project, but 2.0.1 and earlier cannot open those saved by 2.1.0. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
+
+On Linux the prebuilt archive needs the glibc version of the build environment; build on the oldest distribution you need to support. Without an NVIDIA GPU (or without the CUDA runtime) the editor uses the CPU; an NVIDIA GPU uses the native CUDA pixel kernels and ONNX Runtime's CUDA execution provider.
 
 **Windows**
 
@@ -226,6 +229,7 @@ Photos opened in 1.6.0 use **process version 2 (scene-referred)**; projects and 
 - **OkLCh color:** saturation, vibrance, the 8-color mixer, monochrome and grading work in perceptually uniform OkLCh: a more saturated blue sky does not drift purple or change lightness; monochrome keeps perceived lightness; grading changes color only, and works on monochrome photos too.
 - **Highlight shoulder and gamut mapping:** the camera-referenced curve continues into a filmic shoulder near white, so luminance pushed past white rolls off smoothly; colors outside sRGB keep their hue and mainly lose chroma (too-bright saturated colors give up a little lightness), instead of being clipped per channel.
 - On Windows, process version 2 runs on DirectML: a 1600-pixel preview takes about 50–60 ms on an RX 9070 XT, about 0.65 s in CPU mode.
+- On Linux, process versions 1 and 2 use native CUDA kernels (`lumen/cuda.py`, compiled from source with NVRTC) on an NVIDIA GPU; ONNX Runtime's CUDA execution provider runs the AI models. A full 22 MP DNG develops about 3× faster (process 1) and 6–7× faster (process 2) than a multi-threaded CPU; 1600-pixel previews stay interactive. The kernels are self-tested against the CPU on first use and fall back to the CPU if they differ.
 
 ![The same CC0 sample with more saturation: process version 1 (left) darkens the sky and shifts it toward purple; process version 2 (right) keeps hue and lightness](docs/screenshots/process2-sky.jpg)
 
@@ -338,6 +342,7 @@ lumen-cli commands
 - AI models run in a separate process: a GPU driver crash does not close the editor; the work is retried on the next device and the GPU + driver combination is remembered.
 - TensorRT for RTX is downloaded once by Windows on first use and then works offline.
 - `LUMEN_COMPUTE=cpu` forces the CPU. On a Mac, `LUMEN_COREML_UNITS=ALL` also lets Core ML use the Neural Engine.
+- On Linux, pointwise development runs in native CUDA kernels and AI models use ONNX Runtime's CUDA execution provider; both fall back to the CPU when no NVIDIA device or CUDA library is available. The time-lapse encoder tries `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` before x264 / x265 / SVT-AV1. PyAV's bundled FFmpeg provides the software encoders; the NVIDIA encoders come from the driver.
 - Tested on an AMD Radeon RX 9070 XT (DirectML), a community GeForce RTX 5080 (TensorRT for RTX) and an M1 Pro. On the M1 Pro, pointwise development of a 1600-pixel preview takes about 3–5 ms, and super-resolution and denoising run 8–10× faster than on the CPU. Lens corrections add about 0.1 s to a 1600-pixel preview, recomputed only when the correction changes.
 
 ## Files and privacy
@@ -354,6 +359,7 @@ lumen-cli commands
 | Speech model (downloaded on first use) | `%LOCALAPPDATA%\LUMEN RAW\models\sensevoice` | bundled in the app |
 
 - Originals are read-only. Edits live in `.lumen` / `.lumenalbum` files; AI and merge results are saved as new DNG files. Removing a photo from the filmstrip or the library does not delete it from disk.
+- On Linux these files live under `~/.local/state/LUMEN RAW`; API keys are stored in `natural-language.json` with mode 0600 because Linux has no per-user DPAPI/keychain equivalent, so the file is only readable by your user — protect your account password and backups accordingly.
 - **Library → Preview Cache** sets the cache limit (1–32 GB), turns it off or empties it; it is rebuilt as needed. A photo changed on disk is decoded again. Uninstalling keeps the library and ratings.
 - The app goes online only when you edit with a cloud model, when you download the speech model, and when Windows downloads TensorRT for RTX the first time. Running from source also downloads the runtime assets once. The lens database and the face models are bundled; identifying lenses and culling need no network.
 - Watermark borders show built-in logos for 19 camera and lens brands (the logos are trademarks of their owners; sources in `assets/logos/README.txt`). Other brands, such as Viltrox, Voigtländer, Samyang or 7Artisans, are shown as text in an ordinary font.
@@ -414,6 +420,16 @@ cd lumen-raw
 
 The first run creates `.venv-macos`, installs `requirements-macos.txt`, and restores the assets and the Perl ExifTool. Set `LUMEN_PYTHON=/path/to/python3.12` if Python 3.12 is not on `PATH`.
 
+**Linux** (x86_64, Python 3.12; an NVIDIA GPU with a CUDA 13 driver is used when present):
+
+```bash
+git clone https://github.com/hety0211/lumen-raw.git
+cd lumen-raw
+./run-source.sh
+```
+
+The first run creates `.venv-linux`, installs `requirements.txt`, and — when `nvidia-smi` is present — replaces the CPU ONNX Runtime wheel with `requirements-linux-gpu.txt` (CUDA 13 + cuDNN 9) and installs CuPy for the native CUDA pixel kernels. Without an NVIDIA GPU the same command installs the CPU build. It then restores the assets and the Perl ExifTool and starts the editor; later runs only reinstall when a requirements file changes. `perl` is needed for EXIF / lens metadata; install it with your distribution's package manager if it is missing. Set `LUMEN_PYTHON=/path/to/python3.12` if Python 3.12 is not on `PATH`. `LUMEN_COMPUTE=cpu` forces the CPU; `LUMEN_COMPUTE=cuda` makes CUDA failures visible in the log.
+
 ## Development
 
 ```powershell
@@ -421,10 +437,11 @@ The first run creates `.venv-macos`, installs `requirements-macos.txt`, and rest
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 2.1.0, 577 regression tests pass on Windows with 12 skipped (macOS-only and similar) and 571 on macOS with 18 skipped. Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 2.1.0, 577 regression tests pass on Windows with 12 skipped (macOS-only and similar), 571 on macOS with 18 skipped, and 563 on Linux with 31 skipped (Windows/macOS-only paths and tests that need a local sample folder; the Linux count includes the port's five CUDA/platform tests). Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.
+- **Linux development and release build:** `./run-source.sh` for the editor; `.venv-linux/bin/python -m pip install -r requirements-linux-dev.txt` then `.venv-linux/bin/python -m pytest tests -q`. `tools/build_linux.sh --sample photo.DNG` runs the tests, the source smoke test, PyInstaller and the frozen smoke test, and writes `LumenRAW-<version>-Linux-x86_64.tar.gz` to `.publish/v<version>/linux/`. The portable folder also contains `LumenRAW.desktop`, `lumen.png` and `install-desktop.sh` for a per-user menu entry.
 - **Self-checks with a real photo:**
   - `python main.py --smoke-test <photo> <output dir>`: interface, editing, masks, AI preview, every AI model loading, the speech model when it is installed, one natural-language edit, lens corrections, the language catalogs, the library and culling, and video encoding.
   - `--workflow-test`: multi-brand import and AI copies.

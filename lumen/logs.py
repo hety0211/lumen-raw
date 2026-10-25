@@ -2,7 +2,7 @@
 
 Windowed builds have no console, so GPU fallbacks, job failures and state
 transitions are written to %LOCALAPPDATA%\\LUMEN RAW\\logs\\lumen.log
-(macOS: ~/Library/Logs/LUMEN RAW/lumen.log).
+(macOS: ~/Library/Logs/LUMEN RAW/lumen.log; Linux: ~/.local/state/LUMEN RAW/logs).
 Set LUMEN_LOG_LEVEL=DEBUG to include scheduler transitions.
 """
 import faulthandler
@@ -52,6 +52,8 @@ def describe_system():
     log = logging.getLogger('lumen')
     if sys.platform == 'darwin':
         return _describe_macos(log)
+    if sys.platform.startswith('linux'):
+        return _describe_linux(log)
     try:
         from . import compute, winml, performance
         ort = performance.onnxruntime()
@@ -60,6 +62,24 @@ def describe_system():
         for index, name, dedicated, vendor, *driver in compute.dxgi_adapters():
             log.info('GPU %d: %s · vendor 0x%04X · %d MiB · driver %s', index, name, vendor,
                      dedicated // 2**20, driver[0] if driver else '?')
+    except Exception:
+        log.warning('system description failed', exc_info=True)
+
+
+def _describe_linux(log):
+    """Distribution, kernel, CUDA adapters and the ONNX Runtime build."""
+    try:
+        import platform
+        from . import compute, performance
+        ort = performance.onnxruntime()
+        log.info('Linux %s %s · onnxruntime %s · providers %s', platform.release(), platform.machine(),
+                 ort.__version__, ', '.join(ort.get_available_providers()))
+        adapters = compute.cuda_adapters()
+        if not adapters:
+            log.info('CUDA device: none (nvidia-smi not found or no NVIDIA GPU)')
+        for index, name, dedicated, vendor, driver in adapters:
+            log.info('GPU %d: %s · vendor 0x%04X · %d MiB · driver %s', index, name, vendor,
+                     dedicated // 2**20, driver or '?')
     except Exception:
         log.warning('system description failed', exc_info=True)
 

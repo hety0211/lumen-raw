@@ -30,6 +30,7 @@ import io
 import logging
 import math
 import os
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -67,6 +68,22 @@ FRAME_RATES = (24, 25, 30, 50, 60)
 DEFLICKER = (('off', N_('关'), 0), ('light', N_('轻'), 5), ('medium', N_('中'), 11), ('strong', N_('强'), 25))
 #: Largest frames the H.264 / H.265 levels allow (8K); ProRes and AV1 may be larger.
 LEVEL_PIXELS = 8192 * 4320
+
+
+def platform_hardware(names):
+    """Hardware encoders worth probing on this host (2.1.0 Linux).
+
+    AMF and Media Foundation only exist on Windows; VideoToolbox only on macOS.  Trying the
+    others on Linux makes FFmpeg print load errors into the diagnostic log for no benefit.
+    QSV is kept for Intel GPUs with the oneVPL runtime installed.
+    """
+    if os.name == 'nt':
+        return list(names)
+    if sys.platform == 'darwin':
+        return [name for name in names if name.endswith('_videotoolbox')]
+    return [name for name in names if name.endswith('_nvenc') or name.endswith('_qsv')]
+
+
 #: Recipe keys that are never blended: they switch at the middle between keyframes.
 DISCRETE = {'version', 'process', 'rotation', 'mode', 'kind', 'name', 'source', 'raster', 'enabled', 'invert',
             'monochrome', 'curve_mode', 'estimated', 'erase', 'manual', 'profile', 'auto'}
@@ -400,7 +417,7 @@ class Encoder:
         self.path, self.fmt, self.size, self.fps = Path(path), fmt, tuple(size), fps
         self.mbps, self.ten_bit = mbps, ten_bit
         spec = FORMATS[fmt]
-        candidates = (list(spec['hardware']) if hardware else []) + [spec['software']]
+        candidates = (platform_hardware(spec['hardware']) if hardware else []) + [spec['software']]
         errors = []
         for codec in candidates:
             try:

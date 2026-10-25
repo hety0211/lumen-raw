@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -96,21 +97,83 @@ def dxgi_adapters():
     return adapters
 
 
-def preferred_adapter():
-    """Most dedicated VRAM wins; ``LUMEN_DML_DEVICE=<DXGI index>`` forces one adapter.
+def cuda_adapters():
+    """(index, name, dedicated bytes, vendor id, driver version) for NVIDIA GPUs on Linux.
 
-    On macOS the single Metal device is returned in the same shape (1.3.1).
+    ``nvidia-smi`` is part of the driver and is the one CUDA device query that does not need
+    CUDA to be initialised in this process.  The shape matches :func:`dxgi_adapters` so the
+    same provider planning and crash records work on every platform.
+    """
+    if os.name == 'nt' or sys.platform == 'darwin':
+        return []
+    exe = shutil.which('nvidia-smi') or '/usr/bin/nvidia-smi'
+    if not Path(exe).is_file():
+        return []
+    try:
+        result = subprocess.run(
+            [exe, '--query-gpu=index,name,memory.total,driver_version',
+             '--format=csv,noheader,nounits'],
+            capture_output=True, text=True, timeout=8, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.debug('nvidia-smi unavailable: %s', exc)
+        return []
+    adapters = []
+    for line in result.stdout.splitlines():
+        fields = [field.strip() for field in line.split(',')]
+        if len(fields) < 4:
+            continue
+        try:
+            index = int(fields[0])
+            memory = int(float(fields[2]) * 2**20)
+        except ValueError:
+            continue
+        adapters.append((index, fields[1], memory, NVIDIA, fields[3]))
+    return adapters
+
+
+def gpu_adapters():
+    """Every accelerator the host can name: DXGI on Windows, nvidia-smi on Linux."""
+    adapters = dxgi_adapters()
+    return adapters or cuda_adapters()
+
+
+def cuda_runtime_ready():
+    """True when the CUDA execution provider's native libraries can actually be loaded.
+
+    The Linux ``onnxruntime-gpu`` wheel is built against CUDA 13 + cuDNN 9, which the pip
+    extras install under ``site-packages/nvidia``.  ``lumen.cuda_env`` puts those folders on
+    the loader path before ONNX Runtime starts; this check keeps a missing cuDNN from making
+    every first inference fail into the CPU fallback.
+    """
+    if not sys.platform.startswith('linux'):
+        return True
+    try:
+        import ctypes
+        ctypes.CDLL('libcudnn.so')
+        return True
+    except OSError:
+        log.debug('libcudnn.so is not loadable; CUDA provider disabled', exc_info=True)
+        return False
+
+
+def preferred_adapter():
+    """Most dedicated VRAM wins; ``LUMEN_DML_DEVICE=<index>`` forces one adapter.
+
+    On macOS the single Metal device is returned in the same shape (1.3.1).  On Linux the
+    index is the CUDA device index reported by ``nvidia-smi``.
     """
     if sys.platform == 'darwin':
         from . import metal
         return metal.device_info()
-    adapters = dxgi_adapters()
+    adapters = gpu_adapters()
     forced = os.environ.get('LUMEN_DML_DEVICE', '').strip()
+    if not forced:
+        forced = os.environ.get('LUMEN_CUDA_DEVICE', '').strip()
     if forced:
         for adapter in adapters:
             if str(adapter[0]) == forced:
                 return adapter
-        log.warning('LUMEN_DML_DEVICE=%s does not match any DXGI adapter %s', forced, adapters)
+        log.warning('LUMEN device selection %s does not match any adapter %s', forced, adapters)
     return max(adapters, key=lambda item: item[2]) if adapters else None
 
 
@@ -142,7 +205,8 @@ def requested_mode():
 
 
 def cupy_enabled():
-    """CuPy has never been validated on hardware; since 1.3.0 it is opt-in only."""
+    """The old opt-in CuPy array pipeline (1.3.0).  Linux CUDA uses the native kernels in
+    ``lumen.cuda`` instead, so this compatibility switch stays off unless requested."""
     return os.environ.get('LUMEN_EXPERIMENTAL_CUPY') == '1' and requested_mode() in ('auto', 'cuda')
 
 
@@ -296,14 +360,21 @@ def provider_plan(available, adapter, accelerated=True, models=False, excluded=(
     if models and mode in ('auto', 'metal') and COREML in available and COREML not in excluded:
         device = adapter[1] if adapter is not None and len(adapter) > 1 else 'Apple GPU'
         attempts.append(([(COREML, coreml_options()), 'CPUExecutionProvider'], COREML, device))
-    if (models and mode in ('auto', 'trt') and adapter is not None and len(adapter) > 3
-            and adapter[3] == NVIDIA and 'NvTensorRtRtxExecutionProvider' not in excluded):
+    if (os.name == 'nt' and models and mode in ('auto', 'trt') and adapter is not None
+            and len(adapter) > 3 and adapter[3] == NVIDIA
+            and 'NvTensorRtRtxExecutionProvider' not in excluded):
         from . import winml
         devices = winml.ensure(status=status)
         if devices:
             attempts.append((PluginDevices(devices), 'NvTensorRtRtxExecutionProvider', adapter[1]))
-    if mode in ('auto', 'cuda') and 'CUDAExecutionProvider' in available:
-        attempts.append((['CUDAExecutionProvider', 'CPUExecutionProvider'], 'CUDAExecutionProvider', 'CUDA GPU'))
+    if mode in ('auto', 'cuda') and 'CUDAExecutionProvider' in available and cuda_runtime_ready():
+        device = os.environ.get('LUMEN_CUDA_DEVICE', '').strip()
+        if device.isdigit():
+            providers = [('CUDAExecutionProvider', {'device_id': int(device)}), 'CPUExecutionProvider']
+        else:
+            providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+        label = adapter[1] if adapter is not None and len(adapter) > 1 else 'CUDA GPU'
+        attempts.append((providers, 'CUDAExecutionProvider', label))
     if mode in ('auto', 'dml') and adapter is not None and 'DmlExecutionProvider' in available:
         attempts.append(([('DmlExecutionProvider', {'device_id': adapter[0]}), 'CPUExecutionProvider'],
                          'DmlExecutionProvider', adapter[1]))
@@ -360,7 +431,7 @@ class Session:
         self._verified = False
         self._lock = threading.Lock()
         available = ort.get_available_providers()
-        adapter = preferred_adapter() if accelerated and (os.name == 'nt' or sys.platform == 'darwin') else None
+        adapter = preferred_adapter() if accelerated else None
         models = not isinstance(path, bytes)
         attempts = provider_plan(available, adapter, accelerated, models, excluded, status)
         last_error = ''
