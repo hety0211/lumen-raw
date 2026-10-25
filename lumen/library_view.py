@@ -50,6 +50,8 @@ THUMB_MIN, THUMB_MAX, THUMB_DEFAULT = 96, 320, 176
 THUMB_MEMORY = 900
 SETTING_SIZE = 'library_thumbnail'
 SETTING_ANALYSIS = 'library_analysis'
+#: 2.1.1: sharpness and closed eyes are switched on separately (both follow the old setting).
+SETTING_PARTS = {library_db.SHARPNESS: 'library_analysis_sharpness', library_db.EYES: 'library_analysis_eyes'}
 #: Query fields that depend on capture data or culling hints (a change to them re-filters).
 DERIVED = {'blurry', 'eyes', 'faces', 'sharpness', 'burst', 'iso', 'f', 'focal', 'date', 'camera', 'lens', 'keyword', 'name'}
 
@@ -553,6 +555,7 @@ class InfoPanel(QWidget):
         self.setObjectName('library')
         self.setMinimumWidth(250)
         self.setMaximumWidth(340)
+        self.parts = library_db.BOTH       # analysed in the background (the window's worker sets it)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 14, 12, 12)
         layout.setSpacing(7)
@@ -662,20 +665,48 @@ class InfoPanel(QWidget):
                 # 2.0.1: ExifTool could not read it (tried INDEX_RETRIES times); the reason, kept short.
                 lines.append(tr('无法读取拍摄信息：{error}', error=(row.get('index_error') or '')[:80]))
             self.details.setText('\n'.join(lines))
-        self.hints.setText(hint_text(row))
+        self.hints.setText(hint_text(row, self.parts))
         counts = collections.Counter(k for r in rows for k in (r.get('keywords') or ()))
         self.chips.set_keywords(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0].lower())), len(rows))
 
 
-def hint_text(row):
-    """The culling hints of a photo as one line (or an explanation when not analysed yet)."""
-    if (row.get('analysis') or 0) < library_db.ANALYSIS:
-        return tr('清晰度与闭眼提示：分析中…') if not row.get('missing') else ''
-    if row.get('sharpness') is None:
+def analysis_parts():
+    """The parts of the culling analysis switched on for the background (2.1.1)."""
+    old = i18n.setting(SETTING_ANALYSIS, '1')
+    return {part for part, key in SETTING_PARTS.items() if i18n.setting(key, old) != '0'}
+
+
+def analysis_requests(rows, parts):
+    """The rows still lacking one of ``parts``, as the worker queues them: with what they have, so
+    only the missing part is computed (2.1.1)."""
+    return [dict(id=r['id'], path=r['path'], analysis=r.get('analysis')) for r in rows
+            if r.get('id') and library_db.lacks(r, parts)]
+
+
+def hint_text(row, enabled=library_db.BOTH):
+    """The culling hints of a photo as one line (or an explanation when not analysed yet);
+    ``enabled``: the parts analysed in the background (2.1.1)."""
+    if row.get('missing'):
         return ''
-    parts = [tr('清晰度 {value:.0f}', value=row['sharpness']) + (tr('（可能模糊）') if row.get('blurry') else '')]
-    if row.get('faces'):
+    done = library_db.analysed_parts(row)
+    waiting = set(enabled) - done
+    if not done:
+        if waiting == set(library_db.BOTH):
+            return tr('清晰度与闭眼提示：分析中…')
+        if waiting:
+            return tr('清晰度提示：分析中…') if library_db.SHARPNESS in waiting else tr('闭眼提示：分析中…')
+        return ''
+    parts = []
+    if library_db.SHARPNESS in done and row.get('sharpness') is not None:
+        parts.append(tr('清晰度 {value:.0f}', value=row['sharpness']) + (tr('（可能模糊）') if row.get('blurry') else ''))
+    elif library_db.SHARPNESS in waiting:
+        parts.append(tr('清晰度分析中…'))
+    if library_db.EYES in done and row.get('faces'):
         parts.append(tr('{n} 张人脸', n=row['faces']) + (tr(' · {n} 张可能闭眼', n=row['eyes_closed']) if row.get('eyes_closed') else ''))
+    elif library_db.EYES in waiting:
+        parts.append(tr('闭眼分析中…'))
+    if not parts:
+        return ''
     if row.get('burst'):
         parts.append(tr('连拍 {index}/{size}', index=row['burst_index'], size=row['burst_size']) +
                      (tr(' · 本组最佳') if row.get('best') else ''))
@@ -793,7 +824,7 @@ class LibraryModeMixin:
         self.prefetch_timer.setInterval(700)
         self.prefetch_timer.timeout.connect(self.prefetch_current)
         self.library_indexed = False
-        self.library_worker.analysis_enabled = i18n.setting(SETTING_ANALYSIS, '1') != '0'
+        self.library_worker.parts = analysis_parts()
         self.cull_window = None
         try:
             size = int(i18n.setting(SETTING_SIZE, str(THUMB_DEFAULT)))
@@ -1107,8 +1138,8 @@ class LibraryModeMixin:
         self.refresh_library_grid()
 
     def want_library_work(self, rows):
-        unanalysed = [dict(id=r['id'], path=r['path']) for r in rows if r.get('analysis', 0) < library_db.ANALYSIS
-                      and not r.get('missing')]
+        from .library_tasks import possible
+        unanalysed = analysis_requests(rows, possible(self.library_worker.parts))
         if unanalysed:
             self.library_worker.want_analysis(unanalysed[:5000])
         if any(not r.get('indexed') for r in rows):
@@ -1169,6 +1200,7 @@ class LibraryModeMixin:
             paths.insert(0, current)
         rows = [r for r in (self.library_model.row_of(p) for p in paths) if r is not None]
         image = self.thumb_images.image(rows[0]['path']) if rows else None
+        self.info_panel.parts = self.library_worker.parts
         self.info_panel.show_rows(rows, image)
         meta = rows[0] if rows else catalog.empty()
         self.info_panel.rating_bar.set_state(int(meta.get('rating') or 0), meta.get('flag') or '', meta.get('label') or '')

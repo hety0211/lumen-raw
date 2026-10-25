@@ -1,5 +1,6 @@
 # Windows x64 build; collects the active ONNX Runtime (Windows ML build with DirectML) and windowsml.
 # 1.8.0: float16-weight models, no bundled speech model, unused Qt pieces dropped (tools/bundle.py).
+# 2.1.1: the models go to dist/LumenRAW/models, outside _internal (see the end).
 from pathlib import Path
 import os
 import sys
@@ -40,3 +41,6 @@ cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name='lumen-cli',
           debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
           console=True, icon=str(root/'assets/lumen.ico'))
 coll = COLLECT(exe, cli, a.binaries, a.datas, strip=False, upx=False, name='LumenRAW')
+# 2.1.1: the AI models sit beside the program in models/, apart from _internal, which an update
+# replaces (lumen/ai_models.py).
+bundle.place_models(root, Path(DISTPATH) / 'LumenRAW')

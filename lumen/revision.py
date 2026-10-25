@@ -183,9 +183,12 @@ class RevisionMixin:
 
     def add_removal(self, path, item, seconds):
         """A finished removal into its photo: the open one, or the one it was made on, kept in the
-        选片集 with its undo history, when another photo was opened meanwhile."""
+        选片集 with its undo history, when another photo was opened meanwhile.  2.1.1: while a photo
+        is decoding, the window's edits are about to be replaced (switching away) or were copied
+        before the decode (switching back), so the removal goes into the photo's document, which
+        the decode takes up when it finishes."""
         from . import model
-        if path == self.source_path and self.source is not None:
+        if path == self.source_path and self.source is not None and not self.loading:
             if len(self.edits['retouch']) < 500:
                 self.commit()
                 self.edits['retouch'].append(item)

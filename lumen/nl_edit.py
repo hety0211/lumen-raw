@@ -31,7 +31,9 @@ from .i18n import tr, N_
 
 #: id: (label, api, default base URL, suggested model, local, JSON mode, thinking style).
 #: Base URLs, model names and thinking parameters follow each provider's documentation
-#: as of 2026-10; LM Studio's behaviour was checked against a running server.
+#: as of 2026-10; LM Studio's behaviour was checked against a running server.  2.1.1: checked
+#: again on 2026-10-25; Alibaba Bailian (Qwen), Volcano Ark (Doubao) and SiliconFlow were removed,
+#: Xiaomi MiMo added.
 PROVIDERS = {
     'ollama': ('Ollama', 'ollama', 'http://127.0.0.1:11434', '', True, 'json', 'ollama'),
     'lmstudio': ('LM Studio', 'openai', 'http://127.0.0.1:1234/v1', '', True, None, 'lmstudio'),
@@ -41,11 +43,10 @@ PROVIDERS = {
     'anthropic': ('Anthropic Claude', 'anthropic', 'https://api.anthropic.com', 'claude-opus-5-5', False, None, 'anthropic'),
     'gemini': ('Google Gemini', 'openai', 'https://generativelanguage.googleapis.com/v1beta/openai', 'gemini-3.8-flash', False, 'json_object', 'gemini'),
     'deepseek': (N_('DeepSeek 深度求索'), 'openai', 'https://api.deepseek.com', 'deepseek-flash', False, 'json_object', 'deepseek'),
-    'dashscope': (N_('阿里云百炼 · 通义千问'), 'openai', 'https://dashscope.aliyuncs.com/compatible-mode/v1', 'qwen3.7-flash', False, 'json_object', 'qwen'),
     'moonshot': (N_('月之暗面 Kimi'), 'openai', 'https://api.moonshot.cn/v1', 'kimi-k2.6', False, 'json_object', 'kimi'),
     'zhipu': (N_('智谱 GLM'), 'openai', 'https://open.bigmodel.cn/api/paas/v4', 'glm-5.3-flash', False, 'json_object', 'switch'),
-    'siliconflow': (N_('硅基流动 SiliconFlow'), 'openai', 'https://api.siliconflow.cn/v1', 'deepseek-ai/DeepSeek-V4-Flash', False, 'json_object', 'budget'),
-    'volcengine': (N_('火山方舟 · 豆包'), 'openai', 'https://ark.cn-beijing.volces.com/api/v3', 'doubao-seed-2-0-lite-260428', False, 'json_object', 'ark'),
+    # Pay-as-you-go keys (sk-…); Token Plan keys (tp-… / ttp-…) use the base URL shown in the MiMo console.
+    'mimo': (N_('小米 MiMo'), 'openai', 'https://api.xiaomimimo.com/v1', 'mimo-v2.6-flash', False, 'json_object', 'mimo'),
     'openrouter': ('OpenRouter', 'openai', 'https://openrouter.ai/api/v1', '', False, 'json_object', 'openrouter'),
     'custom': (N_('自定义 OpenAI 兼容接口'), 'openai', '', '', False, None, 'openai'),
 }
@@ -53,14 +54,15 @@ LOCAL_PROVIDERS = [k for k, v in PROVIDERS.items() if v[4]]
 CLOUD_PROVIDERS = [k for k, v in PROVIDERS.items() if not v[4]]
 #: Defaults written by earlier 1.5.0 builds; still-untouched values move to the current ones.
 LEGACY = {'deepseek': ('https://api.deepseek.com/v1', 'deepseek-chat'), 'openai': (None, 'gpt-4.1-mini'),
-          'anthropic': (None, 'claude-sonnet-5-5'), 'gemini': (None, 'gemini-2.5-flash'), 'dashscope': (None, 'qwen-plus'),
-          'moonshot': (None, 'moonshot-v1-8k'), 'zhipu': (None, 'glm-4-flash'),
-          'siliconflow': (None, 'Qwen/Qwen2.5-7B-Instruct'), 'volcengine': (None, '')}
+          'anthropic': (None, 'claude-sonnet-5-5'), 'gemini': (None, 'gemini-2.5-flash'),
+          'moonshot': (None, 'moonshot-v1-8k'), 'zhipu': (None, 'glm-4-flash')}
+#: 2.1.1: providers that were removed; a configuration that used one moves to the custom
+#: OpenAI-compatible entry (when that is still empty), so a working setup keeps working.
+REMOVED = ('dashscope', 'siliconflow', 'volcengine')
 
 #: Thinking depth chosen in the settings; mapped per provider by ``thinking_request``.
 REASONING = {'default': N_('默认（由模型决定）'), 'off': N_('关闭（最快、最省）'), 'low': N_('低'), 'medium': N_('中'),
              'high': N_('高'), 'max': N_('最高')}
-_BUDGET = {'low': 1024, 'medium': 4096, 'high': 16384, 'max': 32768}
 THINKING_NOTES = {
     'ollama': N_('Ollama：关闭 = think:false；低 / 中 / 高 = think 档位（如 gpt-oss），模型不支持档位时改用默认。'),
     'lmstudio': N_('LM Studio：关闭 = reasoning_effort none（qwen3 实测可关闭思考）；低 / 中 / 高 = reasoning_effort。'),
@@ -70,11 +72,10 @@ THINKING_NOTES = {
     'anthropic': N_('output_config.effort。当前 Claude 无法关闭思考，“关闭”按 low 处理；Opus 5.5 默认 medium。'),
     'gemini': N_('reasoning_effort（关闭 = minimal，“最高”按 high）。'),
     'deepseek': N_('thinking.type + reasoning_effort。DeepSeek 默认开启思考（high），只有 low / high / max 三档，“中”按 high。'),
-    'qwen': N_('enable_thinking + thinking_budget（低 1024 / 中 4096 / 高 16384 / 最高 32768 token）。开启思考时百炼不支持 JSON 模式，改由提示词约束。'),
-    'budget': N_('enable_thinking + thinking_budget（低 1024 / 中 4096 / 高 16384 / 最高 32768 token）。'),
-    'kimi': N_('kimi-k3 始终思考，用 reasoning_effort（low / high / max）；kimi-k2.x 用 thinking 开关。'),
-    'switch': N_('智谱 thinking.type 开关：GLM 没有档位，低 / 中 / 高 / 最高都为开启。'),
-    'ark': N_('thinking.type + reasoning_effort（低 / 中 / 高，“最高”按 high）。'),
+    'kimi': N_('kimi-k3 系列（含 kimi-k3.1-pro）始终思考，用 reasoning_effort（low / high / max，默认 max）；'
+               'kimi-k2.6 用 thinking 开关；kimi-k2.7-code 不能关闭思考。'),
+    'switch': N_('智谱 thinking.type 开关，没有档位，低 / 中 / 高 / 最高都为开启。GLM-5.3 / GLM-5.3-Flash 强制思考，选“关闭”时按默认处理。'),
+    'mimo': N_('小米 MiMo thinking.type 开关（默认开启），没有档位，低 / 中 / 高 / 最高都为开启。'),
     'openrouter': N_('reasoning.effort，由 OpenRouter 转换为各家参数。'),
 }
 
@@ -109,16 +110,12 @@ def thinking_request(style, level, model=''):
         if off:
             return {'thinking': {'type': 'disabled'}}
         return {'thinking': {'type': 'enabled'}, 'reasoning_effort': {'low': 'low', 'medium': 'high', 'high': 'high', 'max': 'max'}[level]}
-    if style in ('qwen', 'budget'):
-        return {'enable_thinking': False} if off else {'enable_thinking': True, 'thinking_budget': _BUDGET[level]}
     if style == 'kimi':
         if model.lower().startswith('kimi-k3'):
             return {'reasoning_effort': {'off': 'low', 'low': 'low', 'medium': 'high', 'high': 'high', 'max': 'max'}[level]}
         return {'thinking': {'type': 'disabled' if off else 'enabled'}}
-    if style == 'switch':
+    if style in ('switch', 'mimo'):
         return {'thinking': {'type': 'disabled' if off else 'enabled'}}
-    if style == 'ark':
-        return {'thinking': {'type': 'disabled'}} if off else {'thinking': {'type': 'enabled'}, 'reasoning_effort': capped}
     if style == 'openrouter':
         return {'reasoning': {'effort': 'none' if off else level}}
     if style == 'ollama':
@@ -301,34 +298,57 @@ def load_settings(path=None):
                 entry['base_url'] = PROVIDERS[key][2]
             if old_model is not None and entry['model'] == old_model:
                 entry['model'] = PROVIDERS[key][3]
+    removed = data.get('provider')
+    stored = (data.get('providers') or {}).get(removed)
+    custom = result['providers']['custom']
+    if removed in REMOVED and isinstance(stored, dict) and not custom['base_url'] and not custom['key']:
+        custom.update(base_url=str(stored.get('base_url', ''))[:500], model=str(stored.get('model', ''))[:200],
+                      key=unprotect_key(str(stored.get('key', ''))))
+        result['provider'] = 'custom'
+        if stored.get('key') == 'keychain:':
+            in_keychain.append(removed)
     if in_keychain and KEYCHAIN:
         keys = keychain_keys()
         if keys is None:
             # Not read (access refused): the keys stay where they are; save_settings keeps them.
             result['keychain_unread'] = list(in_keychain)
         for key in in_keychain:
-            result['providers'][key]['key'] = (keys or {}).get(key, '')
+            entry = result['providers']['custom' if key in REMOVED else key]
+            entry['key'] = (keys or {}).get(key, '')
     return result
 
 
 def save_settings(settings, path=None):
+    """Write ``settings``.  Keys the keychain refused at load time and gives now are merged, and
+    put back into ``settings`` (2.1.1), so the window uses them without starting again."""
     path = Path(path or settings_path())
     path.parent.mkdir(parents=True, exist_ok=True)
     data = copy.deepcopy(settings)
     unread = set(data.pop('keychain_unread', None) or ())
     keys = {name: entry['key'] for name, entry in data['providers'].items() if entry.get('key')}
     in_keychain = False
+    recovered = {}
     if KEYCHAIN:
         stored = dict(_keychain_cache) if _keychain_cache is not None and not unread else keychain_keys()
         if stored is not None:
-            # Keys that could not be read when the settings were loaded stay unless replaced.
-            keys = {name: key for name, key in stored.items() if name in unread} | keys
+            # Keys that could not be read when the settings were loaded stay unless replaced; the
+            # key of a removed provider belongs to the custom entry it moved to (load_settings).
+            for name in sorted(unread):
+                owner = 'custom' if name in REMOVED else name
+                if stored.get(name) and owner not in keys:
+                    keys[owner] = recovered[owner] = stored[name]
             in_keychain = keychain_store(keys)
     for name, entry in data['providers'].items():
         if name in unread and not entry.get('key') and not in_keychain:
             entry['key'] = 'keychain:'    # still in the keychain, read again next time
         else:
-            entry['key'] = 'keychain:' if in_keychain and entry.get('key') else protect_key(entry.get('key', ''))
+            # 2.1.1: the marker follows the keys written, not only the ones the window held.
+            entry['key'] = 'keychain:' if in_keychain and keys.get(name) else protect_key(entry.get('key', ''))
+    if in_keychain:
+        for name, key in recovered.items():
+            if name in settings['providers'] and not settings['providers'][name].get('key'):
+                settings['providers'][name]['key'] = key
+        settings.pop('keychain_unread', None)
     temporary = path.with_suffix('.tmp')
     temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
     if os.name != 'nt':
@@ -343,8 +363,6 @@ def active(settings):
     entry = settings['providers'][key]
     reasoning = settings.get('reasoning', 'default')
     model = entry['model'].strip()
-    if style == 'qwen' and reasoning != 'off':
-        json_mode = None  # Bailian: JSON mode is not available while the model thinks
     return dict(provider=key, label=tr(label), api=api, base_url=normalize_base(api, entry['base_url']),
                 model=model, key=entry['key'].strip(), local=local, json_mode=json_mode,
                 timeout=settings.get('timeout', 180), reasoning=reasoning, thinking=thinking_request(style, reasoning, model))
@@ -667,13 +685,16 @@ def _openai_headers(service):
     headers = {}
     if service['key']:
         headers['Authorization'] = 'Bearer ' + service['key']
+    if service['provider'] == 'mimo' and service['key']:
+        headers['api-key'] = service['key']      # the header of MiMo's own examples
     if service['provider'] == 'openrouter':
-        headers.update({'HTTP-Referer': 'https://github.com/hety0211/lumen-raw', 'X-Title': 'LUMEN RAW'})
+        headers.update({'HTTP-Referer': 'https://github.com/hety0211/lumen-raw', 'X-OpenRouter-Title': 'LUMEN RAW'})
     return headers
 
 
 def _anthropic_headers(service):
-    return {'x-api-key': service['key'], 'anthropic-version': '2023-06-01'}
+    # 2.1.1: API version 2026-10-21 (no sampling parameters, which these requests never send).
+    return {'x-api-key': service['key'], 'anthropic-version': '2026-10-21'}
 
 
 def list_models(service):

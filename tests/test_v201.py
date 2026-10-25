@@ -191,11 +191,13 @@ def test_sidecar_writes_never_overlap_and_the_newest_change_wins(tmp_path, monke
     # 2.1.0: the first write holds the writer until everything below is queued; the test used to
     # rely on the writer being slower than eight threads (not so on an M1).
     gate = threading.Event()
+    started = threading.Event()
 
     def slow_write(entries):
         with lock:
             running[0] += 1
             peak[0] = max(peak[0], running[0])
+        started.set()
         gate.wait(10)
         time.sleep(.02)
         batches.append([dict(e) for e in entries])
@@ -205,7 +207,10 @@ def test_sidecar_writes_never_overlap_and_the_newest_change_wins(tmp_path, monke
     monkeypatch.setattr(catalog, '_write_sidecars', slow_write)
     writer = catalog.SidecarWriter()
     photo_path = str(tmp_path / 'a.jpg')
-    tickets = []
+    # 2.1.1: and the burst waits until the writer holds that first write; a writer thread that
+    # started late took the whole burst as its first batch and wrote the last rating on its own.
+    tickets = [writer.queue(ratings={photo_path: dict(rating=0, flag='', label='')})]
+    assert started.wait(10)
 
     def burst(i):
         tickets.append(writer.queue(ratings={photo_path: dict(rating=i % 6, flag='', label='')}))

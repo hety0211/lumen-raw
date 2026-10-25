@@ -1,5 +1,14 @@
 # 模型来源与转换
 
+## 2.1.1 模型与程序分开存放
+
+模型本身没有变化。打包时 15 个 AI 模型（float16 权重，共约 522 MB）不再放在程序文件（`_internal`）里，而是以内容命名（`<名称>.<SHA-256 前 12 位>.onnx`，例如 `skyseg.b57ea5204f87.onnx`）放在 `LumenRAW.exe` 旁边的 `models` 文件夹中，`_internal/assets/ai-models.json` 列出这个版本需要的文件、大小与 SHA-256（`tools/bundle.py` 的 `model_pack` 生成）。程序只按清单找文件、不做哈希，下载的文件核对大小与 SHA-256 后才改成最终文件名，所以同一模型的新旧版本可以并存，正在使用的文件不会被覆盖。
+
+- **完整安装包、便携包：** 带全部模型，可离线使用。
+- **升级包（`LumenRAW-<版本>-Update.exe`）：** 只有程序，不含模型，也不改动已有的 `models` 文件夹；软件内更新下载它，再只下载新版本清单中本机没有的模型。从 2.1.0 升级时，安装程序把 `_internal/assets/models` 中的旧模型移到 `models/import`，软件启动时把 SHA-256 与清单相符的文件改名留用（2.1.1 与 2.1.0 的模型完全相同，不需要下载），其余删除。
+- **下载来源：** 本项目 GitHub 的 `ai-models` 预发布（`https://github.com/hety0211/lumen-raw/releases/download/ai-models/<文件名>`），只上传以前没有的文件。`models` 文件夹不可写时下载到 `%LOCALAPPDATA%\LUMEN RAW\models`。缺少的模型在启动时提示下载，也可在「帮助 → AI 模型…」或 `lumen-cli models --download` 中下载；缺少模型的功能会说明需要下载什么，其他功能不受影响。
+- 源码运行仍直接使用 `assets/models` 中的原始 float32 文件（`tools/fetch_assets.py`）。
+
 ## 2.1.0 AI 移除、风光语义蒙版与点选物体
 
 三个功能各用一个模型，都随包离线运行、只用 CPU（测试机 Ryzen 7 9800X3D 上比 DirectML 更快，单张图也不必等显卡编译）。文件、固定版本与 SHA-256 见 `assets/editing-assets.json`（`tools/fetch_assets.py` 按它下载），许可文本见 `assets/LaMa-LICENSE.txt` 与 `assets/EfficientViT-LICENSE.txt`。打包时权重转为 float16（`tools/compact_models.py`），四个文件由 410 MB 降到约 199 MB。

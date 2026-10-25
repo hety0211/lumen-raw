@@ -2,7 +2,6 @@
 import base64
 import threading
 from functools import lru_cache
-from pathlib import Path
 import cv2
 import numpy as np
 from .i18n import tr
@@ -97,8 +96,8 @@ def session(kind, cuda=False):
 
 @lru_cache(maxsize=8)
 def _session(kind, cuda):
-    from . import compute
-    path = Path(__file__).resolve().parents[1]/'assets/models'/MODELS[kind]
+    from . import ai_models, compute
+    path = ai_models.path(MODELS[kind])
     if kind in CPU_ONLY:
         return compute.session(path,False,arena=False)
     return compute.session(path,cuda)

@@ -1,13 +1,11 @@
 """Offline FFDNet color denoising, overlapping tiles and optional ONNX CUDA."""
-from pathlib import Path
 import numpy as np
 from .i18n import tr
 
 
 def session(cuda=True):
-    from . import compute
-    path=Path(__file__).resolve().parents[1]/'assets/models/ffdnet-color.onnx'
-    return compute.session(path,cuda)
+    from . import ai_models, compute
+    return compute.session(ai_models.path('ffdnet-color.onnx'),cuda)
 
 
 def noise_level(rgb):

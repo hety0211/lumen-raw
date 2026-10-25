@@ -26,6 +26,7 @@ DARK = dict(
     list='#0b0b0d', scroll='#34343c', status='#08080a', splitter='#050506',
     canvas='#000000', plot='#0b0b0d', grid='#1f1f24', diagonal='#3a3a42', ink='#ffffff', bubble='#000000c8',
     hist_r='#ea7d88', hist_g='#8ed7ac', hist_b='#86adf3', warn='#e4ce8e', error='#b65a4c',
+    ok='#8ed7ac', ok_soft='#0f1d15', ok_line='#2d5a3f',
 )
 
 LIGHT = dict(
@@ -38,6 +39,7 @@ LIGHT = dict(
     list='#eceae5', scroll='#c4bfb5', status='#fbfaf8', splitter='#dad7d0',
     canvas='#8f8e8b', plot='#f0eeea', grid='#dcd9d2', diagonal='#bdb8ae', ink='#000000', bubble='#ffffffe0',
     hist_r='#d9505d', hist_g='#3f9f63', hist_b='#4b7fd6', warn='#a4740f', error='#c0503c',
+    ok='#2f7d4f', ok_soft='#e3f3e8', ok_line='#b4dcc1',
 )
 
 PALETTES = {'dark': DARK, 'light': LIGHT}
@@ -123,6 +125,16 @@ QToolButton#keywordChip { background: @card; border: 1px solid @border_hi; borde
 QToolButton#keywordChip:hover { border-color: @accent_line; color: @accent; }
 QLabel#infoTitle { color: @head; font-size: 13px; font-weight: 600; background: transparent; }
 QLabel#hints { color: @warn; background: transparent; }
+QLabel#cardTitle { color: @head; font-size: 19px; font-weight: 600; background: transparent; }
+QLabel#okBadge { color: @ok; background: @ok_soft; border: 1px solid @ok_line; border-radius: 13px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
+QFrame#rule { background: @border; border: none; }
+QLabel#versionOld { color: @dim; font-size: 30px; font-weight: 600; background: transparent; }
+QLabel#versionNew { color: @head; font-size: 30px; font-weight: 700; background: transparent; }
+QLabel#versionArrow { color: @dim; font-size: 20px; padding-bottom: 8px; background: transparent; }
+QLabel#cardHeading { color: @head; font-size: 16px; font-weight: 600; padding-top: 4px; background: transparent; }
+QLabel#notes { color: @text; font-size: 14px; background: transparent; }
+QScrollArea#notesScroll, QScrollArea#notesScroll > QWidget > QWidget { background: transparent; }
+QLabel#warnBadge { color: @warn; background: transparent; border: 1px solid @border_hi; border-radius: 13px; padding: 4px 12px; font-size: 12px; font-weight: 600; }
 '''
 
 _mode = 'dark'

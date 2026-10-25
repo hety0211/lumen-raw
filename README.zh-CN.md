@@ -4,9 +4,9 @@
 
 [English](README.md) · [下载](https://github.com/hety0211/lumen-raw/releases) · [更新记录](CHANGELOG.md) · [参与贡献](CONTRIBUTING.md) · [MIT 许可证](LICENSE)
 
-LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows、Linux（x86_64）和 Apple 芯片 Mac，无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。导入、选片、调色、镜头校正、AI 移除 / 降噪 / 超分 / 蒙版、导出和延时视频全部在本机离线完成；只有你主动使用云端大模型修图时才会联网发送指令和参数，使用语音指令时会下载一次语音识别模型。
+LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows、Apple 芯片 Mac 和 x86_64 Linux（源码运行），无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。导入、选片、调色、镜头校正、AI 移除 / 降噪 / 超分 / 蒙版、导出和延时视频全部在本机离线完成；只有你主动使用云端大模型修图时才会联网发送指令和参数，使用语音指令时会下载一次语音识别模型；2.1.1 起启动时会检查一次新版本，可以关闭。
 
-当前版本：**2.1.0**（Windows、Linux 与 macOS，2026-10-23）。
+当前版本：**2.1.1**（Windows，2026-10-26）。macOS 为 2.1.0（2026-10-23）。Linux 从源码运行或自行构建（2.1.1 起加入 Linux 移植）。
 
 ![LUMEN RAW 2.0.0「图库」页：左侧为文件夹树、智能相册与关键词，中间的缩略图网格显示星级、留用旗标、色标和被排除的照片，右侧为所选照片的拍摄信息、清晰度、评级与关键词](docs/screenshots/library-grid.png)
 
@@ -16,20 +16,18 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 
 | 系统 | 下载 | 要求 |
 |---|---|---|
-| Windows | [`LumenRAW-2.1.0-Setup.exe`（安装版，597 MB）或 `LumenRAW-2.1.0-Windows.zip`（便携版，665 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.0) | Windows 10 22H2 / Windows 11，x64 |
+| Windows | [`LumenRAW-2.1.1-Setup.exe`（完整安装包，597 MB）、`LumenRAW-2.1.1-Update.exe`（升级包，135 MB）或 `LumenRAW-2.1.1-Windows.zip`（便携版，665 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.1) | Windows 10 22H2 / Windows 11，x64 |
 | macOS | [`LumenRAW-2.1.0-macOS-arm64.dmg`（654 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.0-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
-| Linux | 从下方源码构建；`tools/build_linux.sh --sample 照片.DNG` 会生成便携的 `LumenRAW-2.1.0-Linux-x86_64.tar.gz` | x86_64、Python 3.12；可选 NVIDIA CUDA 13 驱动 |
+| Linux | 没有预编译下载：从源码运行（见[下方](#从源码运行)）；`tools/build_linux.sh --sample 照片.DNG` 可生成便携的 `LumenRAW-<版本>-Linux-x86_64.tar.gz` | x86_64、Python 3.12；可选 NVIDIA 显卡（CUDA 13 驱动） |
 
-Windows、Linux 与 macOS 的功能一致：Mac 版 2.1.0 是 1.7.0 之后的第一个 Mac 版本，同时带来 2.0 的图库、选片、预览缓存、延时视频和新主题。2.1.0 的工程（`.lumen`）和选片集（`.lumenalbum`）升为格式 8（用于保存 AI 移除与新蒙版）：2.1.0 能打开所有旧工程，2.0.1 及更早版本打不开 2.1.0 保存的工程。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
-
-Linux 便携包需要构建环境的 glibc 版本；要为更旧的发行版分发，请在较旧的系统上构建。没有 NVIDIA 显卡或 CUDA 运行库时使用 CPU；有 NVIDIA 显卡时使用原生 CUDA 显影内核和 ONNX Runtime 的 CUDA 执行提供器。
+Windows 版为 2.1.1：软件内更新、AI 模型与程序分开存放、清晰度与闭眼分开分析、DeepSeek Harness 接入、小米 MiMo，以及代码审阅发现的 5 项修复。Mac 版仍为 2.1.0；Mac 版 2.1.0 是 1.7.0 之后的第一个 Mac 版本，同时带来 2.0 的图库、选片、预览缓存、延时视频和新主题。2.1.1 起可在 x86_64 Linux 上从源码运行，NVIDIA 显卡使用原生 CUDA 内核（社区贡献，见下方 Linux 说明）。2.1.1 的工程格式不变（仍为 8），与 2.1.0 互相打开。2.1.0 的工程（`.lumen`）和选片集（`.lumenalbum`）升为格式 8（用于保存 AI 移除与新蒙版）：2.1.0 能打开所有旧工程，2.0.1 及更早版本打不开 2.1.0 保存的工程。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **Windows**
 
-- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 2.0.1。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
-- **便携版：** 解压后运行 `LumenRAW-Windows\LumenRAW.exe`。`_internal` 文件夹必须留在 exe 旁边。便携版的界面语言默认跟随系统。
+- **安装版：** 安装到当前用户目录，不需要管理员权限，可直接覆盖安装 1.2.x – 2.1.0。从 2.1.0 升级也可以只下载升级包（135 MB）：它不含 AI 模型，会留用 2.1.0 已有的模型。升级前先保存选片集并关闭旧版。安装开始时选择的语言就是软件的界面语言，之后可在「语言 / Language」菜单中更改。
+- **便携版：** 解压后运行 `LumenRAW-Windows\LumenRAW.exe`。`_internal` 和 `models` 文件夹必须留在 exe 旁边。便携版的界面语言默认跟随系统。
 - 两种包都自带 Python 运行环境、ExifTool、字体、15 个 AI 模型、视频编码器和 lensfun 镜头数据库，可完全离线使用。语音指令用的识别模型（约 240 MB）在第一次点「语音」时下载；从 1.5 – 1.7 升级安装时，安装程序会保留旧版自带的模型，不必重新下载。
-- 2.1.0 为 AI 移除和新蒙版增加了 4 个模型（半精度存放约 200 MB），安装版由 415 MB 增加到 597 MB。AI 模型以半精度存放（结果相差约十万分之一，速度不变），语音模型不随包。
+- 2.1.1 起 AI 模型（约 522 MB）放在程序旁的 `models` 文件夹，与程序分开：软件内更新只下载程序（约 135 MB）和有变化的模型，见下方[软件更新与 AI 模型](#软件更新与-ai-模型)。AI 模型以半精度存放（结果相差约十万分之一，速度不变），语音模型不随包。
 
 **macOS**
 
@@ -39,8 +37,30 @@ Linux 便携包需要构建环境的 glibc 版本；要为更旧的发行版分�
 - 第一次点“语音”时系统会询问麦克风权限，点「允许」；和 Windows 版一样，同意后下载一次语音识别模型（约 240 MB）。语音只在本机识别，不会上传。
 - 云端 API Key 存放在登录钥匙串中。每次更新 App 后第一次使用时，macOS 会询问是否允许读取，输入开机密码并选「始终允许」即可。
 
+**Linux**
+
+- 没有发布 Linux 下载包。在源码目录运行 `./run-source.sh` 即可安装依赖并启动（见[从源码运行](#从源码运行)）；`tools/build_linux.sh` 可构建便携包，并带当前用户的应用程序菜单项。
+- 构建出的便携包需要构建环境的 glibc 版本；要给更旧的发行版使用，请在需要支持的最旧系统上构建。
+- 有 NVIDIA 显卡时，显影使用原生 CUDA 内核，AI 模型使用 ONNX Runtime 的 CUDA 执行提供器；没有 NVIDIA 显卡或 CUDA 运行库时全部使用 CPU。Linux 上不使用 AMD 和 Intel 显卡。
+- Linux 移植由 [@worldcupfantasy](https://github.com/worldcupfantasy) 贡献（Pull Request #8），由贡献者在 NVIDIA 显卡、CUDA 13 环境中测试；维护者没有在 Linux 实机上运行过，也没有在各发行版和桌面环境中逐一检查。
+
+## 软件更新与 AI 模型
+
+2.1.1 起，LUMEN RAW 启动后会在后台检查有没有新版本（读取 GitHub 最新发布中的 `lumen-update.json`，只带程序版本号）。有新版本时弹出「LUMEN RAW — 软件更新」窗口，显示当前版本 → 最新版本、下载大小和更新内容：
+
+- **立即更新：** 下载升级包和新版本中本机没有的 AI 模型（可取消，下次从中断处继续），每个文件核对大小与 SHA-256，只接受本项目 GitHub 发布中的文件。完成后点「重启并更新」：LUMEN RAW 先关闭（未保存的修改照常询问），升级包等程序完全退出后静默安装，装完自动重新打开。
+- **下次提醒：** 关闭窗口，下次启动时再提醒。也可以在「帮助 → 检查更新…」手动检查，在「帮助 → 启动时检查更新」关闭自动检查。
+- **只下载变化的部分：** 15 个 AI 模型（约 522 MB）放在 `LumenRAW.exe` 旁的 `models` 文件夹，文件名带内容的 SHA-256（例如 `skyseg.b57ea5204f87.onnx`）。升级包只有程序（约 135 MB），不改动 `models`；新版本换了模型时只下载换掉的那几个。完整安装包与便携包仍带全部模型，可离线安装。
+- **缺少模型时：** 启动时提示下载，「帮助 → AI 模型…」可随时查看与下载（命令行：`lumen-cli models --download`）；缺少模型的功能会说明需要下载什么，其他功能照常使用。
+- 便携版、源码运行（包括 Linux）和 macOS 版会打开下载页面，由你自己下载新版本。
+- **从 2.1.0 升级：** 2.1.0 还没有检查更新功能，需要手动安装一次 2.1.1：只下载升级包（135 MB）即可，它会把 2.1.0 的模型（与 2.1.1 完全相同）移到 `models\import`，启动时核对 SHA-256 后留用。从 2.1.1 起，新版本由软件自己发现。
+
 ## 主要功能
 
+- **软件内更新（2.1.1）：** 启动时发现新版本，一键下载、关闭后静默安装并自动重开；AI 模型与程序分开存放，以后的更新只下载程序（约 135 MB）和有变化的模型。
+- **清晰度与闭眼分开分析（2.1.1）：** 「图库」菜单中两个独立开关；风光照片可以不找人脸，之后再打开另一项时只补算那一项。
+- **DeepSeek Harness 与小米 MiMo（2.1.1）：** 「AI 助手接入（MCP）」一键把 LUMEN RAW 写进 DSH 的配置；自然语言修图新增小米 MiMo，去掉通义千问（百炼）、豆包（方舟）和硅基流动。
+- **Linux（2.1.1，社区贡献）：** x86_64 Linux 可从源码运行，NVIDIA 显卡上用原生 CUDA 内核显影、用 CUDA 运行 AI 模型。见上方[下载与安装](#下载与安装)。
 - **AI 移除（2.1.0）：** 涂抹或单击要去掉的东西，本地 LaMa 模型按周围画面补全：码头上的游客、路牌，甚至整座灯塔。补全在原图上计算一次并随工程保存，预览、放大与导出完全一致。见下方[AI 移除](#ai-移除)。
 - **风光蒙版与点选物体（2.1.0）：** 点一下就选出水面、植被、山体、建筑或地面；「点选物体」单击任意东西生成蒙版，Shift + 单击加选，Alt + 单击减选。见下方[风光蒙版与点选物体](#风光蒙版与点选物体)。
 - **曝光曲线的黑点与白点（2.1.0）：** 曲线两端可以自由拖动，整根曲线随之伸缩，像在达芬奇里用曲线拉灰片；曲线背后显示未调整照片的直方图。见下方[曝光曲线的黑点与白点](#曝光曲线的黑点与白点)。
@@ -135,7 +155,7 @@ Linux 便携包需要构建环境的 glibc 版本；要为更旧的发行版分�
 - **速度：** 选片显示相机自己的渲染——RAW 文件内嵌的 JPEG 预览，直接按需要的大小解码——并预读前后各 3 张，切换几乎没有等待。放大到 100% 时，有全尺寸内嵌 JPEG 就直接用，否则读取 RAW。
 - **对比：** 左边保持选定的一张，`←` / `→` 更换右边的候选，两边的缩放与位置同步。
 - **连拍：** 同一台机身（型号与序列号）、相隔不超过 2 秒、画面相似的连续照片归为一组，显示为“3/7”。每组按“睁眼优先、再取最清晰”选出最佳的一张（琥珀色标记），「折叠连拍」只显示每组最佳。同名同时刻的副本（导出的成片、RAW + JPEG 中的 JPEG）不算连拍。
-- **清晰度与闭眼：** 每张照片在后台分析一次（低优先级，AI 处理和导出时暂停；可在「图库」菜单关闭），结果保存在图库中。清晰度（0–100）在画面结构最多的区域测量，所以浅景深照片按清楚的主体计算，雾天不算模糊；低于 22，或比同组最佳低 14 以上，标为“可能模糊”。人脸由 YuNet 检测，再用 Google MediaPipe Face Mesh（478 个关键点）测量眼睛；两只眼都几乎闭上时标为“可能闭眼”。两个模型共约 2.7 MB，离线运行；一张 6100 万像素的 ARW 读预览约 0.3 秒、分析约 0.2 秒。
+- **清晰度与闭眼：** 每张照片在后台分析一次（低优先级，AI 处理和导出时暂停），结果保存在图库中。2.1.1 起「图库」菜单分成「后台分析清晰度」和「后台分析闭眼」两个开关，风光图库可以只算清晰度、不找人脸；图库记录每张照片做过哪一项，之后再打开另一项时只补算那一项。命令行与 MCP 的 `analyze_photos` 仍两项都算。清晰度（0–100）在画面结构最多的区域测量，所以浅景深照片按清楚的主体计算，雾天不算模糊；低于 22，或比同组最佳低 14 以上，标为“可能模糊”。人脸由 YuNet 检测，再用 Google MediaPipe Face Mesh（478 个关键点）测量眼睛；两只眼都几乎闭上时标为“可能闭眼”。两个模型共约 2.7 MB，离线运行；一张 6100 万像素的 ARW 读预览约 0.3 秒、分析约 0.2 秒。
 
 ## 延时摄影视频
 
@@ -211,7 +231,7 @@ Linux 便携包需要构建环境的 glibc 版本；要为更旧的发行版分�
 | 类型 | 可选服务 | 说明 |
 |---|---|---|
 | 本地 | Ollama、LM Studio、llama.cpp（llama-server）、vLLM / Jan / LocalAI 等 OpenAI 兼容服务 | 不需要 API Key，数据不出本机 |
-| 云端 | OpenAI、Anthropic Claude、Google Gemini、DeepSeek、阿里云百炼（通义千问）、Kimi、智谱 GLM、硅基流动、火山方舟（豆包）、OpenRouter、自定义接口 | 用你自己的 API Key，按服务商计费 |
+| 云端 | OpenAI、Anthropic Claude、Google Gemini、DeepSeek、Kimi、智谱 GLM、小米 MiMo、OpenRouter、自定义接口 | 用你自己的 API Key，按服务商计费 |
 
 - **发送的内容：** 指令、当前调色参数、照片的亮度 / 颜色统计和拍摄参数（机身、镜头、光圈、快门、ISO、焦距、时间，不含 GPS）。可选附带一张长边 768 像素的预览图，给支持图像输入的模型使用。
 - **API Key：** 只保存在本机。Windows 上用当前用户的数据保护（DPAPI）加密，macOS 上存放在钥匙串中。
@@ -267,6 +287,21 @@ Mac 上 `lumen-cli` 在 App 内部：
 
 ```
 claude mcp add lumen-raw -- "/Applications/LUMEN RAW.app/Contents/MacOS/lumen-cli" mcp
+```
+
+**DeepSeek Harness（DSH，2.1.1）：** 在该窗口的「DeepSeek Harness」页点「写入 DSH 配置」，会把条目合并进 `~/.dsh/cordis.patch.yml`（DSH 所有配置都读取的用户级补丁文件，命令行和桌面版都适用；原有条目保留，写入前先备份），也可以运行 `lumen-cli mcp-config dsh --install`。重启 DSH 后，工具名为 `mcp__lumen-raw__<工具>`。条目是一行 `@deepseek-ai/dsh-mcp-client` 插件：
+
+```yaml
+- insert:
+    - id: mcp-lumen-raw
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: lumen-raw
+        transport: stdio
+        command: 'C:\Users\<你>\AppData\Local\Programs\LUMEN RAW\lumen-cli.exe'
+        args: ['mcp']
+        env: {}
+        toolCallTimeoutMs: 600000
 ```
 
 WorkBuddy、Claude Desktop 等其他客户端使用 JSON 配置（`"command"` 为 `lumen-cli.exe` 的完整路径，Mac 上为 `lumen-cli` 的完整路径，`"args": ["mcp"]`）。之后可以对助手说“把这个文件夹里三星以上的照片按金色时刻预设处理，天空压暗一点，导出到桌面”，或“导入 E:\DCIM，每组连拍只留最清晰、没闭眼的一张，加上关键词‘冰岛’”。
@@ -341,7 +376,7 @@ lumen-cli commands
 - AI 模型在独立进程中运行：显卡驱动崩溃时编辑器不会关闭，会换下一种设备重算，并记住出问题的显卡与驱动组合。
 - TensorRT for RTX 组件在第一次使用时由 Windows 下载，之后离线可用。
 - 环境变量 `LUMEN_COMPUTE=cpu` 强制使用 CPU。在 Mac 上，`LUMEN_COREML_UNITS=ALL` 允许 Core ML 同时使用神经网络引擎。
-- Linux 上逐像素显影运行原生 CUDA 内核（`lumen/cuda.py`，首次使用时用 NVRTC 编译并与 CPU 核对），AI 模型使用 ONNX Runtime 的 CUDA 执行提供器；没有 NVIDIA 显卡或 CUDA 库时自动回退 CPU。延时视频优先尝试 `h264_nvenc` / `hevc_nvenc` / `av1_nvenc`，不可用时使用 x264 / x265 / SVT-AV1。22 MP DNG 的进程版本 1 约比多线程 CPU 快 3 倍、版本 2 快 6–7 倍；1600 像素预览保持交互式。
+- Linux 上（2.1.1），进程版本 1 和 2 的逐像素显影运行原生 CUDA 内核（`lumen/cuda.py`，由 Metal 内核翻译而来，首次使用时用 NVRTC 编译），AI 模型使用 ONNX Runtime 的 CUDA 执行提供器；两者都先与 CPU 核对，没有 NVIDIA 显卡或 CUDA 库时自动回退 CPU。延时视频优先尝试 `h264_nvenc` / `hevc_nvenc` / `av1_nvenc`，不可用时使用 x264 / x265 / SVT-AV1。贡献者实测 2200 万像素 DNG 的进程版本 1 约比多线程 CPU 快 3 倍、版本 2 快 6–7 倍。
 - 实测设备：Windows 为 AMD Radeon RX 9070 XT（DirectML），另有社区用户在 GeForce RTX 5080 上测试 TensorRT for RTX；Mac 为 M1 Pro。M1 Pro 上 1600 像素预览的逐像素显影约 3–5 ms，超分和去杂色比 CPU 快 8–10 倍。1600 像素预览启用镜头校正约多 0.1 秒，只在校正参数变化时重算。
 
 ## 文件与隐私
@@ -356,11 +391,14 @@ lumen-cli commands
 | 图库（`library.db`：文件夹、拍摄信息、关键词、智能相册、选片提示） | `%LOCALAPPDATA%\LUMEN RAW` | — |
 | 预览缓存（默认上限 4 GB，卸载时删除） | `%LOCALAPPDATA%\LUMEN RAW\cache\previews` | — |
 | 语音识别模型（首次使用时下载） | `%LOCALAPPDATA%\LUMEN RAW\models\sensevoice` | 随 App 自带 |
+| AI 模型（2.1.1） | `LumenRAW.exe` 旁的 `models`（该文件夹不可写时为 `%LOCALAPPDATA%\LUMEN RAW\models`）；卸载时删除 | 随 App 自带 |
+| 下载的升级包（2.1.1） | `%LOCALAPPDATA%\LUMEN RAW\updates`，新版本运行后删除 | — |
+
+- Linux 上这些文件位于 `~/.local/state/LUMEN RAW`。API Key 保存在 `natural-language.json` 中、权限为 0600：Linux 上没有与 DPAPI 或系统钥匙串对应的保护，请保护好账户密码和备份。
 
 - 原片始终只读。编辑步骤保存在 `.lumen` / `.lumenalbum` 中；AI 和合成结果另存为新的 DNG 文件。从选片集或图库“移除”只是移除记录，不会删除磁盘上的文件。
-- Linux 上这些文件位于 `~/.local/state/LUMEN RAW`。API Key 保存在 `natural-language.json` 中、权限为 0600：Linux 没有 DPAPI 或系统钥匙串的等价物，请保护账户密码和备份。
 - 「图库 → 预览缓存」可把缓存上限改为 1–32 GB、关闭或清空，缓存会按需重建；照片在磁盘上被修改后会重新解码。卸载时保留图库与评级。
-- 只有三种情况会联网：你使用云端模型修图时、下载语音识别模型时，以及 Windows 第一次下载 TensorRT for RTX 组件时。从源码运行时，首次恢复资源也需要下载。镜头数据库和人脸模型随包提供，识别镜头和选片都不联网。
+- 只有这些情况会联网：你使用云端模型修图时、下载语音识别模型或缺少的 AI 模型时、Windows 第一次下载 TensorRT for RTX 组件时，以及 2.1.1 起启动时检查新版本（向 GitHub 最新发布读取一次 `lumen-update.json`，只带程序版本号，可在「帮助 → 启动时检查更新」中关闭）。从源码运行时，首次恢复资源也需要下载。镜头数据库和人脸模型随包提供，识别镜头和选片都不联网。
 - 水印边框内置 19 个相机与镜头品牌的标志（商标归各自所有者，来源见 `assets/logos/README.txt`）；唯卓仕、福伦达、三阳、七工匠等其他品牌仍以通用字体显示品牌文字。
 
 ## 使用边界
@@ -436,11 +474,11 @@ cd lumen-raw
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **测试：** 2.1.0 的回归测试在 Windows 上 577 项通过、12 项跳过（macOS 专属等），在 macOS 上 571 项通过、18 项跳过，在 Linux 上 563 项通过、31 项跳过（Windows / macOS 专属路径和需要本地样片目录的测试；Linux 数量包含移植新增的 5 项 CUDA / 平台测试）。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
+- **测试：** 2.1.1 的回归测试在 Windows 上 616 项通过、12 项跳过（macOS 专属等）。2.1.0 在 macOS 上 571 项通过、18 项跳过；Linux 移植的贡献者报告在 Linux 上 563 项通过、31 项跳过（2.1.0 加上移植）。测试固定使用简体中文界面。实机验证记录见 [TEST_REPORT.md](TEST_REPORT.md)。
 - **界面翻译：** 代码中的界面文字为简体中文原文，经 `tr()` 查找 `lumen/locales/<语言>.json`；`python tools/i18n_catalog.py` 检查各语言的缺漏和占位符。新增界面文字后请同时补充各语言的译文。
 - **Windows 发布构建：** `build-release.cmd` 依次执行测试、DirectML 检查、便携版 ZIP 和 Inno Setup 安装包。
 - **macOS 发布构建：** `./build-macos.command` 依次执行测试、Metal / Core ML 自检、PyInstaller、临时签名、冒烟测试和 DMG，输出在 `.publish/v<版本>/macos/`。
-- **Linux 开发与发布构建：** 编辑器用 `./run-source.sh` 启动；安装测试与打包工具用 `.venv-linux/bin/python -m pip install -r requirements-linux-dev.txt`，再执行 `.venv-linux/bin/python -m pytest tests -q`。`tools/build_linux.sh --sample 照片.DNG` 依次执行测试、源码冒烟测试、PyInstaller 和冻结包冒烟测试，并把 `LumenRAW-<版本>-Linux-x86_64.tar.gz` 写到 `.publish/v<版本>/linux/`；便携目录同时包含 `LumenRAW.desktop`、`lumen.png` 和 `install-desktop.sh`，可安装到当前用户的应用程序菜单。
+- **Linux 开发与发布构建：** 编辑器用 `./run-source.sh` 启动；安装测试与打包工具用 `.venv-linux/bin/python -m pip install -r requirements-linux-dev.txt`，再执行 `.venv-linux/bin/python -m pytest tests -q`。`tools/build_linux.sh --sample 照片.DNG` 依次执行测试、源码冒烟测试、PyInstaller 和冻结包冒烟测试，并把 `LumenRAW-<版本>-Linux-x86_64.tar.gz` 写到 `.publish/v<版本>/linux/`；AI 模型与 Windows 一样放在程序旁的 `models`。便携目录同时包含 `LumenRAW.desktop`、`lumen.png` 和 `install-desktop.sh`，可安装到当前用户的应用程序菜单。
 - **用真实照片自检：**
   - `python main.py --smoke-test 照片 输出目录`：界面、调色、蒙版、AI 预览、逐个加载全部 AI 模型、语音模型（已安装时）、一次自然语言修图、镜头校正、语言目录、图库与选片，以及视频编码。
   - `--workflow-test`：多品牌导入与 AI 副本。

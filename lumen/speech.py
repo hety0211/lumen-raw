@@ -12,18 +12,17 @@ its mirror, resuming partial downloads and checking every file's size and SHA-25
 used.  A source checkout may keep the model in ``assets/models/sensevoice`` (tools/fetch_assets.py).
 2.0.0: the manifest's ``releases`` (LUMEN RAW's own GitHub release of the same files) are tried
 too, so the download does not depend on the upstream repository staying online.
+2.1.1: the resumable download itself lives in ``downloads`` (shared with the AI models and updates).
 """
 from __future__ import annotations
-import hashlib
 import json
 import os
 import re
 import threading
-import urllib.request
 import wave
 from pathlib import Path
 import numpy as np
-from . import __version__
+from . import downloads
 from .i18n import language, tr
 
 RATE = 16000
@@ -40,8 +39,7 @@ _lock = threading.Lock()
 _recognizer = None
 
 
-class Cancelled(Exception):
-    pass
+Cancelled = downloads.Cancelled
 
 
 def user_folder():
@@ -80,39 +78,12 @@ def sources(url, mirrors, releases=()):
 
 
 def _sha256(path):
-    digest = hashlib.sha256()
-    with open(path, 'rb') as stream:
-        for block in iter(lambda: stream.read(CHUNK), b''):
-            digest.update(block)
-    return digest.hexdigest()
+    return downloads.sha256(path, CHUNK)
 
 
 def _fetch(url, part, size, progress, cancelled):
     """Download ``url`` into ``part``, continuing a partial file when the server allows it."""
-    have = part.stat().st_size if part.is_file() else 0
-    if have > size:
-        part.unlink()
-        have = 0
-    if have == size:
-        return  # complete before an interruption; the caller checks its SHA-256
-    headers = {'User-Agent': f'LUMEN-RAW/{__version__}'}
-    if have:
-        headers['Range'] = f'bytes={have}-'
-    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30) as response:
-        if have and response.status != 206:
-            have = 0
-        with open(part, 'ab' if have else 'wb') as stream:
-            while have < size:
-                if cancelled():
-                    raise Cancelled()
-                block = response.read(CHUNK)
-                if not block:
-                    break
-                stream.write(block)
-                have += len(block)
-                progress(have)
-    if have != size:
-        raise OSError(tr('下载不完整（{have} / {size} 字节）', have=have, size=size))
+    downloads.fetch(url, part, size, progress, cancelled, CHUNK)
 
 
 def download(progress=lambda done, total: None, cancelled=lambda: False):

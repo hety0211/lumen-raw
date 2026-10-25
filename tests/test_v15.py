@@ -397,14 +397,11 @@ def test_thinking_depth_is_mapped_to_each_providers_own_parameters():
     assert t('anthropic', 'off') == {'output_config': {'effort': 'low'}}
     assert t('anthropic', 'high') == {'output_config': {'effort': 'high'}}
     assert t('gemini', 'off') == {'reasoning_effort': 'minimal'} and t('gemini', 'max') == {'reasoning_effort': 'high'}
-    assert t('qwen', 'off') == {'enable_thinking': False}
-    assert t('qwen', 'low') == {'enable_thinking': True, 'thinking_budget': 1024}
-    assert t('budget', 'max') == {'enable_thinking': True, 'thinking_budget': 32768}
     assert t('kimi', 'off', 'kimi-k2.6') == {'thinking': {'type': 'disabled'}}
     assert t('kimi', 'off', 'kimi-k3') == {'reasoning_effort': 'low'}
     assert t('kimi', 'max', 'kimi-k3') == {'reasoning_effort': 'max'}
     assert t('switch', 'high') == {'thinking': {'type': 'enabled'}}
-    assert t('ark', 'low') == {'thinking': {'type': 'enabled'}, 'reasoning_effort': 'low'}
+    assert t('mimo', 'off') == {'thinking': {'type': 'disabled'}} and t('mimo', 'max') == {'thinking': {'type': 'enabled'}}
     assert t('openrouter', 'off') == {'reasoning': {'effort': 'none'}}
     assert t('ollama', 'off') == {'think': False} and t('ollama', 'max') == {'think': 'high'}
     assert t('lmstudio', 'off') == {'reasoning_effort': 'none'}
@@ -450,16 +447,15 @@ def test_thinking_fields_are_sent_and_dropped_when_a_server_rejects_them(fake):
     nl_edit.complete(nl_edit.active(settings), nl_edit.build_messages('x', model.recipe()))
     first, second = server.requests[-2][3], server.requests[-1][3]
     assert first['reasoning_effort'] == 'high' and 'reasoning_effort' not in second and 'thinking' not in second
-    # Bailian cannot combine JSON mode with thinking; only "off" keeps response_format.
-    settings.update(provider='dashscope', reasoning='default')
-    settings['providers']['dashscope'].update(base_url=server.url + '/v1', key='k')
+    # 2.1.1: Xiaomi MiMo switches thinking with thinking.type and keeps JSON mode.
+    settings.update(provider='mimo', reasoning='off')
+    settings['providers']['mimo'].update(base_url=server.url + '/v1', key='sk-mimo')
     server.reject_keys = set()
     nl_edit.complete(nl_edit.active(settings), nl_edit.build_messages('x', model.recipe()))
-    assert 'response_format' not in server.requests[-1][3]
-    settings['reasoning'] = 'off'
-    nl_edit.complete(nl_edit.active(settings), nl_edit.build_messages('x', model.recipe()))
-    assert server.requests[-1][3]['enable_thinking'] is False
-    assert server.requests[-1][3]['response_format'] == {'type': 'json_object'}
+    _, path, headers, payload = server.requests[-1]
+    assert path == '/v1/chat/completions' and payload['model'] == 'mimo-v2.6-flash'
+    assert payload['thinking'] == {'type': 'disabled'} and payload['response_format'] == {'type': 'json_object'}
+    assert headers['api-key'] == 'sk-mimo' and headers['authorization'] == 'Bearer sk-mimo'
 
 
 def test_claude_requests_use_effort_room_for_thinking_and_fallback(fake):

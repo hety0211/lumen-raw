@@ -4,7 +4,7 @@ import os
 os.environ.setdefault('ORT_DISABLE_TELEMETRY', '1')
 from . import performance
 performance.configure()
-__version__ = '2.1.0'
+__version__ = '2.1.1'
 # 1.8.0: Windows records the microphone through Qt Multimedia's Media Foundation backend; the
 # packages leave out Qt's FFmpeg backend, so source runs use the same one.
 if os.name == 'nt':

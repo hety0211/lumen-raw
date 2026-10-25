@@ -1,17 +1,15 @@
 """Photo-oriented NAFNet SIDD and RRDB Real-ESRGAN, with feathered tile assembly."""
 from functools import lru_cache
-from pathlib import Path
 import cv2
 import numpy as np
-from . import large_image,compute
+from . import ai_models,large_image,compute
 from .i18n import tr
 
 
 @lru_cache(maxsize=2)
 def session(kind,cuda=True):
     filename={'super':'realesrgan-x4plus.onnx','denoise':'nafnet-sidd.onnx','drunet':'drunet-color.onnx'}[kind]
-    path=Path(__file__).resolve().parents[1]/'assets/models'/filename
-    return compute.session(path,cuda)
+    return compute.session(ai_models.path(filename),cuda)
 
 
 def axis_tiles(length,tile,overlap):

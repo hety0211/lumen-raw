@@ -423,8 +423,10 @@ class CullWindow(QWidget):
             for position in (focus + offset, focus - offset):
                 if 0 <= position < len(self.paths):
                     self.loader.request(self.paths[position], front=False)
-        unanalysed = [dict(id=self.rows[p]['id'], path=p) for p in self.paths[max(0, focus - 2):focus + 6]
-                      if self.rows[p].get('id') and self.rows[p].get('analysis', 0) < library_db.ANALYSIS]
+        from .library_tasks import possible
+        from .library_view import analysis_requests
+        unanalysed = analysis_requests([dict(self.rows[p], path=p) for p in self.paths[max(0, focus - 2):focus + 6]],
+                                       possible(self.window.library_worker.parts))
         if unanalysed:
             self.window.library_worker.want_analysis(unanalysed, first=True)
         self.update_header()

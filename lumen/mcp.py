@@ -1,4 +1,4 @@
-"""MCP server: lets local agents (Claude Code, Codex, WorkBuddy, Claude Desktop …) drive LUMEN RAW (1.6.0).
+"""MCP server: lets local agents (Claude Code, Codex, DeepSeek Harness, WorkBuddy, Claude Desktop …) drive LUMEN RAW (1.6.0).
 
 ``lumen-cli mcp`` speaks the Model Context Protocol over stdio (newline-delimited JSON-RPC 2.0).
 It is a dual-era server: clients of the 2026-07-28 revision send ``server/discover`` and carry

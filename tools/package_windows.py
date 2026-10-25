@@ -1,4 +1,8 @@
-"""Package the verified Windows onedir build as a portable ZIP."""
+"""Package the verified Windows onedir build as a portable ZIP.
+
+2.1.1: the AI models are in ``dist/LumenRAW/models`` under their content names, apart from the
+program (``_internal``), and ``_internal/assets/ai-models.json`` lists them; both are checked here.
+The ZIP carries the models (a portable copy is complete); the update installer does not."""
 from __future__ import annotations
 
 import hashlib
@@ -28,26 +32,51 @@ def write_checksums():
     print('\n'.join(lines))
 
 
+#: Every model 2.1.0 bundled; a manifest without one of them is a packaging error.
+MODELS = {'realesrgan-x4plus.onnx', 'realesr-general-x4v3.onnx', 'nafnet-sidd.onnx', 'drunet-color.onnx',
+          'ffdnet-color.onnx', 'skyseg.onnx', 'person-deeplab.onnx', 'u2netp.onnx', 'midas-small.onnx',
+          'inpaint-lama.onnx', 'object-encoder.onnx', 'object-decoder.onnx', 'landscape-seg.onnx',
+          'face-yunet.onnx', 'face-landmarks.onnx'}
+
+
+def check_models(program=SOURCE):
+    """2.1.1: the models of the manifest are in ``models`` (and nowhere in ``_internal``)."""
+    manifest = json.loads((program / '_internal' / 'assets' / 'ai-models.json').read_text(encoding='utf-8'))
+    listed = manifest['models']
+    if MODELS - set(listed):
+        raise SystemExit('The model manifest lacks: ' + ', '.join(sorted(MODELS - set(listed))))
+    folder = program / 'models'
+    for name, record in listed.items():
+        path = folder / record['file']
+        if not path.is_file() or path.stat().st_size != record['bytes']:
+            raise SystemExit(f'models/{record["file"]} ({name}) is missing or has the wrong size')
+    extra = sorted(p.name for p in folder.iterdir() if p.name not in {r['file'] for r in listed.values()})
+    if extra:
+        raise SystemExit('Unlisted files in models/: ' + ', '.join(extra))
+    # (ONNX Runtime brings a few tiny test graphs of its own, e.g. datasets/logreg_iris.onnx.)
+    files = {record['file'] for record in listed.values()}
+    inside = sorted(p.name for p in (program / '_internal').rglob('*.onnx') if p.name in MODELS or p.name in files)
+    if inside:
+        raise SystemExit('Models inside the program files (they belong in models/): ' + ', '.join(inside[:10]))
+    # 1.8.0: the packaged models carry float16 weights (tools/compact_models.py).
+    if listed['skyseg.onnx']['bytes'] > 120 * 2**20:
+        raise SystemExit('The packaged models are not the float16-weight copies (tools/compact_models.py).')
+    return manifest
+
+
 def main():
     if not (SOURCE / 'LumenRAW.exe').is_file():
         raise SystemExit('Missing frozen editor executable.')
     files = sorted(path for path in SOURCE.rglob('*') if path.is_file())
     names = {path.name.lower() for path in files}
-    required = {'lumen.ico', 'notosanssc.ttf', 'exiftool.exe',
-                'realesrgan-x4plus.onnx', 'realesr-general-x4v3.onnx',
-                'nafnet-sidd.onnx', 'drunet-color.onnx', 'ffdnet-color.onnx',
-                'skyseg.onnx', 'person-deeplab.onnx', 'u2netp.onnx', 'midas-small.onnx',
-                # 2.1.0: AI removal, picked objects and landscape masks.
-                'inpaint-lama.onnx', 'object-encoder.onnx', 'object-decoder.onnx', 'landscape-seg.onnx'}
+    required = {'lumen.ico', 'notosanssc.ttf', 'exiftool.exe', 'ai-models.json'}
     missing = required - names
     if missing:
         raise SystemExit('Frozen app is missing runtime resources: ' + ', '.join(sorted(missing)))
-    # 1.8.0: the speech model is downloaded on first use, the AI models carry float16 weights.
+    check_models()
+    # 1.8.0: the speech model is downloaded on first use.
     if 'model.int8.onnx' in names:
         raise SystemExit('The speech model must not be packaged (it is downloaded on first use).')
-    sky = next(path for path in files if path.name.lower() == 'skyseg.onnx')
-    if sky.stat().st_size > 120 * 2**20:
-        raise SystemExit('The packaged models are not the float16-weight copies (tools/compact_models.py).')
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     if OUTPUT.exists():
         raise SystemExit(f'Preserving existing package: {OUTPUT}')
@@ -69,8 +98,10 @@ def main():
         raise
     with OUTPUT.open('rb') as stream:
         digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+    models = sum(p.stat().st_size for p in (SOURCE / 'models').iterdir())
     report = {'version': __version__, 'archive': OUTPUT.name, 'sha256': digest,
               'bytes': OUTPUT.stat().st_size, 'files': len(files),
+              'program_bytes': sum(p.stat().st_size for p in files) - models, 'model_bytes': models,
               'zip_crc_verified': True, 'distribution': 'Windows DirectML'}
     OUTPUT.with_suffix('.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps(report, indent=2))

@@ -1,17 +1,33 @@
 # LUMEN RAW 验证记录
 
-## Linux 移植验证 · 2026-10-24
+## 2.1.1 验证 · 2026-10-25
 
-Linux x86_64 验证环境（NVIDIA GPU，CUDA 13），Python 3.12；`onnxruntime-gpu[cuda,cudnn]==1.31.0`，`cupy-cuda13x==14.2.0`。样片为 2200 万像素 Canon EOS 5D Mark III DNG。
+同一台 Windows 主机（AMD Ryzen 7 9800X3D，AMD Radeon RX 9070 XT，DirectML）。
+
+- **自动检查：** 完整回归 **616 项通过、12 项跳过**（合并 Linux 移植后；合并前为 611 项，源码环境与打包用的 uv CPython 环境各跑一次以上）；新增 `tests/test_v211.py` 34 项。`python tools/i18n_catalog.py`：八种译文目录各 1405 条，无缺漏、无多余。
+- **打包：** `LumenRAW-2.1.1-Setup.exe` 597,494,575 字节，`LumenRAW-2.1.1-Update.exe` 134,993,129 字节，`LumenRAW-2.1.1-Windows.zip` 664,874,122 字节（合并 Linux 移植后重新构建）；安装后 925 个文件、980 MB，其中程序 910 个文件 458 MB、模型 15 个 522 MB。完整安装包与升级包解包后都与冻结版逐个一致（升级包不含 `models`）。源码、冻结版与安装包解包版冒烟测试通过（15 个模型逐个加载、读取本机更新清单并续传下载）。
+- **升级包：** 解包后的程序报告缺少 14 个模型（放在 `models\import` 的 1 个 2.1.0 模型按 SHA-256 接管），`lumen-cli models --download` 从本机服务下载其余模型到 `models` 后，冒烟测试通过。2.1.0 安装包中的模型与 2.1.1 逐字节相同（例如 skyseg `b57ea520…`、inpaint-lama `597e44c5…`），从 2.1.0 用升级包升级不需要下载模型。
+- **真实安装：** 用一份改了 AppId、去掉写设置／图标／删除用户数据的安装脚本副本，在临时目录中实测：完整包安装 → 模拟 2.1.0 布局 → 升级包带 `/WAITPID` 等待约 6 秒直到该进程退出才开始替换，`models` 中原有与后来下载的模型都保留、升级包没有带入模型，2.1.0 的旧模型移到 `models\import`，装完按 `/RELAUNCH=1` 重新启动程序；卸载后安装目录（含下载的模型）与注册表项都删除。
+- **界面上的完整更新：** 把真正的 2.1.1 构建装到上述临时位置，本机提供一个“2.1.2”的更新清单（升级包为同一构建，另加 1 个 300 KB 的“变化模型”），用 Windows UI 自动化操作：启动后弹出「LUMEN RAW — 软件更新」（v2.1.1 → v2.1.2、下载大小、更新内容），「立即更新」下载并校验升级包与那 1 个模型，「重启并更新」后 0.6 秒启动升级包（`/SILENT /SUPPRESSMSGBOXES /NORESTART /WAITPID=<pid> /RELAUNCH=1`），程序 1.1 秒时退出，7.4 秒时新程序自动打开；安装登记的版本变为 2.1.2，`_internal` 重建、`models` 保留，重新打开后识别出“更新已下载，可以安装”。
+- **自然语言服务：** 按 2026-10-25 的官方文档核对：小米 MiMo（`https://api.xiaomimimo.com/v1`，`mimo-v2.6-flash`，`thinking.type`，JSON 模式；V2.5 已于 10-21 下线）、Anthropic（API 版本 2026-10-21）、Kimi（`api.moonshot.cn` 不变，新增 kimi-k3.1-pro）、智谱（`open.bigmodel.cn/api/paas/v4` 不变，GLM-5.3 系列强制思考）、OpenRouter（`X-OpenRouter-Title`）、OpenAI（gpt-6-luna 仍支持 Chat Completions 与 reasoning_effort none–max）、Gemini（gemini-3.8-flash 仍为推荐，OpenAI 兼容地址不变）、DeepSeek（deepseek-flash 现为 V4.1 Flash，地址与思考参数不变）。请求只在本机模拟服务上测试，**没有用真实密钥调用 MiMo 或其他云端服务**。
+- **DeepSeek Harness：** 配置格式按 DSH 官方仓库（`packages/mcp/mcp-client` 的 README 与配置目录）编写，合并写入、备份与再次写入在测试中检查。**本机没有 Node.js，未在真实的 DeepSeek Harness 中加载过。**
+- **清晰度与闭眼分开、更新窗口统一样式（同一版本第二轮）：** 两项分析分开保存与补算、后台只算打开的项、旧设置沿用、图库菜单两个开关、更新/模型/检查结果窗口的橘色主按钮都有测试；界面在深色与浅色主题下截图检查。中间版本的后台分析每次先在工作线程里不加锁地读一次数据库（看缺哪一项），两次完整测试中出现过测试图库“database disk image is malformed”（此前 2.0.0–2.1.0 的 15 次完整测试从未出现）；改为随分析队列带上已有的部分、工作线程只在写结果时加锁访问一次（与 2.1.0 相同）后，打包中的完整测试与另一次完整测试都通过，40 次反复开关窗口的压力测试中数据库完整性检查也都正常。原因没有完全确定。
+- **代码审阅修复（同一版本第三轮）：** 审阅确认的 5 项（AI 移除在切换照片的解码期间完成，切走、切回两种顺序；macOS 钥匙串在保存时才恢复授权；缺少人脸模型时闭眼记为已分析；启动清理删掉未下载完的升级包；图库与选片窗口交给后台时丢掉分析状态）各有回归测试，分别走真实的窗口与 `open_path` 回调链、`LibraryDB` 与 `LibraryWorker`、`updates.download` 调用链（钥匙串用模拟后端与假密钥，补全图块为合成数据，没有运行真实的 LaMa）。逐项撤销修复后，对应的测试都失败；恢复后 `tests/test_v211.py` 34 项连续三次全部通过。
+- **合并 Linux 移植（Pull Request #8，2026-10-26）：** 社区贡献的 Linux 移植先合并进了 GitHub 的 main，再与 2.1.1 合并。逐个文件审阅了改动：Windows 与 macOS 的分支都保持原样（新增逻辑都限定在 Linux 上），CUDA 内核与 Metal 内核的参数结构（`<13f9f5I` / `<13f6f5I`）和计算逐项对应，并在首次使用时与 NumPy 自检；构建与启动脚本只从 PyPI 安装声明的依赖，没有其他下载。冲突只在文档和 8 个语言目录（两边都在末尾加了词条，没有相互矛盾的译文；合并后删去移植留下的 1 条不再使用的旧提示，各 1405 条）。合并后 Windows 完整回归 616 项通过、12 项跳过（多出的 5 项是 `tests/test_v210_linux.py`，用模拟的 `nvidia-smi`、cuDNN 与符号链接在 Windows 上运行）。Linux 构建改为与 Windows 一样把模型放进程序旁的 `models`。**本机没有 Linux 与 NVIDIA 显卡，Linux 上的运行结果均来自贡献者（见下一节）。**
+- **未覆盖：** 从 GitHub 下载升级包与 `ai-models` 中的模型要等发布后才能实测；macOS 版未构建（Mac 上的更新窗口会打开下载页面）；Linux 版未在本机运行。
+
+## Linux 移植验证（贡献者提供）· 2026-10-24
+
+以下由 Pull Request #8 的贡献者在自己的 Linux x86_64 主机上测得（NVIDIA GPU，CUDA 13），Python 3.12；`onnxruntime-gpu[cuda,cudnn]==1.31.0`，`cupy-cuda13x==14.2.0`。代码基于 2.1.0。样片为 2200 万像素 Canon EOS 5D Mark III DNG。
 
 - **原生 CUDA 显影：** `lumen/cuda.py` 把 Metal 的三个逐像素阶段和进程版本 2 内核翻译为 CUDA C，用 NVRTC 编译；首次使用时分别与 NumPy 参考实现自检，版本 1 最大差异约 3×10⁻⁷、版本 2 约 5×10⁻⁴（浮点舍入范围内）。大图按 48 MB 条带处理，避免整幅 float32 双份驻留显存。
 - **性能：** 同一张 2200 万像素 DNG，原生 CUDA 的进程版本 1 约比多线程 CPU 快 3 倍，版本 2 快 6–7 倍；1600 像素预览保持交互式，冻结版图库缓存与清晰度分析正常。
-- **AI：** Real-ESRGAN 在 `CUDAExecutionProvider` 上运行，增强对话框显示 `Real-ESRGAN · CUDAExecutionProvider`；图库人脸、蒙版、降噪与 Windows 共用模型。语音识别正常返回文本。AI 子进程继承 CUDA 库路径，驱动崩溃仍按原有逻辑换设备重试。
-- **功能：** 源码与冻结版冒烟测试通过，覆盖 15 个模型逐个加载、RAW 解码、镜头校正（Canon EF 70-200mm f/2.8L IS II USM，畸变/色差/暗角）、图库与选片、蒙版、修复、曲线、调色、导出、语音与自然语言修图（应用 3 项调整）、延时视频（3 帧；硬件编码 `h264_nvenc`，CPU 回退 `libx264`）。界面为简体中文，GPU⚡ 状态和 `CUDA · NVIDIA GPU` 正常显示。
-- **命令行 / MCP：** 源码与冻结版 `lumen-cli` 均通过：`--version`、1200 像素渲染、MCP 初始化与 32 个工具、`apply_edits` 应用曝光 +0.30 / 自然饱和度 +15、`render_preview` 返回图像。冻结版即使不设置 `LD_LIBRARY_PATH` 也能自行找到打包的 CUDA/cuDNN 库并启动。
-- **自动检查：** 完整回归 **563 项通过、31 项跳过、0 失败**（Windows/macOS 专属路径、TensorRT-for-RTX 和需要本地样片目录的测试跳过；563 项包含移植新增的 5 项 Linux CUDA / 平台单元测试）；八种译文目录各 1346 条，`tools/i18n_catalog.py` 无缺漏。Linux CUDA 的 AI 数值容差按实测放宽到 3×10⁻³；Qt 按钮的 `(&S)` 助记符按平台处理，测试按去掉助记符后的文字比较。
-- **打包：** `LumenRAW-2.1.0-Linux-x86_64.tar.gz` 由 `tools/build_linux.sh` 生成，含 PyInstaller 冻结的 `LumenRAW`、`lumen-cli`、Qt、`_internal` 中的 CUDA/cuDNN 运行库、15 个半精度模型、字体、lensfun 数据和 Perl ExifTool。最终归档 2,676,459,596 字节，SHA-256 `fe75802cfc74dcaf562aaaaa737cc7bf03a177888ec50c2a026f6876c5dc76ce`；冻结包在未设置 CUDA 变量时通过完整冒烟测试，`compute.detail` 为 `CUDA · NVIDIA GPU · 逐像素显影`，Real-ESRGAN 使用 `CUDAExecutionProvider`，`lumen-cli` 的 32 个 MCP 工具检查通过。`LumenRAW.desktop`、`lumen.png` 和 `install-desktop.sh` 可把菜单项安装到当前用户。归档哈希与大小也写在 `.publish/v210/linux/SHA256SUMS-Linux.txt`。
-- **未覆盖：** AMD / Intel 显卡在 Linux 上没有 GPU 路径，只使用 CPU；未在 Ubuntu、Fedora 等其他发行版或不同桌面会话中人工操作；冻结包的归档压缩后约 2.7 GB，未做进一步裁剪。
+- **AI：** Real-ESRGAN 在 `CUDAExecutionProvider` 上运行；图库人脸、蒙版、降噪与 Windows 共用模型。语音识别正常返回文本。AI 子进程继承 CUDA 库路径，驱动崩溃仍按原有逻辑换设备重试。
+- **功能：** 源码与冻结版冒烟测试通过，覆盖 15 个模型逐个加载、RAW 解码、镜头校正、图库与选片、蒙版、修复、曲线、调色、导出、语音与自然语言修图、延时视频（硬件编码 `h264_nvenc`，CPU 回退 `libx264`）。
+- **命令行 / MCP：** 源码与冻结版 `lumen-cli` 均通过 `--version`、1200 像素渲染、MCP 初始化与 32 个工具、`apply_edits`、`render_preview`。
+- **自动检查：** 完整回归 563 项通过、31 项跳过、0 失败（Windows / macOS 专属路径、TensorRT for RTX 和需要本地样片目录的测试跳过）；Linux CUDA 的 AI 数值容差按实测放宽到 3×10⁻³；Qt 按钮的 `(&S)` 助记符按平台处理。
+- **打包：** 贡献者用 `tools/build_linux.sh` 在本机生成了 2.1.0 的便携包（约 2.7 GB，含 CUDA / cuDNN 运行库），未发布；2.1.1 起 Linux 构建的模型放在程序旁的 `models`，这一改动尚未在 Linux 上构建验证。
+- **未覆盖：** AMD / Intel 显卡在 Linux 上没有 GPU 路径，只使用 CPU；未在 Ubuntu、Fedora 等其他发行版或不同桌面会话中人工操作。
 
 ## 2.1.0 验证 · 2026-10-23
 

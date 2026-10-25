@@ -1,5 +1,7 @@
 # LUMEN RAW release build: tests -> DirectML check -> PyInstaller -> portable ZIP ->
 # Inno Setup installer -> installer extraction check -> smoke tests -> SHA256SUMS.
+# 2.1.1: also the update installer (the program without the AI models), its check, and the
+# update feed lumen-update.json.
 # Run from Explorer with build-release.cmd, or:
 #   powershell -ExecutionPolicy Bypass -File tools\build_release.ps1 [-PythonPath <python.exe>] [-Iscc <ISCC.exe>] [-SampleRaw <photo>]
 param([string]$PythonPath = '', [string]$Iscc = '', [string]$SampleRaw = '', [switch]$SkipTests)
@@ -135,21 +137,38 @@ try {
     Run 'compile installer' $Iscc @('/Qp', '/DAppBuild=dist\LumenRAW', "/DAppVersion=$version", 'installer.iss') (Join-Path $logs 'iscc.log')
     $setup = Join-Path $packages "LumenRAW-$version-Setup.exe"
     if (-not (Test-Path -LiteralPath $setup)) { Fail 'installer missing' }
+    # 2.1.1: the update installer, which the editor downloads (no AI models; they stay installed).
+    Run 'compile update installer' $Iscc @('/Qp', '/DAppBuild=dist\LumenRAW', "/DAppVersion=$version", '/DUpdatePackage', 'installer.iss') (Join-Path $logs 'iscc-update.log')
+    $updateSetup = Join-Path $packages "LumenRAW-$version-Update.exe"
+    if (-not (Test-Path -LiteralPath $updateSetup)) { Fail 'update installer missing' }
 
     Step 'Installer extraction check'
     $extract = Join-Path $publish 'installer-extract'
     if (Test-Path -LiteralPath $extract) { Remove-Item -LiteralPath $extract -Recurse -Force }
     $process = Start-Process -FilePath $setup -ArgumentList @('/PORTABLE=1', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', "/DIR=`"$extract`"", "/LOG=`"$(Join-Path $logs 'installer-extract.log')`"") -Wait -PassThru
     if ($process.ExitCode -ne 0) { Fail "installer extraction (exit $($process.ExitCode))" }
-    Run 'compare installer with frozen build' $python @('tools\verify_installer.py', $extract) (Join-Path $packages "LumenRAW-$version-Installer-verified.json")
+    $verified = Join-Path $packages "LumenRAW-$version-Installer-verified.json"
+    if (Test-Path -LiteralPath $verified) { Remove-Item -LiteralPath $verified -Force }    # Run appends to its log file
+    Run 'compare installer with frozen build' $python @('tools\verify_installer.py', $extract) $verified
     $installedSmoke = Join-Path $publish 'installer-smoke'
     if (Test-Path -LiteralPath $installedSmoke) { Remove-Item -LiteralPath $installedSmoke -Recurse -Force }
     $process = Start-Process -FilePath (Join-Path $extract 'LumenRAW.exe') -ArgumentList @('--smoke-test', "`"$sample`"", "`"$installedSmoke`"") -Wait -PassThru
     if ($process.ExitCode -ne 0) { Fail "installer smoke test (exit $($process.ExitCode))" }
     Run 'installed lumen-cli and MCP check' $python @('tools\check_cli.py', (Join-Path $extract 'lumen-cli.exe'), $sample, (Join-Path $publish 'installer-cli-smoke')) (Join-Path $logs 'installer-cli-smoke.log')
 
+    Step 'Update installer check'
+    $updateExtract = Join-Path $publish 'update-extract'
+    if (Test-Path -LiteralPath $updateExtract) { Remove-Item -LiteralPath $updateExtract -Recurse -Force }
+    $process = Start-Process -FilePath $updateSetup -ArgumentList @('/PORTABLE=1', '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOICONS', "/DIR=`"$updateExtract`"", "/LOG=`"$(Join-Path $logs 'update-extract.log')`"") -Wait -PassThru
+    if ($process.ExitCode -ne 0) { Fail "update installer extraction (exit $($process.ExitCode))" }
+    $verified = Join-Path $packages "LumenRAW-$version-Update-verified.json"
+    if (Test-Path -LiteralPath $verified) { Remove-Item -LiteralPath $verified -Force }
+    Run 'compare update installer with frozen build' $python @('tools\verify_installer.py', $updateExtract, '--update') $verified
+    Run 'update package: model download and smoke test' $python @('tools\check_update_package.py', $updateExtract, $sample, (Join-Path $publish 'update-smoke')) (Join-Path $logs 'update-smoke.log')
+
     Step 'Checksums'
     Run 'SHA256SUMS' $python @('tools\package_windows.py', '--checksums')
+    Run 'update feed' $python @('tools\make_update_feed.py')
     Get-ChildItem -LiteralPath $packages -File | ForEach-Object { Say ("{0,14:N0}  {1}" -f $_.Length, $_.Name) }
     Set-Content -LiteralPath $status -Value "SUCCESS $version $(Get-Date -Format s)" -Encoding UTF8
     Say ''

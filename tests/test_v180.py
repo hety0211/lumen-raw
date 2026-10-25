@@ -143,10 +143,11 @@ def test_assets_bundle_compact_models_without_the_speech_model(tmp_path, monkeyp
         (folder / 'skyseg.onnx').write_bytes(b'x')
         return folder
     monkeypatch.setattr(bundle, 'compact_folder', fake)
-    pairs = bundle.asset_datas(ROOT)
+    pairs = bundle.asset_datas(ROOT, build=tmp_path / 'build')
     destinations = {Path(source).name: target for source, target in pairs}
     assert calls == [ROOT / 'assets' / 'models']
-    assert destinations['skyseg.onnx'] == 'assets/models'
+    # 2.1.1: the models stay out of the program; only their manifest is bundled (tests/test_v211.py).
+    assert 'skyseg.onnx' not in destinations and destinations['ai-models.json'] == 'assets'
     assert 'runtime-assets.json' not in destinations and 'speech-assets.json' in destinations
     assert not any('sensevoice' in source for source, _ in pairs)
     assert not any(Path(source) == ROOT / 'assets' / 'models' for source, _ in pairs)

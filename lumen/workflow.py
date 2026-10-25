@@ -35,6 +35,9 @@ class WorkflowMixin:
         self.build_library_menu(menu)
         self.build_language_menu(menu)
         helpmenu=menu.addMenu(tr('帮助'))
+        # 2.1.1: checking for updates and the AI models kept apart from the program.
+        self.build_update_menu(helpmenu)
+        helpmenu.addSeparator()
         helpmenu.addAction(tr('AI 助手接入（MCP）…'),self.open_agent_dialog)
         helpmenu.addAction(tr('命令面板…')+'\t'+host.keys('Ctrl+K'),self.open_palette)
         helpmenu.addAction(tr('支持的 RAW 格式'),lambda:QMessageBox.information(self,tr('RAW 支持'),tr('Sony ARW / SR2 / SRF\nCanon CRW / CR2 / CR3\nNikon NEF / NRW\nFujifilm RAF（含 X-Trans）\nPanasonic RW2 / RAW\nDNG\n\n具体机型和压缩方式以内置 LibRaw 支持为准。')))

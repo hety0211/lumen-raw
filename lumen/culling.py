@@ -21,16 +21,15 @@ from __future__ import annotations
 import logging
 import math
 import threading
-from pathlib import Path
 
 import cv2
 import numpy as np
 
 log = logging.getLogger(__name__)
 
-MODELS = Path(__file__).resolve().parents[1] / 'assets' / 'models'
-DETECTOR = MODELS / 'face-yunet.onnx'
-LANDMARKS = MODELS / 'face-landmarks.onnx'
+#: 2.1.1: model files come from ``ai_models`` (kept apart from the program in the packages).
+DETECTOR = 'face-yunet.onnx'
+LANDMARKS = 'face-landmarks.onnx'
 #: Long edge of the greyscale copy sharpness is measured on.
 SHARPNESS_EDGE = 1600
 #: Long edge faces are detected on (YuNet finds faces from about 10 pixels).
@@ -97,9 +96,11 @@ def signature(gray):
 class Faces:
     """Face detection and eye openness; one per process (``faces()``), safe across threads."""
 
-    def __init__(self, detector=DETECTOR, landmarks=LANDMARKS):
-        from . import performance
+    def __init__(self, detector=None, landmarks=None):
+        from . import ai_models, performance
         ort = performance.onnxruntime()
+        detector = detector or ai_models.path(DETECTOR)
+        landmarks = landmarks or ai_models.path(LANDMARKS)
         self.detector_path = str(detector)
         options = ort.SessionOptions()
         options.intra_op_num_threads = 2
@@ -190,19 +191,22 @@ def faces():
     with _faces_lock:
         if _faces is None:
             try:
-                _faces = Faces() if DETECTOR.is_file() and LANDMARKS.is_file() else False
+                from . import ai_models
+                _faces = Faces() if ai_models.available(DETECTOR) and ai_models.available(LANDMARKS) else False
             except Exception:
                 log.warning('face models unavailable', exc_info=True)
                 _faces = False
         return _faces or None
 
 
-def analyse(rgb):
+def analyse(rgb, sharp=True, eyes=True):
     """Culling hints of an upright RGB uint8 view: ``{sharpness, faces, eyes_closed, signature,
-    boxes}`` (faces / eyes_closed are None when the face models are unavailable)."""
+    boxes}`` (faces / eyes_closed are None when the face models are unavailable).  2.1.1: ``sharp``
+    and ``eyes`` choose the parts computed (the signature, for bursts, always is)."""
     gray = cv2.cvtColor(np.ascontiguousarray(rgb), cv2.COLOR_RGB2GRAY)
-    result = dict(sharpness=sharpness(gray), signature=signature(gray), faces=None, eyes_closed=None, boxes=[])
-    analyser = faces()
+    result = dict(sharpness=sharpness(gray) if sharp else None, signature=signature(gray), faces=None,
+                  eyes_closed=None, boxes=[])
+    analyser = faces() if eyes else None
     if analyser is not None:
         try:
             result['faces'], result['eyes_closed'], result['boxes'] = analyser.analyse(np.ascontiguousarray(rgb))

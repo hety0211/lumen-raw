@@ -1,5 +1,8 @@
 # Publish the built LUMEN RAW release to GitHub: commit + tag + push the source,
 # then create the GitHub Release with the installer, portable ZIP, checksums and notes.
+# 2.1.1: also the update installer and the update feed lumen-update.json (the editor reads the
+# copy on the Latest release), and the AI models the feed lists on the 'ai-models' pre-release
+# (only the files not uploaded before; they are named after their content).
 # Run with publish-release.cmd after build-release.cmd succeeded.
 param([string]$Repo = 'hety0211/lumen-raw', [switch]$Draft)
 $ErrorActionPreference = 'Continue'
@@ -36,7 +39,14 @@ try {
     $zip = Join-Path $packages "LumenRAW-$version-Windows.zip"
     $sums = Join-Path $packages 'SHA256SUMS.txt'
     $notes = Join-Path $publish 'release-notes.md'
-    foreach ($file in @($setup, $zip, $sums, $notes)) { if (-not (Test-Path -LiteralPath $file)) { Fail "missing $file" } }
+    $updateSetup = Join-Path $packages "LumenRAW-$version-Update.exe"
+    $feed = Join-Path $packages 'lumen-update.json'
+    foreach ($file in @($setup, $zip, $sums, $notes, $updateSetup, $feed)) { if (-not (Test-Path -LiteralPath $file)) { Fail "missing $file" } }
+    $feedData = Get-Content -Raw -Encoding UTF8 -LiteralPath $feed | ConvertFrom-Json
+    if ($feedData.version -ne $version) { Fail "lumen-update.json is for $($feedData.version), not $version" }
+    $modelFolder = Join-Path $root 'dist\LumenRAW\models'
+    $modelFiles = @($feedData.windows.models.models.PSObject.Properties | ForEach-Object { Join-Path $modelFolder $_.Value.file })
+    foreach ($file in $modelFiles) { if (-not (Test-Path -LiteralPath $file)) { Fail "missing model $file" } }
     foreach ($line in Get-Content -LiteralPath $sums) {
         if (-not $line.Trim()) { continue }
         $hash, $name = $line -split '\s+', 2
@@ -117,14 +127,39 @@ try {
     }
     Run 'git push tag' $git @('push', 'origin', $tag)
 
-    Step 'GitHub Release (uploading about 1.4 GB)'
+    Step 'AI models (ai-models pre-release)'
+    & $gh release view 'ai-models' --repo $Repo 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Run 'create ai-models release' $gh @('release', 'create', 'ai-models', '--repo', $Repo, '--prerelease', '--target', 'main',
+            '--title', 'LUMEN RAW AI models', '--notes', 'AI model files of LUMEN RAW 2.1.1 and later, named after their SHA-256. The editor downloads the ones it lacks (lumen/ai_models.py); there is no need to download them by hand.')
+    }
+    $existing = ((Capture $gh @('api', "repos/$Repo/releases/tags/ai-models")) -join "`n") | ConvertFrom-Json
+    $have = @{}
+    foreach ($asset in $existing.assets) { $have[$asset.name] = $asset }
+    foreach ($file in $modelFiles) {
+        $item = Get-Item -LiteralPath $file
+        $asset = $have[$item.Name]
+        if ($asset -and $asset.size -eq $item.Length -and $asset.state -eq 'uploaded') { Say "model already uploaded  $($item.Name)"; continue }
+        Run "upload model $($item.Name)" $gh @('release', 'upload', 'ai-models', $file, '--repo', $Repo, '--clobber')
+    }
+    $existing = ((Capture $gh @('api', "repos/$Repo/releases/tags/ai-models")) -join "`n") | ConvertFrom-Json
+    foreach ($file in $modelFiles) {
+        $item = Get-Item -LiteralPath $file
+        $asset = @($existing.assets | Where-Object name -eq $item.Name)
+        $expected = 'sha256:' + (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLower()
+        if ($asset.Count -ne 1 -or $asset[0].size -ne $item.Length -or $asset[0].state -ne 'uploaded') { Fail "remote model differs: $($item.Name)" }
+        if ($asset[0].digest -and $asset[0].digest -ne $expected) { Fail "remote model digest differs: $($item.Name)" }
+    }
+    Say "models ok: $($modelFiles.Count) files on ai-models"
+
+    Step 'GitHub Release (uploading about 1.5 GB)'
     & $gh release view $tag --repo $Repo 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Say "Release $tag exists; replacing assets and notes."
-        Run 'upload assets' $gh @('release', 'upload', $tag, $setup, $zip, $sums, '--repo', $Repo, '--clobber')
+        Run 'upload assets' $gh @('release', 'upload', $tag, $setup, $updateSetup, $zip, $sums, $feed, '--repo', $Repo, '--clobber')
         Run 'edit release' $gh @('release', 'edit', $tag, '--repo', $Repo, '--title', "LUMEN RAW $version", '--notes-file', $notes)
     } else {
-        $arguments = @('release', 'create', $tag, $setup, $zip, $sums, '--repo', $Repo, '--title', "LUMEN RAW $version",
+        $arguments = @('release', 'create', $tag, $setup, $updateSetup, $zip, $sums, $feed, '--repo', $Repo, '--title', "LUMEN RAW $version",
                        '--notes-file', $notes, '--verify-tag')
         if ($Draft) { $arguments += '--draft' } else { $arguments += '--latest' }
         Run 'create release' $gh $arguments
@@ -132,7 +167,7 @@ try {
 
     Step 'Verify remote assets'
     $release = ((Capture $gh @('api', "repos/$Repo/releases/tags/$tag")) -join "`n") | ConvertFrom-Json
-    foreach ($file in @($setup, $zip, $sums)) {
+    foreach ($file in @($setup, $updateSetup, $zip, $sums, $feed)) {
         $item = Get-Item -LiteralPath $file
         $asset = @($release.assets | Where-Object name -eq $item.Name)
         $expected = 'sha256:' + (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLower()

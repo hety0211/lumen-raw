@@ -1350,7 +1350,8 @@ def super_resolve(rgb, scale=2, model_path=None, use_cuda=True, progress=None, c
         from .restoration import super_resolution
         return super_resolution(rgb,scale,use_cuda,progress,cancel)
     if model_path == ':builtin:':
-        path = Path(__file__).resolve().parents[1] / 'assets' / 'models' / 'realesr-general-x4v3.onnx'
+        from . import ai_models
+        path = ai_models.path('realesr-general-x4v3.onnx')
         if not path.exists():
             raise FileNotFoundError(tr('内置增强模型缺失，请重新解压完整软件包。'))
         return onnx_super_resolve(rgb, scale, path, use_cuda, progress, cancel, native_scale=4)

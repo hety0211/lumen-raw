@@ -16,7 +16,18 @@ import time
 from PySide6.QtCore import QObject, QRunnable, QThread, QThreadPool, Signal
 from PySide6.QtGui import QImage
 
+from . import library_db
+
 log = logging.getLogger(__name__)
+
+
+def possible(parts):
+    """``parts`` without the closed eyes while the face models are not on this computer (2.1.1:
+    a program-only installation before its models are downloaded)."""
+    from . import ai_models, culling
+    if library_db.EYES in parts and not (ai_models.available(culling.DETECTOR) and ai_models.available(culling.LANDMARKS)):
+        return set(parts) - {library_db.EYES}
+    return set(parts)
 
 
 class _Signals(QObject):
@@ -59,7 +70,8 @@ class LibraryWorker(QObject):
         self._indexing = False
         self._running = 0
         self._closing = False
-        self.analysis_enabled = True
+        #: 2.1.1: the parts analysed in the background (sharpness and closed eyes, each switchable).
+        self.parts = set(library_db.BOTH)
         self.done = self.total = 0
         # A window destroyed without closing: the thread pool's destructor waits for its runners,
         # so they must stop after their current task instead of emptying the queues.
@@ -85,11 +97,17 @@ class LibraryWorker(QObject):
             self._index = True
         self.kick()
 
+    @property
+    def analysis_enabled(self):
+        return bool(self.parts)
+
     def want_analysis(self, rows, first=False):
-        """Analyse ``rows`` (``[{id, path}]``); ``first`` puts them before earlier requests."""
+        """Analyse ``rows`` (``[{id, path}]``, with ``analysis`` when known); ``first`` puts them
+        before earlier requests.  2.1.1: the parts a row already has travel with it, so the worker
+        reads nothing from the database before it writes the result."""
         with self._lock:
             for row in rows:
-                self._analyse[row['id']] = row['path']
+                self._analyse[row['id']] = (row['path'], library_db.analysed_parts(row))
                 if first:
                     self._analyse.move_to_end(row['id'], last=False)
             self.total = self.done + len(self._analyse)
@@ -133,9 +151,9 @@ class LibraryWorker(QObject):
             if self._thumbs:
                 path, _ = self._thumbs.popitem(last=False)
                 return 'thumb', path
-            if self._analyse and self.analysis_enabled:
-                photo, path = self._analyse.popitem(last=False)
-                return 'analyse', (photo, path)
+            if self._analyse and self.parts:
+                photo, (path, done) = self._analyse.popitem(last=False)
+                return 'analyse', (photo, path, done)
         return None, None
 
     def _loop(self):
@@ -159,7 +177,7 @@ class LibraryWorker(QObject):
                 log.warning('library task %s failed for %s', kind, item, exc_info=True)
                 if kind == 'analyse':
                     try:
-                        self.db.set_analysis(item[0], {})      # unreadable: not tried again and again
+                        self.db.set_analysis(item[0], {}, self.parts)      # unreadable: not tried again and again
                     except Exception:
                         pass
 
@@ -183,18 +201,30 @@ class LibraryWorker(QObject):
         if not image.isNull():
             self.thumbnail_ready.emit(path, image)
 
-    def _run_analysis(self, photo, path):
+    def _run_analysis(self, photo, path, done=frozenset()):
         from . import culling
+        parts = frozenset(self.parts) - frozenset(done)
+        if library_db.EYES in parts and culling.faces() is None:
+            # 2.1.1: without the face models the eyes are not marked done; they wait, without
+            # decoding the photo again and again, until the window queues them when the models
+            # arrive (update_dialog.UpdateMixin.models_changed).
+            parts -= {library_db.EYES}
+        if not parts:
+            self._count()
+            return
         started = time.perf_counter()
         view = self.cache.view(path)
         if not self.cache.has_thumbnail(path):
             image = QImage.fromData(self.cache.thumbnail(path, view), 'JPG')
             if not image.isNull():
                 self.thumbnail_ready.emit(path, image)
-        result = culling.analyse(view)
-        self.db.set_analysis(photo, result)
+        result = culling.analyse(view, library_db.SHARPNESS in parts, library_db.EYES in parts)
+        self.db.set_analysis(photo, result, parts)
+        self._count()
+        log.debug('analysed %s in %.0f ms', path, (time.perf_counter() - started) * 1000)
+
+    def _count(self):
         with self._lock:
             self.done += 1
             done, total = self.done, max(self.total, self.done)
         self.progress.emit(done, total)
-        log.debug('analysed %s in %.0f ms', path, (time.perf_counter() - started) * 1000)

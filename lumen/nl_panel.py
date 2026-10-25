@@ -315,6 +315,8 @@ class SettingsDialog(QDialog):
                                                        tr('，存放在 macOS 钥匙串中。') if host.MACOS else tr('。')))
         if not local and key == 'custom':
             self.key.setPlaceholderText(tr('如果接口需要，填写 Key'))
+        if key == 'mimo':
+            self.key.setPlaceholderText(tr('按量付费 Key（sk-…）；Token Plan（tp- / ttp-）请改用控制台给出的接口地址'))
         self.show_thinking_note()
 
     def show_thinking_note(self, *_):

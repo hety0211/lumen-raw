@@ -23,6 +23,8 @@ ort_data, ort_binaries, ort_hidden = collect_all('onnxruntime', filter_submodule
 # 1.8.0: float16-weight models, no bundled speech model, unused Qt pieces dropped (tools/bundle.py).
 # The Perl ExifTool runs with /usr/bin/perl (Windows' exiftool.exe is not shipped).
 assets = bundle.asset_datas(root, 'macos')
+# 2.1.1: the AI models in Contents/…/models under their content names (lumen/ai_models.py).
+assets += [(str(path), 'models') for path in bundle.model_files(root)]
 
 a = Analysis(
     [str(root / 'main.py')], pathex=[str(root)],

@@ -4,8 +4,8 @@ from __future__ import annotations
 import time
 
 from PySide6.QtGui import QFont, QGuiApplication
-from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit,
-                               QPushButton, QTabWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QListWidget, QMessageBox,
+                               QPlainTextEdit, QPushButton, QTabWidget, QVBoxLayout, QWidget)
 
 from . import cli, control, host, i18n
 from .i18n import tr
@@ -46,7 +46,7 @@ class AgentDialog(QDialog):
         title = QLabel(tr('AI 助手接入  /  MCP'))
         title.setObjectName('section')
         root.addWidget(title)
-        text = QLabel(tr('让本机支持 MCP 的 AI 助手（Claude Code、Codex、WorkBuddy、Claude Desktop 等）直接操作 LUMEN RAW：'
+        text = QLabel(tr('让本机支持 MCP 的 AI 助手（Claude Code、Codex、DeepSeek Harness、WorkBuddy、Claude Desktop 等）直接操作 LUMEN RAW：'
                          '打开照片、调色、评级、预览与导出。LUMEN RAW 打开时，助手的每一步修改都显示在窗口中，可用 {undo} 撤销；'
                          '未打开时在后台处理。原片始终不会被修改。', undo=host.keys('Ctrl+Z')))
         text.setWordWrap(True)
@@ -69,7 +69,12 @@ class AgentDialog(QDialog):
                 ('Claude Code', tr('Claude Code（在终端运行）'), 'claude-code', ''),
                 ('Codex', tr('Codex（在终端运行，或写入 ~/.codex/config.toml）'), 'codex', ''),
                 ('WorkBuddy · JSON', tr('WorkBuddy、Claude Desktop 及其他 MCP 客户端（JSON 配置）'), 'json',
-                 tr('WorkBuddy：在设置的 MCP（自定义连接）中添加服务器并粘贴这段 JSON；Claude Desktop：合并到 claude_desktop_config.json。'))):
+                 tr('WorkBuddy：在设置的 MCP（自定义连接）中添加服务器并粘贴这段 JSON；Claude Desktop：合并到 claude_desktop_config.json。')),
+                # 2.1.1: DeepSeek Harness reads MCP servers from its Cordis patch file.
+                ('DeepSeek Harness', tr('DeepSeek Harness（DSH，命令行和桌面版）：写入 {file}，对所有配置生效',
+                                        file=cli.dsh_patch_file()), 'dsh',
+                 tr('点“写入 DSH 配置”自动合并（原文件会先备份），或复制下面的内容手动合并；然后重启 DeepSeek Harness，'
+                    '工具名为 mcp__lumen-raw__…'))):
             page = QWidget()
             layout = QVBoxLayout(page)
             layout.setContentsMargins(4, 10, 4, 4)
@@ -91,6 +96,10 @@ class AgentDialog(QDialog):
             copy.clicked.connect(lambda checked=False, b=box: self.copy(b))
             row = QHBoxLayout()
             row.addStretch()
+            if kind == 'dsh':
+                install = QPushButton(tr('写入 DSH 配置'))
+                install.clicked.connect(self.install_dsh)
+                row.addWidget(install)
             row.addWidget(copy)
             layout.addLayout(row)
             clients.addTab(page, title)
@@ -106,6 +115,17 @@ class AgentDialog(QDialog):
         buttons.button(QDialogButtonBox.StandardButton.Close).setText(tr('关闭'))
         buttons.rejected.connect(self.close)
         root.addWidget(buttons)
+
+    def install_dsh(self):
+        try:
+            path, action = cli.install_dsh()
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, 'DeepSeek Harness', str(exc))
+            return
+        text = {'present': tr('{path} 里已经有 lumen-raw 服务器（手动添加的），没有改动。'),
+                'updated': tr('已更新 {path} 中的 LUMEN RAW 配置。重启 DeepSeek Harness 后生效。')}.get(
+            action, tr('已写入 {path}。重启 DeepSeek Harness 后生效。'))
+        QMessageBox.information(self, 'DeepSeek Harness', text.format(path=path))
 
     def copy(self, box):
         QGuiApplication.clipboard().setText(box.toPlainText())

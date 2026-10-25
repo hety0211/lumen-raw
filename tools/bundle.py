@@ -2,6 +2,9 @@
 LumenRAW-macOS.spec.
 
 * The AI models are bundled as the float16-weight copies of ``tools/compact_models.py``.
+  2.1.1: they are kept apart from the program (``lumen/ai_models.py``): ``model_pack`` names each
+  copy after its SHA-256 in ``build/model-pack`` and lists them in ``assets/ai-models.json``; the
+  Windows package keeps them in ``models`` next to LumenRAW.exe, which updates leave alone.
 * The SenseVoice speech model is not bundled: ``lumen.speech`` downloads it on first use.
 * Packages that only reach the build through optional imports (pandas via
   onnxruntime.transformers, Tcl/Tk via tifffile, lxml, …) are excluded, and so are the Qt pieces
@@ -10,7 +13,10 @@ LumenRAW-macOS.spec.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import re
+import shutil
 from pathlib import Path
 
 from tools.compact_models import compact_folder
@@ -25,6 +31,8 @@ ORT_TOOLING = ('onnxruntime.transformers', 'onnxruntime.tools', 'onnxruntime.qua
 ORT_EXCLUDED_DATAS = ['**/transformers/**', '**/tools/**', '**/quantization/**', '**/training/**']
 #: Assets read only by the build tools, or fetched at run time.
 SKIP_ASSETS = {'runtime-assets.json', 'culling-assets.json', 'editing-assets.json', 'models'}
+#: Where packaged programs download model files they do not have (lumen/ai_models.py).
+MODEL_RELEASE = 'https://github.com/hety0211/lumen-raw/releases/download/ai-models/'
 #: Interface languages (lumen/i18n.py); Qt's own strings (dialog buttons) come from qtbase_<code>.qm.
 QT_LANGUAGES = ('zh_CN', 'zh_TW', 'ja', 'ko', 'de', 'fr', 'es', 'ru')
 #: Bundled Qt files the app never loads (matched against the destination path, lower case).
@@ -52,8 +60,60 @@ def runtime_module(name):
     return not any(name == tool or name.startswith(tool + '.') for tool in ORT_TOOLING)
 
 
-def asset_datas(root, platform='windows'):
-    """(source, destination folder) pairs for ``assets``; the models come from the compact copies."""
+def _sha256(path):
+    with open(path, 'rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def model_pack(root, build=None, log=print):
+    """2.1.1: the compact models under their content names in ``build/model-pack`` and the
+    manifest ``build/ai-models.json`` listing them (bundled as ``assets/ai-models.json``).
+    Returns ``(pack folder, manifest path)``; tests pass their own ``build`` folder."""
+    root = Path(root)
+    build = Path(build) if build else root / 'build'
+    compact = compact_folder(root / 'assets' / 'models', build / 'compact-models', log)
+    pack = build / 'model-pack'
+    pack.mkdir(parents=True, exist_ok=True)
+    models = {}
+    for path in sorted(compact.glob('*.onnx')):
+        digest = _sha256(path)
+        name = f'{path.stem}.{digest[:12]}{path.suffix}'
+        target = pack / name
+        # Copies, not links: compact_folder rewrites its files in place.
+        if not (target.is_file() and target.stat().st_size == path.stat().st_size):
+            shutil.copyfile(path, target)
+        models[path.name] = dict(file=name, bytes=path.stat().st_size, sha256=digest)
+    files = {record['file'] for record in models.values()}
+    for stale in pack.iterdir():
+        if stale.name not in files:
+            stale.unlink()
+    manifest = build / 'ai-models.json'
+    manifest.write_text(json.dumps(dict(format=1, release=MODEL_RELEASE, models=models), indent=1) + '\n',
+                        encoding='utf-8')
+    return pack, manifest
+
+
+def model_files(root, build=None):
+    """The model files of ``model_pack`` (the macOS bundle carries them in ``models``)."""
+    pack, _ = model_pack(root, build)
+    return sorted(path for path in pack.iterdir() if path.is_file())
+
+
+def place_models(root, program, build=None):
+    """Copy the model pack into ``<program>/models`` (the Windows onedir build)."""
+    pack, _ = model_pack(root, build)
+    target = Path(program) / 'models'
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True)
+    for path in sorted(pack.iterdir()):
+        shutil.copy2(path, target / path.name)
+    return target
+
+
+def asset_datas(root, platform='windows', build=None):
+    """(source, destination folder) pairs for ``assets``; 2.1.1: the models themselves are not
+    part of it, only their manifest (``model_pack``)."""
     root = Path(root)
     pairs = []
     for item in sorted((root / 'assets').iterdir()):
@@ -67,8 +127,8 @@ def asset_datas(root, platform='windows'):
             pairs.append((str(item), f'assets/{item.name}'))
         else:
             pairs.append((str(item), 'assets'))
-    models = compact_folder(root / 'assets' / 'models', root / 'build' / 'compact-models')
-    pairs += [(str(path), 'assets/models') for path in sorted(models.iterdir()) if path.is_file()]
+    _, manifest = model_pack(root, build)
+    pairs.append((str(manifest), 'assets'))
     return pairs
 
 

@@ -17,7 +17,6 @@ import base64
 import random
 import threading
 from functools import lru_cache
-from pathlib import Path
 
 import cv2
 import numpy as np
@@ -45,12 +44,13 @@ _lock = threading.Lock()
 def session():
     # LaMa's Reshape nodes fail on DirectML; it runs on the CPU (0.3 s for a small region).  Without
     # ONNX Runtime's arena its 2–3 GB of working memory is returned after each fill.
-    from . import compute
-    return compute.session(Path(__file__).resolve().parents[1] / 'assets/models' / MODEL, False, arena=False)
+    from . import ai_models, compute
+    return compute.session(ai_models.path(MODEL), False, arena=False)
 
 
 def available():
-    return (Path(__file__).resolve().parents[1] / 'assets/models' / MODEL).is_file()
+    from . import ai_models
+    return ai_models.available(MODEL)
 
 
 def _noise_factor(sigma=1.):

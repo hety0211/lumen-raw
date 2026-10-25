@@ -10,7 +10,8 @@
     lumen-cli commands                          every command id and its parameters
     lumen-cli run COMMAND [JSON] [--headless]   any command, in the open editor when there is one
     lumen-cli mcp [--headless]                  MCP server over stdio (Claude Code, Codex, WorkBuddy …)
-    lumen-cli mcp-config [claude-code|codex|json]
+    lumen-cli mcp-config [claude-code|codex|json|dsh] [--install]   (--install: DeepSeek Harness only)
+    lumen-cli models [--download]               the AI models this version needs (2.1.1)
 
 INPUT is a photo or a ``.lumen`` project.  Results are JSON on stdout; errors go to stderr with
 exit status 1.  The editor is used through its control channel when it is open (``run``,
@@ -20,6 +21,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -46,8 +49,106 @@ def mcp_config(kind='json'):
         return (f'codex mcp add lumen-raw -- {quoted}\n\n# or in ~/.codex/config.toml:\n'
                 f'[mcp_servers.lumen-raw]\ncommand = {json.dumps(program)}\nargs = {json.dumps(arguments)}\n'
                 f'startup_timeout_sec = 60\ntool_timeout_sec = 600')
+    if kind == 'dsh':
+        return (f'# DeepSeek Harness: merge into {dsh_patch_file()} (every profile reads it),\n'
+                f'# then restart DSH; the tools appear as mcp__lumen-raw__<tool>.\n' + dsh_entry())
     return json.dumps(dict(mcpServers={'lumen-raw': dict(type='stdio', command=program, args=arguments)}),
                       indent=2, ensure_ascii=False)
+
+
+# 2.1.1: DeepSeek Harness (DSH) loads MCP servers as @deepseek-ai/dsh-mcp-client plugin entries of a
+# Cordis patch file; $DSH_HOME/cordis.patch.yml (normally ~/.dsh) applies to every profile, the
+# command-line ones and the Desktop app's.
+DSH_BEGIN = '# >>> LUMEN RAW (MCP server) - written by LUMEN RAW; edit or delete this block freely'
+DSH_END = '# <<< LUMEN RAW (MCP server)'
+
+
+def _yaml(text):
+    """A YAML single-quoted scalar: backslashes stay literal, quotes are doubled."""
+    return "'" + str(text).replace("'", "''") + "'"
+
+
+def dsh_entry():
+    command = executable()
+    program, arguments = command[0], command[1:] + ['mcp']
+    return '\n'.join([
+        '- insert:',
+        '    - id: mcp-lumen-raw',
+        "      name: '@deepseek-ai/dsh-mcp-client'",
+        '      config:',
+        '        serverName: lumen-raw',
+        '        transport: stdio',
+        f'        command: {_yaml(program)}',
+        f'        args: [{", ".join(_yaml(a) for a in arguments)}]',
+        '        env: {}',
+        # Exports of large photos and batches take longer than DSH's default 60 s per call.
+        '        toolCallTimeoutMs: 600000',
+    ])
+
+
+def dsh_patch_file():
+    home = os.environ.get('DSH_HOME')
+    return (Path(home).expanduser() if home else Path.home() / '.dsh') / 'cordis.patch.yml'
+
+
+def install_dsh(path=None):
+    """Add (or refresh) the LUMEN RAW entry in DSH's home patch file; returns ``(path, action)``
+    with action ``created`` / ``added`` / ``updated`` / ``present`` (an entry the user wrote).
+    The previous file is kept once as ``cordis.patch.yml.lumen-backup``."""
+    from .i18n import tr
+    path = Path(path or dsh_patch_file())
+    block = f'{DSH_BEGIN}\n{dsh_entry()}\n{DSH_END}\n'
+    try:
+        text = path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        text = ''
+    marked = re.compile(re.escape(DSH_BEGIN.split(' - ')[0]) + r'.*?' + re.escape(DSH_END) + r'[^\n]*\n?', re.S)
+    body = [line for line in text.splitlines() if line.strip() and not line.lstrip().startswith('#')]
+    if marked.search(text):
+        result, action = marked.sub(lambda _: block, text, count=1), 'updated'
+    elif re.search(r'serverName:\s*[\'"]?lumen-raw\b', text):
+        return path, 'present'
+    elif not body or body == ['[]']:
+        kept = '\n'.join(line for line in text.splitlines() if line.strip() != '[]').strip()
+        result, action = (kept + '\n\n' if kept else '') + block, 'created' if not text.strip() else 'added'
+    elif body[0].startswith('-'):
+        result, action = text.rstrip('\n') + '\n\n' + block, 'added'
+    else:
+        raise ValueError(tr('{path} 不是 YAML 列表，无法自动合并；请复制配置手动合并。', path=path))
+    if result == text:
+        return path, action
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup = path.with_name(path.name + '.lumen-backup')
+    if text and not backup.exists():
+        backup.write_text(text, encoding='utf-8')
+    temporary = path.with_name(path.name + '.tmp')
+    temporary.write_bytes(result.encode('utf-8'))
+    temporary.replace(path)
+    return path, action
+
+
+def models(download=False):
+    """``lumen-cli models``: where the AI models are and which are missing; downloads them."""
+    from . import ai_models, updates
+    ai_models.prepare(keep=updates.keep_models())
+    if download and ai_models.missing():
+        shown = [-1]
+
+        def progress(done, total):
+            percent = int(done * 100 / max(total, 1))
+            if percent != shown[0]:
+                shown[0] = percent
+                sys.stderr.write(f'\r{done / 1e6:.0f} / {total / 1e6:.0f} MB')
+                sys.stderr.flush()
+        try:
+            ai_models.download(progress=progress)
+        except Exception as exc:
+            sys.stderr.write(f'\n{exc}\n')
+            _dump(ai_models.status())
+            return 1
+        sys.stderr.write('\n')
+    _dump(ai_models.status())
+    return 0 if not ai_models.missing() else 2
 
 
 def _dump(result):
@@ -171,15 +272,26 @@ def main(argv=None):
     p = sub.add_parser('mcp', help='MCP server on stdio')
     p.add_argument('--headless', action='store_true', help='never use the open editor')
     p = sub.add_parser('mcp-config', help='how to add this server to an agent')
-    p.add_argument('kind', nargs='?', default='json', choices=('claude-code', 'codex', 'json'))
+    p.add_argument('kind', nargs='?', default='json', choices=('claude-code', 'codex', 'json', 'dsh'))
+    p.add_argument('--install', action='store_true', help='DeepSeek Harness: write the entry into its patch file')
+    p = sub.add_parser('models', help='the AI models this version needs; --download fetches missing ones')
+    p.add_argument('--download', action='store_true')
     args = parser.parse_args(argv)
 
     if args.action == 'mcp':
         from . import mcp
         return mcp.serve(args.headless)
     if args.action == 'mcp-config':
+        if args.install:
+            if args.kind != 'dsh':
+                parser.error('--install is only available for dsh')
+            path, action = install_dsh()
+            _dump(dict(file=str(path), action=action))
+            return 0
         sys.stdout.write(mcp_config(args.kind) + '\n')
         return 0
+    if args.action == 'models':
+        return models(args.download)
     from . import catalog, commands
     try:
         if args.action == 'render':

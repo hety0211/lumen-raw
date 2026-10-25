@@ -90,6 +90,7 @@ def run(source, output):
         report['languages'] = languages()
         report['library'] = library_and_culling(w, app, source, destination)
         report['models'] = models_load()
+        report['updates'] = update_check(destination)
         report['video'] = video_encoding(destination)
         model.save_project(destination / 'smoke.lumen', source, w.edits, w.snapshots)
         engine.export_image(destination / 'smoke.tif', w.rendered)
@@ -160,21 +161,80 @@ def video_encoding(destination):
 
 
 def models_load():
-    """2.0.0: every bundled model opens in ONNX Runtime (a truncated file once reached a package)."""
-    from . import performance
+    """2.0.0: every bundled model opens in ONNX Runtime (a truncated file once reached a package).
+    2.1.1: the models this version lists (``ai_models``), wherever they are kept."""
+    from . import ai_models, performance
     ort = performance.onnxruntime()
-    from pathlib import Path
-    folder = Path(__file__).resolve().parents[1] / 'assets' / 'models'
+    data = ai_models.manifest()
+    names = sorted(data['models']) if data else sorted(p.name for p in ai_models.SOURCE.glob('*.onnx'))
     loaded = {}
-    for path in sorted(folder.glob('*.onnx')):
+    for name in names:
+        path = ai_models.path(name)
         if path.stat().st_size < 64 * 1024:
             raise RuntimeError(f'{path.name} is only {path.stat().st_size} bytes')
         session = ort.InferenceSession(str(path), providers=['CPUExecutionProvider'])
-        loaded[path.name] = [i.name for i in session.get_inputs()]
+        loaded[name] = [i.name for i in session.get_inputs()]
         del session
     if len(loaded) < 15:
         raise RuntimeError(f'only {len(loaded)} models bundled: {sorted(loaded)}')
     return {name: inputs for name, inputs in loaded.items()}
+
+
+def update_check(destination):
+    """2.1.1: the update feed and a verified, resumable download through the frozen urllib / TLS
+    stack (a feed and an installer served on this machine)."""
+    import hashlib
+    import json
+    import os
+    import ssl
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    from . import ai_models, downloads, updates
+    ssl.create_default_context()          # a patched ssl.py once broke every request of a package
+    payload = os.urandom(300_000)
+    files = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def do_GET(self):
+            body = files.get(self.path)
+            if body is None:
+                self.send_error(404)
+                return
+            start = int(self.headers['Range'].split('=')[1].rstrip('-')) if self.headers.get('Range') else 0
+            self.send_response(206 if start else 200)
+            self.send_header('Content-Length', str(len(body) - start))
+            self.end_headers()
+            self.wfile.write(body[start:])
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f'http://127.0.0.1:{server.server_address[1]}/'
+    package = dict(url=base + 'LumenRAW-99.0.0-Update.exe', bytes=len(payload), sha256=hashlib.sha256(payload).hexdigest())
+    entry = dict(version='99.0.0', notes={'en': 'smoke'}, update=package)
+    files['/LumenRAW-99.0.0-Update.exe'] = payload
+    files['/lumen-update.json'] = json.dumps(dict(format=1, version='99.0.0', windows=entry, macos=entry)).encode('utf-8')
+    previous = os.environ.get('LUMEN_UPDATE_FEED')
+    os.environ['LUMEN_UPDATE_FEED'] = base + 'lumen-update.json'
+    try:
+        update = updates.check()
+        if update is None or update.version != '99.0.0' or not updates.trusted(package['url']):
+            raise RuntimeError('update feed not read')
+        target = destination / 'update-download.bin'
+        part = target.with_name(target.name + '.part')
+        part.write_bytes(payload[:100_000])              # an interrupted download continues
+        downloads.fetch_verified(package['url'], target, package['bytes'], package['sha256'])
+    finally:
+        if previous is None:
+            os.environ.pop('LUMEN_UPDATE_FEED', None)
+        else:
+            os.environ['LUMEN_UPDATE_FEED'] = previous
+        server.shutdown()
+        server.server_close()
+    return dict(feed=update.version, mode=updates.mode(), downloaded=target.stat().st_size, tls=ssl.OPENSSL_VERSION,
+                models=ai_models.status())
 
 
 def library_and_culling(w, app, source, destination):

@@ -36,6 +36,24 @@ SCHEMA = 2
 EXTENSIONS = None
 #: Version of the culling analysis stored with each photo; older results are computed again.
 ANALYSIS = 1
+#: 2.1.1: sharpness and closed eyes are analysed (and switched on) separately.  ``analysis`` holds
+#: the parts a photo has: 0 none, ANALYSIS both (as up to 2.1.0), 2 sharpness only, 3 eyes only.
+SHARPNESS, EYES = 'sharpness', 'eyes'
+BOTH = frozenset({SHARPNESS, EYES})
+PARTS = {0: frozenset(), ANALYSIS: BOTH, 2: frozenset({SHARPNESS}), 3: frozenset({EYES})}
+CODES = {parts: code for code, parts in PARTS.items()}
+
+
+def analysed_parts(value):
+    """The parts of the analysis a photo has (its ``analysis`` value, or its row)."""
+    if isinstance(value, dict):
+        value = value.get('analysis')
+    return PARTS.get(value or 0, frozenset())
+
+
+def lacks(row, parts=BOTH):
+    """Whether ``row`` still needs one of ``parts`` (never for a missing file)."""
+    return not row.get('missing') and bool(set(parts) - analysed_parts(row))
 #: Folders never descended into when a folder is imported.
 SKIP_FOLDERS = {'$recycle.bin', 'system volume information', '.lumen-cache', '__macosx', '.trash', '.trashes',
                 '.spotlight-v100', '.fseventsd', '@eadir'}
@@ -685,26 +703,46 @@ class LibraryDB:
 
     # -- culling analysis
 
-    def unanalysed(self, ids=None, limit=200):
+    def unanalysed(self, ids=None, limit=200, parts=BOTH):
+        """Photos that lack one of ``parts`` of the analysis: ``[{id, path, analysis}]``."""
         db = self._db()
+        codes = [code for code, have in PARTS.items() if set(parts) - have]
+        if not codes:
+            return []
+        lacking = f'analysis IN ({",".join("?" * len(codes))})'
         if ids is None:
-            rows = db.execute('SELECT id, path FROM photos WHERE analysis<? AND missing=0 ORDER BY id LIMIT ?',
-                              (ANALYSIS, limit)).fetchall()
+            rows = db.execute(f'SELECT id, path, analysis FROM photos WHERE {lacking} AND missing=0 ORDER BY id LIMIT ?',
+                              (*codes, limit)).fetchall()
         else:
             ids = list(ids)
             rows = []
             for start in range(0, len(ids), 500):
                 chunk = ids[start:start + 500]
-                rows += db.execute(f'SELECT id, path FROM photos WHERE analysis<? AND missing=0 AND id IN '
-                                   f'({",".join("?" * len(chunk))})', (ANALYSIS, *chunk)).fetchall()
+                rows += db.execute(f'SELECT id, path, analysis FROM photos WHERE {lacking} AND missing=0 AND id IN '
+                                   f'({",".join("?" * len(chunk))})', (*codes, *chunk)).fetchall()
         return [dict(r) for r in rows]
 
-    def set_analysis(self, photo_id, result):
+    def analysed_parts_of(self, photo_id):
         with self._lock:
-            self._db().execute('UPDATE photos SET analysis=?, sharpness=?, faces=?, eyes_closed=?, signature=?, '
-                               'face_data=? WHERE id=?',
-                               (ANALYSIS, result.get('sharpness'), result.get('faces'), result.get('eyes_closed'),
-                                result.get('signature'), json.dumps(result.get('boxes') or []), photo_id))
+            row = self._db().execute('SELECT analysis FROM photos WHERE id=?', (photo_id,)).fetchone()
+        return analysed_parts(row[0] if row else 0)
+
+    def set_analysis(self, photo_id, result, parts=BOTH):
+        """Store ``parts`` of the analysis (2.1.1: one part leaves the other's values alone)."""
+        parts = frozenset(parts)
+        columns = {}
+        if SHARPNESS in parts:
+            columns['sharpness'] = result.get('sharpness')
+        if EYES in parts:
+            columns.update(faces=result.get('faces'), eyes_closed=result.get('eyes_closed'),
+                           face_data=json.dumps(result.get('boxes') or []))
+        if result.get('signature') is not None or parts == BOTH:
+            columns['signature'] = result.get('signature')
+        with self._lock:
+            db = self._db()
+            row = db.execute('SELECT analysis FROM photos WHERE id=?', (photo_id,)).fetchone()
+            columns['analysis'] = CODES[analysed_parts(row[0] if row else 0) | parts]
+            db.execute(f'UPDATE photos SET {", ".join(f"{k}=?" for k in columns)} WHERE id=?', (*columns.values(), photo_id))
         self._changed('analysed', [photo_id])
 
     # -- keywords

@@ -462,13 +462,21 @@ def catalog_analyze(context, paths=None, query=None, limit=300):
         db.add([p for p in targets if Path(p).is_file()])
         db.index_all(context.catalog)
     cache = getattr(getattr(context, 'window', None), 'previews', None) or preview_cache.default()
+    # Both parts, whatever the background settings; only the part a photo lacks, and the closed
+    # eyes only with the face models (2.1.1).
+    eyes = culling.faces() is not None
     for row in db.unanalysed(db.ids_of(targets)):
+        parts = library_db.BOTH - library_db.analysed_parts(row)
+        if not eyes:
+            parts -= {library_db.EYES}
+        if not parts:
+            continue
         try:
-            result = culling.analyse(cache.view(row['path']))
+            result = culling.analyse(cache.view(row['path']), library_db.SHARPNESS in parts, library_db.EYES in parts)
         except Exception as exc:
             result = {}
             context.notify(f'{Path(row["path"]).name}: {exc}')
-        db.set_analysis(row['id'], result)
+        db.set_analysis(row['id'], result, parts)
     rows = db.rows(('paths', targets))
     library_db.annotate_bursts(rows)
     library_db.annotate_hints(rows)

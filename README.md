@@ -4,9 +4,9 @@
 
 [中文说明](README.zh-CN.md) · [Downloads](https://github.com/hety0211/lumen-raw/releases) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [MIT license](LICENSE)
 
-LUMEN RAW is a local desktop editor for landscape and travel photography on Windows, Linux (x86_64) and Apple silicon Macs. No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Importing, culling, editing, lens corrections, AI object removal / denoising / super-resolution / masks, export and time-lapse videos all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing, and once to download the speech model if you use voice instructions.
+LUMEN RAW is a local desktop editor for landscape and travel photography on Windows, Apple silicon Macs and x86_64 Linux (from source). No account is required. The interface is available in nine languages: English, 简体中文, 繁體中文, 日本語, 한국어, Deutsch, Français, Español and Русский. Importing, culling, editing, lens corrections, AI object removal / denoising / super-resolution / masks, export and time-lapse videos all run offline on your computer. The network is used only when you choose a cloud language model for natural-language editing, once to download the speech model if you use voice instructions, and (from 2.1.1) to check for a new version at start-up, which you can switch off.
 
-Current version: **2.1.0** (Windows, Linux and macOS, 2026-10-23).
+Current version: **2.1.1** (Windows, 2026-10-26). macOS: 2.1.0 (2026-10-23). Linux: run or build from source (the Linux port arrived with 2.1.1).
 
 ![LUMEN RAW 2.0.0 in English: the Library page with the folder tree, smart albums and keywords on the left, the thumbnail grid with stars, pick flags, color labels and a rejected photo, and the selected photo's capture data, sharpness, rating and keywords on the right](docs/screenshots/library-grid-en.png)
 
@@ -16,20 +16,18 @@ Actual application screenshots. The photographs are public test samples: CC0 pho
 
 | System | Download | Requirements |
 |---|---|---|
-| Windows | [`LumenRAW-2.1.0-Setup.exe` (installer, 597 MB) or `LumenRAW-2.1.0-Windows.zip` (portable, 665 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.0) | Windows 10 22H2 / Windows 11, x64 |
+| Windows | [`LumenRAW-2.1.1-Setup.exe` (full installer, 597 MB), `LumenRAW-2.1.1-Update.exe` (update package, 135 MB) or `LumenRAW-2.1.1-Windows.zip` (portable, 665 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.1) | Windows 10 22H2 / Windows 11, x64 |
 | macOS | [`LumenRAW-2.1.0-macOS-arm64.dmg` (654 MB)](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.0-macos) | Apple silicon (M1 or newer), macOS 15 Sequoia or later |
-| Linux | Build from source (below); `tools/build_linux.sh --sample photo.DNG` creates a portable `LumenRAW-2.1.0-Linux-x86_64.tar.gz` | x86_64, Python 3.12; NVIDIA CUDA 13 driver optional |
+| Linux | No prebuilt download: run from source ([below](#run-from-source)); `tools/build_linux.sh --sample photo.DNG` builds a portable `LumenRAW-<version>-Linux-x86_64.tar.gz` | x86_64, Python 3.12; an NVIDIA GPU with a CUDA 13 driver is optional |
 
-Windows, Linux and macOS have the same features: the Mac build 2.1.0 is the first since 1.7.0 and also brings 2.0's library, culling, preview cache, time-lapse videos and themes. 2.1.0 saves projects (`.lumen`) and albums (`.lumenalbum`) in format 8 (for AI removals and the new masks): 2.1.0 opens every older project, but 2.0.1 and earlier cannot open those saved by 2.1.0. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
-
-On Linux the prebuilt archive needs the glibc version of the build environment; build on the oldest distribution you need to support. Without an NVIDIA GPU (or without the CUDA runtime) the editor uses the CPU; an NVIDIA GPU uses the native CUDA pixel kernels and ONNX Runtime's CUDA execution provider.
+Windows is at 2.1.1: in-app updates, AI models kept apart from the program, sharpness and closed-eye analysis switched on separately, DeepSeek Harness, Xiaomi MiMo and five fixes from a code review. macOS stays at 2.1.0, the first Mac build since 1.7.0, which also brings 2.0's library, culling, preview cache, time-lapse videos and themes. Linux (x86_64) runs from source from 2.1.1 on, with native CUDA kernels on NVIDIA GPUs (a community contribution, see [Download and install](#download-and-install)). 2.1.1 keeps project format 8, so 2.1.0 and 2.1.1 open each other's projects. 2.1.0 saves projects (`.lumen`) and albums (`.lumenalbum`) in format 8 (for AI removals and the new masks): 2.1.0 opens every older project, but 2.0.1 and earlier cannot open those saved by 2.1.0. Each release lists SHA-256 checksums. The binaries are not code-signed with a commercial certificate.
 
 **Windows**
 
-- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 2.0.1 in place. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
-- **Portable:** extract and run `LumenRAW-Windows\LumenRAW.exe`. Keep the `_internal` folder next to the exe. The portable build follows the system language until you choose one.
+- **Installer:** installs for the current user without administrator rights and upgrades 1.2.x – 2.1.0 in place. From 2.1.0 the update package (135 MB) is enough: it carries no AI models and keeps the ones 2.1.0 installed. Save your album and close the old version first. The language you choose when the installer starts becomes the interface language; change it later in the **Language** menu.
+- **Portable:** extract and run `LumenRAW-Windows\LumenRAW.exe`. Keep the `_internal` and `models` folders next to the exe. The portable build follows the system language until you choose one.
 - Both include Python, ExifTool, fonts, the fifteen AI models, the video encoders and the lensfun lens database, and work fully offline. The speech model for voice instructions (about 240 MB) is downloaded the first time you click **Voice**; when you upgrade from 1.5 – 1.7, the installer keeps the model those versions bundled, so it is not downloaded again.
-- 2.1.0 adds four models for AI removal and the new masks (about 200 MB at half precision), so the installer grew from 415 to 597 MB. AI models are stored at half precision (results differ by about 0.001 %, at the same speed), and the speech model is not bundled.
+- From 2.1.1 the AI models (about 522 MB) live in the `models` folder next to the program, apart from it: in-app updates download only the program (about 135 MB) and the models that changed; see [Updates and AI models](#updates-and-ai-models). AI models are stored at half precision (results differ by about 0.001 %, at the same speed), and the speech model is not bundled.
 
 **macOS**
 
@@ -39,8 +37,30 @@ On Linux the prebuilt archive needs the glibc version of the build environment; 
 - The first voice instruction asks for microphone access and, as on Windows, downloads the speech model once (about 240 MB) after you agree. Speech is recognized on the Mac and never uploaded.
 - Cloud API keys are kept in the login keychain. After each update, macOS asks once whether the new build may read them; choose **Always Allow**.
 
+**Linux**
+
+- There is no published Linux download. `./run-source.sh` sets up and starts the editor from a checkout (see [Run from source](#run-from-source)); `tools/build_linux.sh` builds a portable archive with a menu entry for the current user.
+- A built archive needs the glibc version of the system it was built on; to share it with older distributions, build on the oldest one you need.
+- With an NVIDIA GPU, development runs in native CUDA kernels and the AI models use ONNX Runtime's CUDA execution provider; without one (or without the CUDA runtime) everything runs on the CPU. AMD and Intel GPUs are not used on Linux.
+- The Linux port was contributed by [@worldcupfantasy](https://github.com/worldcupfantasy) (pull request #8) and tested by the contributor on an NVIDIA GPU with CUDA 13; the maintainer has not run it on Linux hardware, and it has not been checked on every distribution or desktop.
+
+## Updates and AI models
+
+From 2.1.1 LUMEN RAW checks for a new version in the background when it starts (it reads `lumen-update.json` on the latest GitHub release, sending only the program version). When there is one, the **LUMEN RAW — Software update** window shows the current and latest version, the download size and what changed:
+
+- **Update now** downloads the update package and only the AI models this computer lacks (cancel at any time; it resumes next time), checks every file's size and SHA-256 and accepts files from this project's GitHub releases only. Then **Restart and update** closes LUMEN RAW (asking about unsaved edits as usual); the update package waits until it has exited, installs silently and opens the new version.
+- **Remind me later** closes the window until the next start. **Help → Check for updates…** checks by hand; **Help → Check for updates at start-up** turns the automatic check off.
+- **Only what changed is downloaded:** the fifteen AI models (about 522 MB) live in `models` next to `LumenRAW.exe`, named after their SHA-256 (e.g. `skyseg.b57ea5204f87.onnx`). The update package is the program alone (about 135 MB) and leaves `models` as it is; when a version replaces a model, only that model is downloaded. The full installer and the portable build still carry every model for offline installs.
+- **Missing models** are offered for download at start-up and in **Help → AI models…** (command line: `lumen-cli models --download`); a feature whose model is missing says what to download, everything else keeps working.
+- Portable copies, source runs (Linux included) and the macOS app open the download page instead.
+- **Upgrading from 2.1.0:** 2.1.0 has no update check, so install 2.1.1 by hand once: the update package (135 MB) is enough, because it moves 2.1.0's models (identical in 2.1.1) into `models\import` and the editor adopts them after checking their SHA-256. From 2.1.1 on, the editor finds new versions itself.
+
 ## Features
 
+- **In-app updates (2.1.1):** a new version is found at start-up, downloaded with one click and installed silently after the window closes; the AI models are kept apart from the program, so later updates download only the program (about 135 MB) and the models that changed.
+- **Sharpness and closed eyes analysed separately (2.1.1):** two switches in the **Library** menu; landscapes can skip the face search, and turning the second analysis on later computes only that part.
+- **DeepSeek Harness and Xiaomi MiMo (2.1.1):** one click in **AI assistants (MCP)** adds LUMEN RAW to DSH; natural-language editing adds Xiaomi MiMo and drops Qwen (Bailian), Doubao (Ark) and SiliconFlow.
+- **Linux (2.1.1, community contribution):** x86_64 Linux runs from source, with native CUDA development kernels and CUDA AI models on NVIDIA GPUs. See [Download and install](#download-and-install).
 - **AI removal (2.1.0):** paint over a distraction, or click it, and a local LaMa model fills it from its surroundings — people on a pier, a sign, a whole lighthouse. The fill is computed once on the original and saved with the project, so preview, zoom and export match. See [AI removal](#ai-removal).
 - **Landscape masks and picked objects (2.1.0):** one click selects water, vegetation, mountains, buildings or the ground; **Pick Object** masks anything you click, Shift-click adds, Alt-click takes away. See [Landscape masks and picked objects](#landscape-masks-and-picked-objects).
 - **Black and white points on the exposure curve (2.1.0):** drag the ends of the curve freely and the whole curve stretches between them, as when grading a log image in DaVinci Resolve; the histogram of the unedited photo sits behind the curve. See [Black and white points](#black-and-white-points-on-the-exposure-curve).
@@ -135,7 +155,7 @@ The **Library** page (`G`; `D` returns to **Develop**) is LUMEN RAW's own catalo
 - **Speed:** culling shows the camera's own rendering — the JPEG preview inside the RAW file, decoded straight at the size needed — with three photos ahead and behind loaded in advance, so moving between photos is instant. 100 % uses the full-size embedded JPEG where there is one and reads the RAW otherwise.
 - **Compare:** the left side keeps the chosen photo while `←` / `→` change the candidate on the right; both sides zoom and pan together.
 - **Bursts:** consecutive photos from the same camera body (model and serial number), at most 2 s apart and with a similar picture, form a burst, shown as "3/7". The best frame of each (eyes open first, then the sharpest) is marked in amber, and **Collapse bursts** shows only those. Copies with the same name and time (exports, the JPEG of RAW + JPEG) are not bursts.
-- **Sharpness and closed eyes:** every photo is analysed once in the background (at low priority, paused while AI or export runs; can be turned off in the **Library** menu) and the results are kept. Sharpness (0–100) is measured where the picture has the most structure, so a shallow depth of field counts by the subject in focus and fog is not taken for blur; below 22, or 14 below the best of its burst, a photo is marked "possibly blurry". Faces are found by YuNet and their eyes measured with Google's MediaPipe Face Mesh (478 landmarks); when both eyes are nearly shut, the photo is marked "possibly closed eyes". The two models together are 2.7 MB and run offline; a 61-megapixel ARW takes about 0.3 s to read and 0.2 s to analyse.
+- **Sharpness and closed eyes:** every photo is analysed once in the background (at low priority, paused while AI or export runs) and the results are kept. From 2.1.1 the **Library** menu switches the two separately — **Analyse Sharpness in the Background** and **Analyse Closed Eyes in the Background** — so a landscape library can skip the face search; the library remembers which part each photo has, and turning the other one on later computes only that part. `analyze_photos` on the command line and over MCP still does both. Sharpness (0–100) is measured where the picture has the most structure, so a shallow depth of field counts by the subject in focus and fog is not taken for blur; below 22, or 14 below the best of its burst, a photo is marked "possibly blurry". Faces are found by YuNet and their eyes measured with Google's MediaPipe Face Mesh (478 landmarks); when both eyes are nearly shut, the photo is marked "possibly closed eyes". The two models together are 2.7 MB and run offline; a 61-megapixel ARW takes about 0.3 s to read and 0.2 s to analyse.
 
 ## Time-lapse videos
 
@@ -211,7 +231,7 @@ The model can set 16 global sliders (exposure, contrast, highlights, shadows, wh
 | Kind | Services | Notes |
 |---|---|---|
 | Local | Ollama, LM Studio, llama.cpp (llama-server), vLLM / Jan / LocalAI and other OpenAI-compatible servers | No API key; nothing leaves your computer |
-| Cloud | OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Alibaba Cloud Model Studio (Qwen), Kimi, Zhipu GLM, SiliconFlow, Volcano Engine Ark (Doubao), OpenRouter, custom endpoint | Your own API key, billed by the provider |
+| Cloud | OpenAI, Anthropic Claude, Google Gemini, DeepSeek, Kimi, Zhipu GLM, Xiaomi MiMo, OpenRouter, custom endpoint | Your own API key, billed by the provider |
 
 - **What is sent:** the instruction, the current edit, brightness / color statistics of the photo and shooting data (camera, lens, aperture, shutter, ISO, focal length, time — no GPS). Optionally one 768-pixel preview image for models that accept images.
 - **API keys** stay on your computer: encrypted with Windows DPAPI for the current user, or in the macOS keychain.
@@ -229,7 +249,6 @@ Photos opened in 1.6.0 use **process version 2 (scene-referred)**; projects and 
 - **OkLCh color:** saturation, vibrance, the 8-color mixer, monochrome and grading work in perceptually uniform OkLCh: a more saturated blue sky does not drift purple or change lightness; monochrome keeps perceived lightness; grading changes color only, and works on monochrome photos too.
 - **Highlight shoulder and gamut mapping:** the camera-referenced curve continues into a filmic shoulder near white, so luminance pushed past white rolls off smoothly; colors outside sRGB keep their hue and mainly lose chroma (too-bright saturated colors give up a little lightness), instead of being clipped per channel.
 - On Windows, process version 2 runs on DirectML: a 1600-pixel preview takes about 50–60 ms on an RX 9070 XT, about 0.65 s in CPU mode.
-- On Linux, process versions 1 and 2 use native CUDA kernels (`lumen/cuda.py`, compiled from source with NVRTC) on an NVIDIA GPU; ONNX Runtime's CUDA execution provider runs the AI models. A full 22 MP DNG develops about 3× faster (process 1) and 6–7× faster (process 2) than a multi-threaded CPU; 1600-pixel previews stay interactive. The kernels are self-tested against the CPU on first use and fall back to the CPU if they differ.
 
 ![The same CC0 sample with more saturation: process version 1 (left) darkens the sky and shifts it toward purple; process version 2 (right) keeps hue and lightness](docs/screenshots/process2-sky.jpg)
 
@@ -268,6 +287,21 @@ On a Mac, `lumen-cli` is inside the app:
 
 ```
 claude mcp add lumen-raw -- "/Applications/LUMEN RAW.app/Contents/MacOS/lumen-cli" mcp
+```
+
+**DeepSeek Harness (DSH, 2.1.1):** the **DeepSeek Harness** page of that window writes the entry into `~/.dsh/cordis.patch.yml` (the home-level patch every DSH profile reads, the command line and the desktop app alike; your other entries stay and the file is backed up first), or run `lumen-cli mcp-config dsh --install`. Restart DSH; the tools appear as `mcp__lumen-raw__<tool>`. The entry is one `@deepseek-ai/dsh-mcp-client` row:
+
+```yaml
+- insert:
+    - id: mcp-lumen-raw
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: lumen-raw
+        transport: stdio
+        command: 'C:\Users\<you>\AppData\Local\Programs\LUMEN RAW\lumen-cli.exe'
+        args: ['mcp']
+        env: {}
+        toolCallTimeoutMs: 600000
 ```
 
 WorkBuddy, Claude Desktop and other clients take a JSON entry (`"command"`: the full path of `lumen-cli.exe`, or of `lumen-cli` on a Mac, `"args": ["mcp"]`). Then ask, for example: "apply the Golden preset to the photos rated three stars or more in this folder, darken the sky a little and export them to the desktop", or "import E:\DCIM, keep the sharpest open-eyed frame of each burst and tag them Iceland".
@@ -342,7 +376,7 @@ lumen-cli commands
 - AI models run in a separate process: a GPU driver crash does not close the editor; the work is retried on the next device and the GPU + driver combination is remembered.
 - TensorRT for RTX is downloaded once by Windows on first use and then works offline.
 - `LUMEN_COMPUTE=cpu` forces the CPU. On a Mac, `LUMEN_COREML_UNITS=ALL` also lets Core ML use the Neural Engine.
-- On Linux, pointwise development runs in native CUDA kernels and AI models use ONNX Runtime's CUDA execution provider; both fall back to the CPU when no NVIDIA device or CUDA library is available. The time-lapse encoder tries `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` before x264 / x265 / SVT-AV1. PyAV's bundled FFmpeg provides the software encoders; the NVIDIA encoders come from the driver.
+- On Linux (2.1.1), process versions 1 and 2 run in native CUDA kernels (`lumen/cuda.py`, translated from the Metal kernels and compiled with NVRTC on first use) on an NVIDIA GPU, and ONNX Runtime's CUDA execution provider runs the AI models; both are checked against the CPU and fall back to it when no NVIDIA device or CUDA library is available. The time-lapse encoder tries `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` before x264 / x265 / SVT-AV1. The contributor measured a 22 MP DNG developing about 3× (process 1) and 6–7× (process 2) faster than a multi-threaded CPU.
 - Tested on an AMD Radeon RX 9070 XT (DirectML), a community GeForce RTX 5080 (TensorRT for RTX) and an M1 Pro. On the M1 Pro, pointwise development of a 1600-pixel preview takes about 3–5 ms, and super-resolution and denoising run 8–10× faster than on the CPU. Lens corrections add about 0.1 s to a 1600-pixel preview, recomputed only when the correction changes.
 
 ## Files and privacy
@@ -357,11 +391,13 @@ lumen-cli commands
 | Library (`library.db`: folders, capture data, keywords, smart albums, culling hints) | `%LOCALAPPDATA%\LUMEN RAW` | — |
 | Preview cache (default limit 4 GB, deleted on uninstall) | `%LOCALAPPDATA%\LUMEN RAW\cache\previews` | — |
 | Speech model (downloaded on first use) | `%LOCALAPPDATA%\LUMEN RAW\models\sensevoice` | bundled in the app |
+| AI models (2.1.1) | `models` next to `LumenRAW.exe` (`%LOCALAPPDATA%\LUMEN RAW\models` when that folder cannot be written); deleted on uninstall | bundled in the app |
+| Downloaded update (2.1.1) | `%LOCALAPPDATA%\LUMEN RAW\updates`, deleted once the new version runs | — |
 
+- On Linux these files live under `~/.local/state/LUMEN RAW`. API keys are stored in `natural-language.json` with mode 0600, since Linux has no counterpart to DPAPI or the keychain here; protect your account and backups accordingly.
 - Originals are read-only. Edits live in `.lumen` / `.lumenalbum` files; AI and merge results are saved as new DNG files. Removing a photo from the filmstrip or the library does not delete it from disk.
-- On Linux these files live under `~/.local/state/LUMEN RAW`; API keys are stored in `natural-language.json` with mode 0600 because Linux has no per-user DPAPI/keychain equivalent, so the file is only readable by your user — protect your account password and backups accordingly.
 - **Library → Preview Cache** sets the cache limit (1–32 GB), turns it off or empties it; it is rebuilt as needed. A photo changed on disk is decoded again. Uninstalling keeps the library and ratings.
-- The app goes online only when you edit with a cloud model, when you download the speech model, and when Windows downloads TensorRT for RTX the first time. Running from source also downloads the runtime assets once. The lens database and the face models are bundled; identifying lenses and culling need no network.
+- The app goes online only when you edit with a cloud model, when you download the speech model or AI models it lacks, when Windows downloads TensorRT for RTX the first time, and, from 2.1.1, to check for a new version when it starts: one request for `lumen-update.json` on the latest GitHub release, carrying nothing but the program version; switch it off with **Help → Check for updates at start-up**. Running from source also downloads the runtime assets once. The lens database and the face models are bundled; identifying lenses and culling need no network.
 - Watermark borders show built-in logos for 19 camera and lens brands (the logos are trademarks of their owners; sources in `assets/logos/README.txt`). Other brands, such as Viltrox, Voigtländer, Samyang or 7Artisans, are shown as text in an ordinary font.
 
 ## Limits
@@ -437,11 +473,11 @@ The first run creates `.venv-linux`, installs `requirements.txt`, and — when `
 .\.venv\Scripts\python.exe -m pytest tests -q
 ```
 
-- **Tests:** for 2.1.0, 577 regression tests pass on Windows with 12 skipped (macOS-only and similar), 571 on macOS with 18 skipped, and 563 on Linux with 31 skipped (Windows/macOS-only paths and tests that need a local sample folder; the Linux count includes the port's five CUDA/platform tests). Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
+- **Tests:** for 2.1.1, 616 regression tests pass on Windows with 12 skipped (macOS-only and similar). 2.1.0 passed 571 on macOS with 18 skipped; the Linux port's contributor reports 563 passed and 31 skipped on Linux (2.1.0 plus the port). Tests run with the Simplified Chinese interface. Hardware validation is recorded in [TEST_REPORT.md](TEST_REPORT.md).
 - **Translations:** interface texts are written in Simplified Chinese in the code and looked up through `tr()` in `lumen/locales/<language>.json`; `python tools/i18n_catalog.py` reports missing entries and placeholder mismatches. Add translations for every language when you add interface text.
 - **Windows release build:** `build-release.cmd` runs the tests and the DirectML check, then builds the portable ZIP and the Inno Setup installer.
 - **macOS release build:** `./build-macos.command` runs the tests and the Metal / Core ML check, then PyInstaller, ad-hoc signing, smoke tests and the DMG. Output goes to `.publish/v<version>/macos/`.
-- **Linux development and release build:** `./run-source.sh` for the editor; `.venv-linux/bin/python -m pip install -r requirements-linux-dev.txt` then `.venv-linux/bin/python -m pytest tests -q`. `tools/build_linux.sh --sample photo.DNG` runs the tests, the source smoke test, PyInstaller and the frozen smoke test, and writes `LumenRAW-<version>-Linux-x86_64.tar.gz` to `.publish/v<version>/linux/`. The portable folder also contains `LumenRAW.desktop`, `lumen.png` and `install-desktop.sh` for a per-user menu entry.
+- **Linux development and release build:** `./run-source.sh` for the editor; `.venv-linux/bin/python -m pip install -r requirements-linux-dev.txt` then `.venv-linux/bin/python -m pytest tests -q`. `tools/build_linux.sh --sample photo.DNG` runs the tests, the source smoke test, PyInstaller and the frozen smoke test, and writes `LumenRAW-<version>-Linux-x86_64.tar.gz` to `.publish/v<version>/linux/`; the AI models go into `models` next to the program, as on Windows. The portable folder also contains `LumenRAW.desktop`, `lumen.png` and `install-desktop.sh` for a per-user menu entry.
 - **Self-checks with a real photo:**
   - `python main.py --smoke-test <photo> <output dir>`: interface, editing, masks, AI preview, every AI model loading, the speech model when it is installed, one natural-language edit, lens corrections, the language catalogs, the library and culling, and video encoding.
   - `--workflow-test`: multi-brand import and AI copies.

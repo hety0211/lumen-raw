@@ -26,6 +26,7 @@ from .nl_panel import NaturalLanguageMixin
 from .lens_panel import LensMixin
 from .rating import RatingMixin
 from .agent_dialog import AgentMixin
+from .update_dialog import UpdateMixin
 from . import geometry, develop, watermark
 from . import performance
 from .exposure_curve import ExposureCurve
@@ -139,7 +140,7 @@ def heading(text):
 from .enhance_dialog import ExportDialog
 
 
-class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixin, LensMixin, RatingMixin, LibraryModeMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
+class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, NaturalLanguageMixin, LensMixin, RatingMixin, LibraryModeMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
     export_progress = Signal(int, str)
 
     def __init__(self):
@@ -200,6 +201,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.shortcuts()
         # 1.6.0: local control channel for lumen-cli and MCP agents.
         self.init_agents()
+        # 2.1.1: AI models kept apart from the program, and updates from inside the editor.
+        self.init_updates()
         self.refresh()
         if self.library_db.count():
             self.set_mode('library')
@@ -680,6 +683,11 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, NaturalLanguageMixi
         self.generation += 1
         self.statusBar().showMessage(tr('正在解码原片…'))
         def loaded(result):
+            nonlocal edits, snapshots
+            if document is not None and not explicit_project:
+                # 2.1.1: the document as it is now: a removal may have reached it during the decode.
+                edits = copy.deepcopy(document['edits'])
+                snapshots = copy.deepcopy(document['snapshots'])
             self.source, self.info = result
             self.source_path = str(Path(path).resolve())
             if not explicit_project and (not document or not document['initialized']):
@@ -1358,6 +1366,15 @@ def main():
     if len(sys.argv) > 1 and Path(sys.argv[1]).is_file():
         QTimer.singleShot(100, lambda: window.open_path(sys.argv[1]))
     code = app.exec()
+    if getattr(window, 'update_installer', None):
+        # 2.1.1: the update installer waits for this process to exit, then opens the new version.
+        from . import updates
+        try:
+            updates.launch(window.update_installer)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('could not start the update installer')
+        return code
     if getattr(window, 'restart_requested', False):
         # 1.5.1: the language menu restarts the editor in the chosen language.
         from PySide6.QtCore import QProcess

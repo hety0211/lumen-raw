@@ -15,7 +15,7 @@ from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QPainterPath,
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHBoxLayout, QLineEdit, QMenu, QMessageBox,
                                QStyledItemDelegate, QToolButton, QWidget)
 
-from . import catalog, host, i18n, theme
+from . import catalog, host, i18n, library_db, theme
 from .i18n import tr, N_
 
 log = logging.getLogger(__name__)
@@ -246,10 +246,14 @@ class RatingMixin:
         library.addAction(tr('导入文件夹…') + '\t' + host.keys('Ctrl+Shift+I'), self.import_folder_dialog)
         library.addAction(tr('新建智能相册…'), self.new_smart_album)
         library.addAction(tr('选片模式') + '\tC', self.start_culling)
-        self.analysis_action = library.addAction(tr('后台分析清晰度与闭眼'))
-        self.analysis_action.setCheckable(True)
-        self.analysis_action.setChecked(self.library_worker.analysis_enabled)
-        self.analysis_action.toggled.connect(self.toggle_analysis)
+        # 2.1.1: sharpness and closed eyes are analysed in the background independently.
+        self.analysis_actions = {}
+        for part, title in ((library_db.SHARPNESS, tr('后台分析清晰度')), (library_db.EYES, tr('后台分析闭眼'))):
+            action = library.addAction(title)
+            action.setCheckable(True)
+            action.setChecked(part in self.library_worker.parts)
+            action.toggled.connect(lambda on, p=part: self.toggle_analysis(p, on))
+            self.analysis_actions[part] = action
         self.build_cache_menu(library)
         library.addSeparator()
         self.add_rating_actions(library)
@@ -265,11 +269,17 @@ class RatingMixin:
         library.addAction(tr('清除筛选'), lambda: (self.film_quick.setCurrentIndex(0), self.film_search.clear()))
         return library
 
-    def toggle_analysis(self, on):
-        i18n.save_setting('library_analysis', '1' if on else '0')
-        self.library_worker.analysis_enabled = on
+    def toggle_analysis(self, part, on):
+        from .library_view import SETTING_PARTS
+        i18n.save_setting(SETTING_PARTS[part], '1' if on else '0')
         if on:
+            self.library_worker.parts.add(part)
+            # Photos analysed without this part (or not at all) are queued again.
+            self.want_library_work(getattr(self.library_model, 'rows', []))
             self.library_worker.kick()
+        else:
+            self.library_worker.parts.discard(part)
+        self.update_library_info()
 
     def toggle_xmp_sync(self, on):
         i18n.save_setting(catalog.XMP_SETTING, '1' if on else '0')

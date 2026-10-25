@@ -70,3 +70,6 @@ cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name='lumen-cli',
           debug=False, bootloader_ignore_signals=False, strip=False, upx=False,
           console=True)
 coll = COLLECT(exe, cli, a.binaries, a.datas, strip=False, upx=False, name='LumenRAW')
+# 2.1.1: as on Windows, the AI models sit beside the program in models/, apart from _internal
+# (lumen/ai_models.py); asset_datas only carries their manifest.
+bundle.place_models(root, Path(DISTPATH) / 'LumenRAW')
