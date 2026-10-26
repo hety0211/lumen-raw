@@ -1,8 +1,14 @@
-"""Software update and AI model download windows (2.1.1); the logic is in ``updates`` and ``ai_models``."""
+"""Software update and AI model download windows (2.1.1); the logic is in ``updates`` and ``ai_models``.
+
+2.1.1: when a check or a download fails, the windows say where to download by hand (the newest
+release, whose full installer carries every AI model) with links that open the page or folder.
+"""
 from __future__ import annotations
 
+import html
 import math
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import QObject, QPointF, QRectF, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QPainter, QPainterPath, QPen, QPolygonF
@@ -37,6 +43,48 @@ def _run(relay, work, finished):
 
 def megabytes(count):
     return max(1, round(count / 1e6)) if count else 0
+
+
+def page_link(url):
+    """A web page as a link that shows its address, so it can also be copied into a browser."""
+    return url.split('://', 1)[-1], url
+
+
+def folder_link(folder, label):
+    return label, QUrl.fromLocalFile(str(folder)).toString()
+
+
+def help_html(*lines):
+    """Rich text for a QLabel: each line is ``(text, [(label, url), …])``; the links go on a line
+    of their own, so an address is not broken in the middle."""
+    rows = []
+    for text, links in lines:
+        anchors = ' · '.join(f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>' for label, url in links)
+        rows.append(html.escape(text) + ('<br>' + anchors if anchors else ''))
+    return ''.join(f'<p style="margin: 0 0 6px 0">{row}</p>' for row in rows) if len(rows) > 1 else rows[0]
+
+
+def open_link(url):
+    """Opens a web page, or a local folder (made first when it is not there yet)."""
+    link = QUrl(url)
+    if link.isLocalFile():
+        try:
+            Path(link.toLocalFile()).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+    QDesktopServices.openUrl(link)
+
+
+def help_label():
+    """A small label for ``help_html`` whose links open with ``open_link``; hidden until used."""
+    label = QLabel()
+    label.setObjectName('subtle')
+    label.setWordWrap(True)
+    label.setTextFormat(Qt.TextFormat.RichText)
+    label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+    label.linkActivated.connect(open_link)
+    label.hide()
+    return label
 
 
 class RefreshIcon(QWidget):
@@ -121,6 +169,15 @@ class _Card(QDialog):
         button.setVisible(visible)
         button.setEnabled(True)
 
+    def add_help(self):
+        """2.1.1: the manual-download links, below the status line."""
+        self.help = help_label()
+        self.root.addWidget(self.help)
+
+    def show_help(self, *lines):
+        self.help.setText(help_html(*lines))
+        self.help.show()
+
 
 class UpdateDialog(_Card):
     """A newer version: current → latest, what changed, then download and install (the layout
@@ -177,8 +234,10 @@ class UpdateDialog(_Card):
         self.status = QLabel()
         self.status.setObjectName('subtle')
         self.status.setWordWrap(True)
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.hide()
         self.root.addWidget(self.status)
+        self.add_help()
         self.buttons()
         self.show_offer()
 
@@ -212,6 +271,7 @@ class UpdateDialog(_Card):
         self.progress.show()
         self.status.setText(tr('正在下载更新…'))
         self.status.show()
+        self.help.hide()
         self.primary.hide()
         self.rebind(self.secondary, tr('取消'), cancel.set)
         shown = [-1]
@@ -243,6 +303,8 @@ class UpdateDialog(_Card):
         if isinstance(result, BaseException):
             self.progress.hide()
             self.status.setText(tr('更新下载失败：{error}', error=result))
+            self.show_help((tr('也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：'),
+                            [page_link(self.update_info.page)]))
             self.rebind(self.primary, tr('重试'), self.start)
             self.rebind(self.secondary, tr('关闭'), self.reject)
             return
@@ -283,7 +345,9 @@ class ModelsDialog(_Card):
         self.status = QLabel()
         self.status.setObjectName('subtle')
         self.status.setWordWrap(True)
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.root.addWidget(self.status)
+        self.add_help()
         self.buttons()
         self.show_state()
 
@@ -306,6 +370,7 @@ class ModelsDialog(_Card):
         self.cancel = cancel
         self.progress.setValue(0)
         self.progress.show()
+        self.help.hide()
         self.primary.hide()
         self.rebind(self.secondary, tr('取消'), cancel.set)
         shown = [-1]
@@ -338,6 +403,10 @@ class ModelsDialog(_Card):
         if isinstance(result, BaseException):
             self.show_state()
             self.status.setText(str(result))
+            self.show_help((tr('也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：'),
+                            [page_link(updates.release_page())]),
+                           (tr('或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：'),
+                            [page_link(ai_models.PAGE), folder_link(ai_models.download_folder(), tr('打开模型文件夹'))]))
             self.rebind(self.primary, tr('重试'), self.start)
             return
         self.records = ai_models.missing()
@@ -362,12 +431,16 @@ class CheckResult(_Card):
         text = QLabel(tr('LUMEN RAW {version} 已是最新版本。', version=__version__) if latest
                       else tr('无法检查更新：{error}', error=error))
         text.setWordWrap(True)
+        text.setTextFormat(Qt.TextFormat.PlainText)
         self.root.addWidget(text)
-        hint = QLabel(tr('有新版本时，启动 LUMEN RAW 后会自动提示（可在「帮助 → 启动时检查更新」中关闭）。') if latest
-                      else tr('请检查网络连接后重试；也可以在发布页面查看新版本。'))
-        hint.setWordWrap(True)
-        hint.setObjectName('subtle')
-        self.root.addWidget(hint)
+        if latest:
+            hint = QLabel(tr('有新版本时，启动 LUMEN RAW 后会自动提示（可在「帮助 → 启动时检查更新」中关闭）。'))
+            hint.setWordWrap(True)
+            hint.setObjectName('subtle')
+            self.root.addWidget(hint)
+        else:
+            self.add_help()
+            self.show_help((tr('请检查网络连接后重试，或在发布页面手动下载最新版本：'), [page_link(updates.release_page())]))
         self.buttons()
         if latest:
             self.rebind(self.primary, tr('关闭'), self.accept)

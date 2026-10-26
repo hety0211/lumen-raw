@@ -1392,7 +1392,6 @@
  "已是最新版本": "Up to date",
  "检查失败": "Check failed",
  "有新版本时，启动 LUMEN RAW 后会自动提示（可在「帮助 → 启动时检查更新」中关闭）。": "When a new version is out, LUMEN RAW tells you when it starts (turn this off in Help → Check for updates at start-up).",
- "请检查网络连接后重试；也可以在发布页面查看新版本。": "Check the network connection and try again, or look for a new version on the release page.",
  "没有可用的 {gpu_label}，已使用 CPU。": "No {gpu_label} available; using the CPU.",
  "自动加速（CUDA / ONNX Runtime）": "Automatic acceleration (CUDA / ONNX Runtime)",
  "自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。": "Automatic mode tries NVIDIA CUDA and falls back to the CPU.",
@@ -1403,5 +1402,19 @@
  "CUDA 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）": "The CUDA self-test does not match the CPU reference (maximum error {error:.2g})",
  "缺少 CuPy（cupy-cuda13x）": "CuPy (cupy-cuda13x) is missing",
  "CUDA 内核编译失败：{error}": "CUDA kernel compilation failed: {error}",
- "CUDA · {name} · 逐像素显影": "CUDA · {name} · per-pixel development"
+ "CUDA · {name} · 逐像素显影": "CUDA · {name} · per-pixel development",
+ "服务器返回 HTTP {code}": "the server answered HTTP {code}",
+ "无法解析服务器地址（DNS）": "the server name could not be resolved (DNS)",
+ "安全连接（TLS）失败": "the secure connection (TLS) failed",
+ "连接超时": "the connection timed out",
+ "连接被拒绝（请检查代理设置）": "the connection was refused (check the proxy settings)",
+ "连接被中断": "the connection was interrupted",
+ "服务器返回的更新信息无法读取": "The update information from the server could not be read",
+ "也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：": "You can also download the full installer (it includes every AI model) from the release page and install it over this version:",
+ "也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：": "You can also download by hand: the full installer of the newest version includes every AI model; install it over this version:",
+ "或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：": "Or download only the missing model files (keep their names), put them into the model folder and click “Retry”:",
+ "打开模型文件夹": "Open model folder",
+ "请检查网络连接后重试，或在发布页面手动下载最新版本：": "Check the network connection and try again, or download the newest version by hand from the release page:",
+ "打开语音模型文件夹": "Open speech model folder",
+ "也可以在发布页面手动下载 {names}，放进语音模型文件夹：": "You can also download {names} by hand from the release page and put them into the speech model folder:"
 }

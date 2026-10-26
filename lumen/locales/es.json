@@ -1392,7 +1392,6 @@
  "已是最新版本": "Actualizado",
  "检查失败": "Error al comprobar",
  "有新版本时，启动 LUMEN RAW 后会自动提示（可在「帮助 → 启动时检查更新」中关闭）。": "Cuando haya una versión nueva, LUMEN RAW le avisará al iniciar (desactívelo en Ayuda → Buscar actualizaciones al iniciar).",
- "请检查网络连接后重试；也可以在发布页面查看新版本。": "Compruebe la conexión de red y vuelva a intentarlo, o busque la versión nueva en la página de versiones.",
  "没有可用的 {gpu_label}，已使用 CPU。": "No hay {gpu_label} disponible; se usará la CPU.",
  "自动加速（CUDA / ONNX Runtime）": "Aceleración automática (CUDA / ONNX Runtime)",
  "自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。": "El modo automático intenta usar NVIDIA CUDA y recurre a la CPU si falla.",
@@ -1403,5 +1402,19 @@
  "CUDA 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）": "La autoprueba de CUDA no coincide con la referencia de la CPU (error máximo {error:.2g})",
  "缺少 CuPy（cupy-cuda13x）": "Falta CuPy (cupy-cuda13x)",
  "CUDA 内核编译失败：{error}": "Error al compilar el núcleo CUDA: {error}",
- "CUDA · {name} · 逐像素显影": "CUDA · {name} · revelado por píxel"
+ "CUDA · {name} · 逐像素显影": "CUDA · {name} · revelado por píxel",
+ "服务器返回 HTTP {code}": "el servidor respondió HTTP {code}",
+ "无法解析服务器地址（DNS）": "no se pudo resolver el nombre del servidor (DNS)",
+ "安全连接（TLS）失败": "falló la conexión segura (TLS)",
+ "连接超时": "se agotó el tiempo de conexión",
+ "连接被拒绝（请检查代理设置）": "se rechazó la conexión (revise la configuración del proxy)",
+ "连接被中断": "se interrumpió la conexión",
+ "服务器返回的更新信息无法读取": "No se pudo leer la información de actualización del servidor",
+ "也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：": "También puede descargar a mano el instalador completo (incluye todos los modelos de IA) desde la página de la versión e instalarlo encima:",
+ "也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：": "También puede descargarlo a mano: el instalador completo de la versión más reciente incluye todos los modelos de IA; instálelo encima:",
+ "或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：": "O descargue solo los archivos de modelo que faltan (sin cambiarles el nombre), póngalos en la carpeta de modelos y haga clic en «Reintentar»:",
+ "打开模型文件夹": "Abrir la carpeta de modelos",
+ "请检查网络连接后重试，或在发布页面手动下载最新版本：": "Compruebe la conexión de red y vuelva a intentarlo, o descargue a mano la versión más reciente desde la página de la versión:",
+ "打开语音模型文件夹": "Abrir la carpeta del modelo de voz",
+ "也可以在发布页面手动下载 {names}，放进语音模型文件夹：": "También puede descargar a mano {names} desde la página de la versión y ponerlos en la carpeta del modelo de voz:"
 }

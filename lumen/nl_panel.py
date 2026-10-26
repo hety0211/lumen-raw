@@ -11,6 +11,7 @@ import json
 import sys
 import threading
 import time
+from pathlib import Path
 import numpy as np
 from PySide6.QtCore import Qt, QObject, QTimer, Signal
 from PySide6.QtGui import QFont
@@ -443,6 +444,9 @@ class NaturalLanguageMixin:
         self.nl_status.setObjectName('subtle')
         self.nl_status.setWordWrap(True)
         v.addWidget(self.nl_status)
+        from .update_dialog import help_label
+        self.nl_help = help_label()  # 2.1.1: where to download the speech model by hand
+        v.addWidget(self.nl_help)
         self.nl_explanation = QLabel('')
         self.nl_explanation.setWordWrap(True)
         self.nl_explanation.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -757,6 +761,7 @@ class NaturalLanguageMixin:
         self.nl_meter.setValue(0)
         self.nl_meter.show()
         self.nl_status.setText(tr('正在下载语音识别模型…'))
+        self.nl_help.hide()
         shown = [-1]
 
         def progress(done, total):
@@ -777,11 +782,21 @@ class NaturalLanguageMixin:
                 self.nl_status.setText(tr('已取消下载，下次会从中断处继续。'))
             elif isinstance(result, Exception):
                 self.nl_status.setText(str(result))
+                self.nl_show_speech_help()
             else:
                 self.nl_status.setText(tr('语音识别模型已就绪，点“语音”开始说话。'))
             self.refresh_natural_language()
         run_async(self.nl_relay, lambda: speech.download(progress, cancel.is_set), finished, finished)
         self.refresh_natural_language()
+
+    def nl_show_speech_help(self):
+        """2.1.1: the files can also be downloaded in a browser and put into the model folder."""
+        from .update_dialog import folder_link, help_html, page_link
+        links = [page_link(speech.release_page())] if speech.release_page() else []
+        links.append(folder_link(speech.user_folder(), tr('打开语音模型文件夹')))
+        names = tr('、').join(Path(record['path']).name for record in speech.manifest()['files'])
+        self.nl_help.setText(help_html((tr('也可以在发布页面手动下载 {names}，放进语音模型文件夹：', names=names), links)))
+        self.nl_help.show()
 
     def nl_download_progress(self, value):
         done, total = value

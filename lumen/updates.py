@@ -14,6 +14,7 @@ macOS app open the release page instead.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -24,10 +25,12 @@ import urllib.request
 from pathlib import Path
 
 from . import __version__, ai_models, downloads, host
-from .i18n import language, setting, save_setting
+from .i18n import language, setting, save_setting, tr
 
 FEED = 'https://github.com/hety0211/lumen-raw/releases/latest/download/lumen-update.json'
 RELEASES = 'https://github.com/hety0211/lumen-raw/releases'
+#: 2.1.1: the newest Windows release, offered for downloading by hand when a check or download fails.
+LATEST = RELEASES + '/latest'
 #: Files are only downloaded from LUMEN RAW's own releases (a test feed may serve its own).
 TRUSTED = ('https://github.com/hety0211/lumen-raw/releases/download/',)
 #: settings.ini key: check when the editor starts ('1', the default) or only from the Help menu.
@@ -67,6 +70,12 @@ def newer(version, than=__version__):
 
 def platform_key():
     return 'macos' if host.MACOS else 'windows'
+
+
+def release_page():
+    """Where to download the newest version by hand: the latest release (Windows; the macOS
+    releases are not marked latest, so macOS gets the list of releases)."""
+    return RELEASES if host.MACOS else LATEST
 
 
 def mode():
@@ -147,8 +156,10 @@ def fetch_feed(timeout=15):
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read(1 << 20)
         data = json.loads(body.decode('utf-8'))
-    except (OSError, ValueError) as exc:
-        raise UpdateError(str(exc)) from exc
+    except ValueError as exc:
+        raise UpdateError(tr('服务器返回的更新信息无法读取')) from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise UpdateError(f'{downloads.host(url)}: {downloads.describe(exc)}') from exc
     if not isinstance(data, dict) or not isinstance(data.get('format'), int) or data['format'] > FEED_FORMAT:
         raise UpdateError('unsupported update feed')
     return data
@@ -189,8 +200,13 @@ def download(update, progress=lambda done, total: None, cancelled=lambda: False)
     done = 0
     if not update.installer_ready():
         size = update.package['bytes']
-        downloads.fetch_verified(update.package['url'], installer, size, update.package['sha256'],
-                                 lambda have: progress(have, total), cancelled)
+        try:
+            downloads.fetch_verified(update.package['url'], installer, size, update.package['sha256'],
+                                     lambda have: progress(have, total), cancelled)
+        except downloads.Cancelled:
+            raise
+        except Exception as exc:
+            raise UpdateError(f'{downloads.host(update.package["url"])}: {downloads.describe(exc)}') from exc
         done = size
     elif downloads.sha256(installer) != update.package['sha256']:
         installer.unlink()

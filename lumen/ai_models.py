@@ -29,6 +29,8 @@ ASSETS = Path(__file__).resolve().parents[1] / 'assets'
 SOURCE = ASSETS / 'models'
 MANIFEST = ASSETS / 'ai-models.json'
 RELEASE = 'https://github.com/hety0211/lumen-raw/releases/download/ai-models/'
+#: 2.1.1: the release page of the model files, for downloading them by hand.
+PAGE = 'https://github.com/hety0211/lumen-raw/releases/tag/ai-models'
 #: The update installer moves the models of a 2.1.0 installation here; ``prepare`` adopts them.
 IMPORT = 'import'
 NAME = re.compile(r'^.+\.[0-9a-f]{12}\.onnx$')
@@ -176,7 +178,8 @@ def download(records=None, progress=lambda done, total: None, cancelled=lambda: 
             except downloads.Cancelled:
                 raise
             except Exception as exc:
-                raise OSError(tr('AI 模型下载失败：') + f'{record["file"]}: {exc}') from exc
+                raise OSError(tr('AI 模型下载失败：') + f'{downloads.host(source)}: {downloads.describe(exc)}'
+                              f' ({record["file"]})') from exc
         done += record['bytes']
         progress(done, total)
     return folder

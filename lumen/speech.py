@@ -13,6 +13,8 @@ used.  A source checkout may keep the model in ``assets/models/sensevoice`` (too
 2.0.0: the manifest's ``releases`` (LUMEN RAW's own GitHub release of the same files) are tried
 too, so the download does not depend on the upstream repository staying online.
 2.1.1: the resumable download itself lives in ``downloads`` (shared with the AI models and updates).
+2.1.1: when every source fails, the panel links ``release_page`` and the model folder, so the two
+files can be downloaded in a browser instead.
 """
 from __future__ import annotations
 import json
@@ -67,6 +69,12 @@ def download_megabytes():
     return round(sum(record['bytes'] for record in manifest()['files']) / 1e6)
 
 
+def release_page():
+    """2.1.1: LUMEN RAW's own release of the model files, for downloading them by hand."""
+    releases = manifest().get('releases') or []
+    return releases[0].rstrip('/').replace('/releases/download/', '/releases/tag/') if releases else None
+
+
 def sources(url, mirrors, releases=()):
     """The manifest URL, its mirrors and the release copies (2.0.0, by file name).  Simplified
     Chinese interfaces try the mirror first and the upstream last."""
@@ -114,7 +122,7 @@ def download(progress=lambda done, total: None, cancelled=lambda: False):
             except Cancelled:
                 raise
             except Exception as exc:
-                errors.append(f'{url.split("/")[2]}: {exc}')
+                errors.append(f'{downloads.host(url)}: {downloads.describe(exc)}')
         else:
             raise OSError(tr('语音识别模型下载失败：') + '；'.join(errors))
         os.replace(part, target)

@@ -1392,7 +1392,6 @@
  "已是最新版本": "Aktuell",
  "检查失败": "Prüfung fehlgeschlagen",
  "有新版本时，启动 LUMEN RAW 后会自动提示（可在「帮助 → 启动时检查更新」中关闭）。": "Gibt es eine neue Version, meldet LUMEN RAW sie beim Start (abschalten unter Hilfe → Beim Start nach Updates suchen).",
- "请检查网络连接后重试；也可以在发布页面查看新版本。": "Prüfen Sie die Netzwerkverbindung und versuchen Sie es erneut, oder sehen Sie auf der Release-Seite nach.",
  "没有可用的 {gpu_label}，已使用 CPU。": "Kein {gpu_label} verfügbar; die CPU wird verwendet.",
  "自动加速（CUDA / ONNX Runtime）": "Automatische Beschleunigung (CUDA / ONNX Runtime)",
  "自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。": "Der automatische Modus versucht NVIDIA CUDA und verwendet bei einem Fehler die CPU.",
@@ -1403,5 +1402,19 @@
  "CUDA 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）": "Der CUDA-Selbsttest weicht von der CPU-Referenz ab (maximaler Fehler {error:.2g})",
  "缺少 CuPy（cupy-cuda13x）": "CuPy (cupy-cuda13x) fehlt",
  "CUDA 内核编译失败：{error}": "CUDA-Kernel konnte nicht kompiliert werden: {error}",
- "CUDA · {name} · 逐像素显影": "CUDA · {name} · pixelweise Entwicklung"
+ "CUDA · {name} · 逐像素显影": "CUDA · {name} · pixelweise Entwicklung",
+ "服务器返回 HTTP {code}": "der Server antwortete mit HTTP {code}",
+ "无法解析服务器地址（DNS）": "der Servername konnte nicht aufgelöst werden (DNS)",
+ "安全连接（TLS）失败": "die sichere Verbindung (TLS) ist fehlgeschlagen",
+ "连接超时": "Zeitüberschreitung der Verbindung",
+ "连接被拒绝（请检查代理设置）": "die Verbindung wurde abgelehnt (Proxy-Einstellungen prüfen)",
+ "连接被中断": "die Verbindung wurde unterbrochen",
+ "服务器返回的更新信息无法读取": "Die Update-Informationen des Servers konnten nicht gelesen werden",
+ "也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：": "Sie können das vollständige Installationsprogramm (mit allen KI-Modellen) auch selbst von der Release-Seite laden und über diese Version installieren:",
+ "也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：": "Sie können auch selbst laden: Das vollständige Installationsprogramm der neuesten Version enthält alle KI-Modelle; installieren Sie es einfach über diese Version:",
+ "或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：": "Oder laden Sie nur die fehlenden Modelldateien (Namen nicht ändern), legen Sie sie in den Modellordner und klicken Sie auf „Erneut versuchen“:",
+ "打开模型文件夹": "Modellordner öffnen",
+ "请检查网络连接后重试，或在发布页面手动下载最新版本：": "Prüfen Sie die Netzwerkverbindung und versuchen Sie es erneut, oder laden Sie die neueste Version selbst von der Release-Seite:",
+ "打开语音模型文件夹": "Ordner des Sprachmodells öffnen",
+ "也可以在发布页面手动下载 {names}，放进语音模型文件夹：": "Sie können {names} auch selbst von der Release-Seite laden und in den Ordner des Sprachmodells legen:"
 }

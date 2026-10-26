@@ -1392,7 +1392,6 @@
  "已是最新版本": "À jour",
  "检查失败": "Échec de la vérification",
  "有新版本时，启动 LUMEN RAW 后会自动提示（可在「帮助 → 启动时检查更新」中关闭）。": "Quand une nouvelle version sort, LUMEN RAW vous le signale au démarrage (désactivable dans Aide → Rechercher des mises à jour au démarrage).",
- "请检查网络连接后重试；也可以在发布页面查看新版本。": "Vérifiez la connexion réseau et réessayez, ou consultez la page des versions.",
  "没有可用的 {gpu_label}，已使用 CPU。": "Aucun {gpu_label} disponible ; utilisation du processeur.",
  "自动加速（CUDA / ONNX Runtime）": "Accélération automatique (CUDA / ONNX Runtime)",
  "自动模式会尝试 NVIDIA CUDA，失败则使用 CPU。": "Le mode automatique essaie NVIDIA CUDA et revient au processeur en cas d’échec.",
@@ -1403,5 +1402,19 @@
  "CUDA 自检结果与 CPU 参考不一致（最大误差 {error:.2g}）": "L’autotest CUDA ne correspond pas à la référence CPU (erreur maximale {error:.2g})",
  "缺少 CuPy（cupy-cuda13x）": "CuPy (cupy-cuda13x) est absent",
  "CUDA 内核编译失败：{error}": "La compilation du noyau CUDA a échoué : {error}",
- "CUDA · {name} · 逐像素显影": "CUDA · {name} · développement par pixel"
+ "CUDA · {name} · 逐像素显影": "CUDA · {name} · développement par pixel",
+ "服务器返回 HTTP {code}": "le serveur a répondu HTTP {code}",
+ "无法解析服务器地址（DNS）": "le nom du serveur n’a pas pu être résolu (DNS)",
+ "安全连接（TLS）失败": "la connexion sécurisée (TLS) a échoué",
+ "连接超时": "délai de connexion dépassé",
+ "连接被拒绝（请检查代理设置）": "connexion refusée (vérifiez les paramètres du proxy)",
+ "连接被中断": "la connexion a été interrompue",
+ "服务器返回的更新信息无法读取": "Les informations de mise à jour du serveur n’ont pas pu être lues",
+ "也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：": "Vous pouvez aussi télécharger vous-même le programme d’installation complet (avec tous les modèles d’IA) depuis la page de la version et l’installer par-dessus :",
+ "也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：": "Vous pouvez aussi télécharger vous-même : le programme d’installation complet de la dernière version contient tous les modèles d’IA ; installez-le par-dessus :",
+ "或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：": "Ou téléchargez seulement les fichiers de modèle manquants (sans les renommer), placez-les dans le dossier des modèles puis cliquez sur « Réessayer » :",
+ "打开模型文件夹": "Ouvrir le dossier des modèles",
+ "请检查网络连接后重试，或在发布页面手动下载最新版本：": "Vérifiez la connexion réseau et réessayez, ou téléchargez vous-même la dernière version depuis la page de la version :",
+ "打开语音模型文件夹": "Ouvrir le dossier du modèle vocal",
+ "也可以在发布页面手动下载 {names}，放进语音模型文件夹：": "Vous pouvez aussi télécharger vous-même {names} depuis la page de la version et les placer dans le dossier du modèle vocal :"
 }
