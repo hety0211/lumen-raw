@@ -208,6 +208,12 @@ class UpdateDialog(_Card):
         self.size_label.setObjectName('subtle')
         self.size_label.setWordWrap(True)
         self.root.addWidget(self.size_label)
+        if update.source in {downloads.host(base) for base in downloads.mirrors()}:
+            # 2.1.2: GitHub could not be reached; the signed feed came from a mirror, the files will too.
+            mirror = QLabel(tr('GitHub 暂时无法连接，更新信息来自镜像 {host}（已验证签名），文件也会从镜像下载。', host=update.source))
+            mirror.setObjectName('subtle')
+            mirror.setWordWrap(True)
+            self.root.addWidget(mirror)
         heading = QLabel(tr('更新内容'))
         heading.setObjectName('cardHeading')
         self.root.addWidget(heading)
@@ -304,7 +310,7 @@ class UpdateDialog(_Card):
             self.progress.hide()
             self.status.setText(tr('更新下载失败：{error}', error=result))
             self.show_help((tr('也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：'),
-                            [page_link(self.update_info.page)]))
+                            [page_link(self.update_info.page), page_link(updates.MIRROR_PAGE)]))
             self.rebind(self.primary, tr('重试'), self.start)
             self.rebind(self.secondary, tr('关闭'), self.reject)
             return
@@ -404,7 +410,7 @@ class ModelsDialog(_Card):
             self.show_state()
             self.status.setText(str(result))
             self.show_help((tr('也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：'),
-                            [page_link(updates.release_page())]),
+                            [page_link(updates.release_page()), page_link(updates.MIRROR_PAGE)]),
                            (tr('或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：'),
                             [page_link(ai_models.PAGE), folder_link(ai_models.download_folder(), tr('打开模型文件夹'))]))
             self.rebind(self.primary, tr('重试'), self.start)
@@ -440,7 +446,8 @@ class CheckResult(_Card):
             self.root.addWidget(hint)
         else:
             self.add_help()
-            self.show_help((tr('请检查网络连接后重试，或在发布页面手动下载最新版本：'), [page_link(updates.release_page())]))
+            self.show_help((tr('请检查网络连接后重试，或在发布页面手动下载最新版本：'),
+                            [page_link(updates.release_page()), page_link(updates.MIRROR_PAGE)]))
         self.buttons()
         if latest:
             self.rebind(self.primary, tr('关闭'), self.accept)

@@ -7,22 +7,46 @@ the build bundled (``build/ai-models.json``) and the short notes ``.publish/vXYZ
 (``{"zh_CN": "…", "en": "…", …}``), and writes ``.publish/vXYZ/packages/lumen-update.json``.  It is
 published on the Windows release; the editor reads it through ``releases/latest/download/``.
 A macOS build adds its own ``macos`` entry when it is published.
+
+2.1.2: the feed is signed (Ed25519, ``lumen/signing.py``) into ``lumen-update.json.sig`` with the
+release key, ``~/.lumen-release/update-signing.key`` (``LUMEN_SIGNING_KEY`` overrides
+the path).  Editors accept a feed from the download mirrors only with this signature; without the
+key the feed is written unsigned with a warning, and ``publish_release.ps1`` refuses to publish it.
 """
 from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 import time
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
-from lumen import __version__  # noqa: E402
+from lumen import __version__, signing, updates  # noqa: E402
 
 REPOSITORY = 'https://github.com/hety0211/lumen-raw'
 PUBLISH = PROJECT / '.publish' / ('v' + __version__.replace('.', ''))
 PACKAGES = PUBLISH / 'packages'
+KEY = Path(os.environ.get('LUMEN_SIGNING_KEY') or Path.home() / '.lumen-release' / 'update-signing.key')
+
+
+def sign(feed):
+    """Write ``<feed>.sig`` (hex Ed25519 signature of the feed's bytes); False without the key."""
+    signature = feed.with_name(feed.name + updates.SIGNATURE)
+    if not KEY.is_file():
+        signature.unlink(missing_ok=True)
+        print(f'warning: {KEY} is missing; the feed is NOT signed and the mirrors cannot serve it', file=sys.stderr)
+        return False
+    seed = bytes.fromhex(KEY.read_text(encoding='ascii').strip())
+    if signing.public_key(seed).hex() not in updates.FEED_KEYS:
+        raise SystemExit(f'{KEY} is not a key the editor knows (lumen/updates.py FEED_KEYS)')
+    body = feed.read_bytes()
+    value = signing.sign(seed, body)
+    assert updates.signed(body, value.hex().encode('ascii'))
+    signature.write_text(value.hex() + '\n', encoding='ascii')
+    return True
 
 
 def record(path, tag):
@@ -50,8 +74,9 @@ def main():
                 windows=dict(version=__version__, page=page, update=record(update, tag), setup=record(setup, tag),
                              models=models))
     output = PACKAGES / 'lumen-update.json'
-    output.write_text(json.dumps(feed, ensure_ascii=False, indent=1) + '\n', encoding='utf-8')
-    print(json.dumps(dict(feed=str(output), update_bytes=feed['windows']['update']['bytes'],
+    output.write_bytes((json.dumps(feed, ensure_ascii=False, indent=1) + '\n').encode('utf-8'))
+    signed = sign(output)
+    print(json.dumps(dict(feed=str(output), signed=signed, update_bytes=feed['windows']['update']['bytes'],
                           setup_bytes=feed['windows']['setup']['bytes'], models=len(models['models'])), indent=2))
 
 

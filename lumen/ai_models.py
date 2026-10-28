@@ -178,8 +178,7 @@ def download(records=None, progress=lambda done, total: None, cancelled=lambda: 
             except downloads.Cancelled:
                 raise
             except Exception as exc:
-                raise OSError(tr('AI 模型下载失败：') + f'{downloads.host(source)}: {downloads.describe(exc)}'
-                              f' ({record["file"]})') from exc
+                raise OSError(tr('AI 模型下载失败：') + f'{downloads.explain(source, exc)} ({record["file"]})') from exc
         done += record['bytes']
         progress(done, total)
     return folder

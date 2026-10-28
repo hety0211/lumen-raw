@@ -6,12 +6,18 @@ caller checks the finished file's SHA-256 (``sha256``) before it is used.  Stand
 2.1.1: a dropped or stalled connection (common for GitHub's release files on some networks) is
 resumed by ``fetch`` itself, again and again while bytes keep arriving, and ``describe`` turns
 the operating system's long messages into a short reason the windows can show.
+
+2.1.2: LUMEN RAW's release files (update installers, AI and speech models) are mirrored on the
+author's servers, copied from GitHub every hour.  A file GitHub does not deliver is fetched from
+Singapore, then from Hong Kong (``alternatives``); every caller checks the SHA-256 it got from the
+program itself or from the signed update feed (``signing``), so a mirror can never change a file.
 """
 from __future__ import annotations
 
 import errno
 import hashlib
 import http.client
+import os
 import socket
 import ssl
 import time
@@ -27,10 +33,71 @@ CHUNK = 1 << 20
 ATTEMPTS = 3
 #: Seconds to wait before the n-th retry in a row without progress.
 PAUSES = (1, 3)
+#: 2.1.2: GitHub's release files and their mirrors (same paths after the prefix), tried in this order.
+GITHUB = 'https://github.com/hety0211/lumen-raw/releases/'
+MIRRORS = ('https://103.195.190.106/lumen-raw/releases/',      # Singapore (an IP-address certificate)
+           'https://lumenraw.com/lumen-raw/releases/')         # Hong Kong (HK1)
+#: The mirror that answered while GitHub did not: tried first for the rest of the session.
+_preferred = None
 
 
 class Cancelled(Exception):
     pass
+
+
+class Failed(OSError):
+    """Every source of a file failed (2.1.2); ``reasons`` holds ``(host, reason)`` pairs."""
+
+    def __init__(self, reasons):
+        self.reasons = list(reasons)
+        super().__init__('；'.join(f'{host}: {reason}' for host, reason in self.reasons))
+
+
+def mirrors():
+    """Mirror bases; ``LUMEN_MIRRORS`` (comma separated, empty for none) replaces them."""
+    override = os.environ.get('LUMEN_MIRRORS')
+    if override is not None:
+        return tuple(base.strip().rstrip('/') + '/' for base in override.split(',') if base.strip())
+    return MIRRORS
+
+
+def alternatives(url):
+    """``url`` and its mirror copies in the order to try them: GitHub, Singapore, Hong Kong (a
+    mirror that answered earlier while GitHub did not comes first).  Other URLs have none."""
+    if not url.startswith(GITHUB):
+        return [url]
+    bases = [GITHUB, *mirrors()]
+    if _preferred in bases:
+        bases.remove(_preferred)
+        bases.insert(0, _preferred)
+    return [base + url[len(GITHUB):] for base in bases]
+
+
+def remember(url):
+    """Note the source that worked: a mirror is tried first from now on, GitHub resets that."""
+    global _preferred
+    for base in (GITHUB, *mirrors()):
+        if url.startswith(base):
+            _preferred = None if base == GITHUB else base
+            return
+
+
+def mirrored(url):
+    """Whether ``url`` is a mirror's copy of a GitHub release file."""
+    return any(url.startswith(base) for base in mirrors())
+
+
+def explain(url, exc):
+    """``host: reason`` of a failed download, or every host's reason when several were tried."""
+    return str(exc) if isinstance(exc, Failed) else f'{host(url)}: {describe(exc)}'
+
+
+def local(exc):
+    """A failure of this computer (folder not writable, disk full): another source cannot help."""
+    if isinstance(exc, urllib.error.URLError):
+        return False
+    return isinstance(exc, (PermissionError, FileNotFoundError, IsADirectoryError, NotADirectoryError)) \
+        or getattr(exc, 'errno', None) == errno.ENOSPC
 
 
 def sha256(path, chunk=None):
@@ -141,11 +208,31 @@ def fetch(url, part, size, progress, cancelled, chunk=None, timeout=30, attempts
 
 
 def fetch_verified(url, target, size, digest, progress=lambda have: None, cancelled=lambda: False):
-    """``fetch`` into ``target.part``, check size and SHA-256, then move it onto ``target``."""
+    """``fetch`` into ``target.part``, check size and SHA-256, then move it onto ``target``.
+
+    2.1.2: a GitHub release file that cannot be fetched is tried from the mirrors
+    (``alternatives``); the partial file carries over (the copies are identical), and a source
+    whose file fails the check is followed by the next one.  ``Failed`` lists every reason."""
     part = target.with_name(target.name + '.part')
-    fetch(url, part, size, progress, cancelled)
-    if sha256(part) != digest:
-        part.unlink()
-        raise OSError(tr('校验失败'))
-    part.replace(target)
-    return target
+    sources = alternatives(url)
+    reasons, last = [], None
+    for index, source in enumerate(sources):
+        try:
+            # With other sources left, a source that brings nothing is given up on sooner.
+            fetch(source, part, size, progress, cancelled, attempts=2 if index < len(sources) - 1 else None)
+            if sha256(part) != digest:
+                part.unlink()
+                raise OSError(tr('校验失败'))
+            part.replace(target)
+            remember(source)
+            return target
+        except Cancelled:
+            raise
+        except Exception as exc:
+            if local(exc):
+                raise
+            reasons.append((host(source), describe(exc)))
+            last = exc
+    if len(reasons) == 1:
+        raise last
+    raise Failed(reasons)

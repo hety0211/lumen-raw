@@ -11,6 +11,12 @@ only the models that changed (``ai_models``), checks every file's size and SHA-2
 window has closed runs the installer silently; the installer waits for this process to exit
 (``/WAITPID``) and opens the new version (``/RELAUNCH=1``).  Portable copies, source runs and the
 macOS app open the release page instead.
+
+2.1.2: when GitHub cannot be reached the feed is read from LUMEN RAW's mirrors, Singapore first,
+then Hong Kong (``downloads.alternatives``), and the files are downloaded from the mirror that
+answered.  A feed read from a mirror counts only with a valid Ed25519 signature
+(``lumen-update.json.sig``, ``signing``) by a key in ``FEED_KEYS``; its SHA-256 sums then vouch
+for every file, wherever it comes from.
 """
 from __future__ import annotations
 
@@ -20,11 +26,12 @@ import os
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import __version__, ai_models, downloads, host
+from . import __version__, ai_models, downloads, host, signing
 from .i18n import language, setting, save_setting, tr
 
 FEED = 'https://github.com/hety0211/lumen-raw/releases/latest/download/lumen-update.json'
@@ -36,6 +43,12 @@ TRUSTED = ('https://github.com/hety0211/lumen-raw/releases/download/',)
 #: settings.ini key: check when the editor starts ('1', the default) or only from the Help menu.
 SETTING = 'check_updates'
 FEED_FORMAT = 1
+#: 2.1.2: public keys of the release signing key (its private half stays on the publishing computer).
+FEED_KEYS = ('7093f7608ed06406192a688b698084c78f11aa309b68d74ea7caf857d7646c19',)
+#: The feed's detached signature: hex, next to the feed on the release.
+SIGNATURE = '.sig'
+#: The mirrors' download page (Hong Kong), for downloading by hand.
+MIRROR_PAGE = 'https://lumenraw.com/download/'
 
 
 class UpdateError(Exception):
@@ -116,6 +129,8 @@ class Update:
         self.version = str(entry.get('version') or data['version'])
         self.date = str(data.get('date', ''))
         self.page = str(entry.get('page') or data.get('page') or RELEASES)
+        #: 2.1.2: the server the feed came from (a mirror when GitHub could not be reached).
+        self.source = str(data.get('_source') or '')
         self.notes = localized(entry.get('notes') or data.get('notes'))
         self.package = entry.get('update')
         self.models = entry.get('models')
@@ -149,20 +164,51 @@ def updates_folder():
     return host.data_folder() / 'updates'
 
 
-def fetch_feed(timeout=15):
-    url = feed_url()
+def _get(url, timeout, limit=1 << 20):
     request = urllib.request.Request(url, headers={'User-Agent': f'LUMEN-RAW/{__version__}', 'Cache-Control': 'no-cache'})
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read(limit)
+
+
+def signed(body, signature):
+    """Whether ``signature`` (the hex text of ``lumen-update.json.sig``) signs ``body`` with a
+    key of ``FEED_KEYS``."""
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            body = response.read(1 << 20)
-        data = json.loads(body.decode('utf-8'))
-    except ValueError as exc:
-        raise UpdateError(tr('服务器返回的更新信息无法读取')) from exc
-    except (OSError, http.client.HTTPException) as exc:
-        raise UpdateError(f'{downloads.host(url)}: {downloads.describe(exc)}') from exc
-    if not isinstance(data, dict) or not isinstance(data.get('format'), int) or data['format'] > FEED_FORMAT:
-        raise UpdateError('unsupported update feed')
-    return data
+        raw = bytes.fromhex(signature.decode('ascii').strip())
+    except (UnicodeDecodeError, ValueError):
+        return False
+    return any(signing.verify(bytes.fromhex(key), body, raw) for key in FEED_KEYS)
+
+
+def fetch_feed(timeout=15):
+    """The update feed: from GitHub, or (2.1.2) when that fails from the Singapore mirror, then the
+    Hong Kong one, whose copy must be signed.  ``UpdateError`` gives every server's reason."""
+    reasons = []
+    for url in downloads.alternatives(feed_url()):
+        where = downloads.host(url)
+        try:
+            body = _get(url, timeout)
+            if downloads.mirrored(url):
+                try:
+                    signature = _get(url + SIGNATURE, timeout, 4096)
+                except urllib.error.HTTPError:
+                    signature = b''                 # a feed published without one
+                if not signed(body, signature):
+                    raise UpdateError(tr('镜像上的更新信息没有有效签名'))
+            data = json.loads(body.decode('utf-8'))
+            if not isinstance(data, dict) or not isinstance(data.get('format'), int) or data['format'] > FEED_FORMAT:
+                raise UpdateError('unsupported update feed')
+        except UpdateError as exc:
+            reasons.append((where, str(exc)))
+        except ValueError:
+            reasons.append((where, tr('服务器返回的更新信息无法读取')))
+        except (OSError, http.client.HTTPException) as exc:
+            reasons.append((where, downloads.describe(exc)))
+        else:
+            downloads.remember(url)
+            data['_source'] = where
+            return data
+    raise UpdateError('；'.join(f'{where}: {reason}' for where, reason in reasons))
 
 
 def check(current=__version__, timeout=15):
@@ -206,7 +252,7 @@ def download(update, progress=lambda done, total: None, cancelled=lambda: False)
         except downloads.Cancelled:
             raise
         except Exception as exc:
-            raise UpdateError(f'{downloads.host(update.package["url"])}: {downloads.describe(exc)}') from exc
+            raise UpdateError(downloads.explain(update.package['url'], exc)) from exc
         done = size
     elif downloads.sha256(installer) != update.package['sha256']:
         installer.unlink()

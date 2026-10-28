@@ -38,7 +38,12 @@ def metadata(path):
             '-FocalLengthIn35mmFormat#', '-ScaleFactor35efl#', '-FocusDistance#', '-FocusDistance2#',
             '-ApproximateFocusDistance#', '-SubjectDistance#',
             # 1.5.2: Nikon "High Efficiency" NEFs are recognised before LibRaw tries them.
-            '-NEFCompression#', '--', str(Path(path).resolve())],
+            '-NEFCompression#',
+            # 2.1.2: the camera's colour space for files without a profile (icc_input.camera_space),
+            # and the position the photo was taken at (photo_metadata, the GPS border).
+            '-ColorSpace#', '-InteropIndex', '-Composite:GPSLatitude#', '-Composite:GPSLongitude#',
+            '-Composite:GPSAltitude#',
+            '--', str(Path(path).resolve())],
             capture_output=True, timeout=15, env=env,
             creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:

@@ -4,7 +4,9 @@ import math
 import re
 from pathlib import Path
 
-FIELDS = ('date', 'body', 'lens', 'aperture', 'shutter', 'iso', 'focal', 'brand', 'lens_brand')
+FIELDS = ('date', 'body', 'lens', 'aperture', 'shutter', 'iso', 'focal', 'brand', 'lens_brand',
+          # 2.1.2: where it was taken (decimal degrees as text; ``gps_source`` 'camera' or 'xmp').
+          'latitude', 'longitude', 'gps_source')
 
 
 def clean(record):
@@ -38,9 +40,37 @@ def from_tags(tags):
         if isinstance(tags.get('LensID'),str) and ' or ' not in tags['LensID'].lower():identity+=' '+tags['LensID']
         for name in ('SIGMA','TAMRON','ZEISS','VOIGTLANDER','SAMYANG','VILTROX','CANON','NIKON','NIKKOR','FUJIFILM','FUJINON','PANASONIC','LUMIX','SONY','LEICA'):
             if name in identity.upper(): lens_brand = name; break
-    return clean(dict(date=date,body=text('Model'),lens=lens,brand=brand,lens_brand=lens_brand,
-                      aperture=f'f/{aperture:g}' if aperture else '',shutter=shutter,
-                      iso=f'ISO {iso:g}' if iso else '',focal=f'{focal:g} mm' if focal else ''))
+    record = dict(date=date,body=text('Model'),lens=lens,brand=brand,lens_brand=lens_brand,
+                  aperture=f'f/{aperture:g}' if aperture else '',shutter=shutter,
+                  iso=f'ISO {iso:g}' if iso else '',focal=f'{focal:g} mm' if focal else '')
+    from . import geo
+    try:
+        found = (float(tags['GPSLatitude']), float(tags['GPSLongitude']))
+    except (KeyError, TypeError, ValueError):
+        found = None
+    if found is not None and geo.valid(found) and found != (0., 0.):
+        record = with_position(record, found, 'camera')
+    return clean(record)
+
+
+def position(photo):
+    """``(lat, lon)`` of a photo record, or None (2.1.2)."""
+    from . import geo
+    try:
+        found = (float(photo['latitude']), float(photo['longitude']))
+    except (KeyError, TypeError, ValueError):
+        return None
+    return found if geo.valid(found) else None
+
+
+def with_position(photo, found, source='xmp'):
+    """A copy of ``photo`` with ``found`` (``(lat, lon)``; None removes it) as its position."""
+    record = dict(photo or {})
+    if found is None:
+        record.update(latitude='', longitude='', gps_source='')
+    else:
+        record.update(latitude=f'{found[0]:.6f}', longitude=f'{found[1]:.6f}', gps_source=source)
+    return record
 
 
 def description(photo, provenance=None):
@@ -61,11 +91,14 @@ XMP = ('-XMP:all', '--XMP-crs:all', '--XMP-crss:all', '--XMP-crd:all', '--XMP-cr
        '--XMP-tiff:ImageLength', '--XMP-exif:PixelXDimension', '--XMP-exif:PixelYDimension', '--XMP-exif:SubjectArea')
 
 
-def copy_from(source, target, location=True):
+def copy_from(source, target, location=True, position=None):
     """Copy the original's shooting data, copyright, keywords and (optionally) GPS position into
     the exported file ``target`` with ExifTool, in place.  Metadata in a ``<photo>.xmp``
     sidecar (Lightroom's) is included and wins over the photo's own XMP.  Returns '' or why
-    nothing was written; the picture itself is never touched."""
+    nothing was written; the picture itself is never touched.
+
+    2.1.2: ``position`` (``(lat, lon)``, e.g. chosen on the map) is written as the export's EXIF
+    and XMP GPS position, over the original's, when ``location`` is on."""
     import os
     import subprocess
     import tempfile
@@ -81,6 +114,11 @@ def copy_from(source, target, location=True):
     lines = ['-charset', 'filename=UTF8', '-overwrite_original', '-m', '-TagsFromFile', str(source), *COPIED, *xmp]
     if location:
         lines.append('-GPS:all')
+    if location and position is not None:
+        lat, lon = position
+        lines += [f'-GPS:GPSLatitude={abs(lat):.6f}', f'-GPS:GPSLatitudeRef={"N" if lat >= 0 else "S"}',
+                  f'-GPS:GPSLongitude={abs(lon):.6f}', f'-GPS:GPSLongitudeRef={"E" if lon >= 0 else "W"}',
+                  '-GPS:GPSMapDatum=WGS-84', f'-XMP-exif:GPSLatitude={lat:.6f}', f'-XMP-exif:GPSLongitude={lon:.6f}']
     if ext in ('.jpg', '.jpeg', '.png'):
         lines.append('-IFD0:ImageDescription')          # TIFF / DNG keep LUMEN's own description
     for sidecar in (source.with_suffix('.xmp'), source.with_name(source.name + '.xmp')):

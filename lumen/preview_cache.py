@@ -318,7 +318,7 @@ class PreviewCache:
             return engine.load_image(path)
         if found is not None:
             self.hits += 1
-            return found
+            return found[0], engine.located(found[1], path)       # 2.1.2: the sidecar's position, now
         with self._lock:
             future = self._inflight.get(key)
             owner = future is None
@@ -326,10 +326,10 @@ class PreviewCache:
                 future = self._inflight[key] = Future()
         if not owner:
             rgb, info = future.result()
-            return rgb.copy(), copy.deepcopy(info)
+            return rgb.copy(), engine.located(copy.deepcopy(info), path)
         try:
             self.misses += 1
-            rgb, info = engine.load_image(path)
+            rgb, info = engine._load_image(path)
             rgb = np.ascontiguousarray(quantize(rgb))
             self._remember(key, (rgb, info))
             self._later(self._write, key, 'd', pack(rgb, info))
@@ -340,7 +340,7 @@ class PreviewCache:
         finally:
             with self._lock:
                 self._inflight.pop(key, None)
-        return rgb.copy(), copy.deepcopy(info)
+        return rgb.copy(), engine.located(copy.deepcopy(info), path)
 
     def prefetch(self, paths):
         """Decode ``paths`` in the background (one at a time, skipped while ``paused()``)."""

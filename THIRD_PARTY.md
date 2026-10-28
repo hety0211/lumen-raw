@@ -37,6 +37,7 @@ LUMEN RAW 的源码许可不替代依赖许可。便携包保留动态库，Qt /
 | EfficientViT-SAM L0 与 EfficientViT-Seg B2（ADE20K）（2.1.0，点选物体与风光语义蒙版） | Apache-2.0，MIT Han Lab，https://github.com/mit-han-lab/efficientvit ；ONNX 取自 https://huggingface.co/mit-han-lab/efficientvit-sam（固定版本 a2f0c59），分割模型由 tools/convert_landscape.py 从 https://huggingface.co/han-cai/efficientvit-seg（固定版本 cf3ccaf）的权重导出；EfficientViT-SAM 基于 Meta 的 Segment Anything（Apache-2.0）；assets/EfficientViT-LICENSE.txt |
 | SenseVoice-Small 语音识别模型（1.5.0） | FunASR 模型开源协议 1.1，FunAudioLLM / 阿里巴巴集团，https://huggingface.co/FunAudioLLM/SenseVoiceSmall；ONNX 导出 k2-fsa / sherpa-onnx（Apache-2.0），https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17；assets/SenseVoice-LICENSE.txt |
 | 相机与镜头品牌标志（1.6.2，水印边框） | 来自 Wikimedia Commons，均标为公有领域（简单字形的文字标志不受著作权保护），同时是各品牌所有者的注册商标；仅用于在照片边框上按 EXIF 标注拍摄所用的机身与镜头，不表示与这些公司有任何关联或获得认可；原始 SVG、文件名、来源页面与 SHA-256 见 assets/logos/src、assets/logos/README.txt 与 assets/logos/logos.json |
+| Natural Earth 世界地图数据（2.1.2，拍摄位置的离线地图：陆地、湖泊、河流、居民点） | 公有领域，https://www.naturalearthdata.com/ ；GeoJSON 取自 https://github.com/nvkelso/natural-earth-vector（提交 ca96624），由 tools/build_map.py 简化后存为 assets/map/world.npz，来源文件与 SHA-256 见 assets/map/README.txt；只用自然地理图层，不含国界与行政边界 |
 | 可选 CuPy | MIT，https://cupy.dev/ |
 | PyObjC（macOS 版，调用 Metal） | MIT，https://github.com/ronaldoussoren/pyobjc |
 | ExifTool 13.59 Perl 发行版（macOS 版） | 与 Perl 相同条款（Artistic / GPL），https://exiftool.org/；许可说明见随包 assets/exiftool/unix/README，由系统自带 Perl 运行 |

@@ -23,6 +23,14 @@ import sys  # noqa: E402
 
 import pytest  # noqa: E402
 
+# 2.1.2: pytest's output capture swaps the standard handles around every test and closes the old
+# ones; OpenCV, ONNX Runtime and FFmpeg keep their own copy from when they load, and a library
+# database that later got a closed handle's value received their warnings (2.1.1: "database disk
+# image is malformed").  They load now, while standard output and error are NUL for good.
+from lumen import native_stdio  # noqa: E402
+
+native_stdio.pin(('cv2', 'onnxruntime', 'av'))
+
 
 @pytest.fixture(autouse=True)
 def _release_closed_windows():

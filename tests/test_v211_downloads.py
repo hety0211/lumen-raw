@@ -168,7 +168,8 @@ def test_a_failed_check_links_the_latest_release(app, monkeypatch):
     parent = _parent()
     failed = update_dialog.CheckResult(parent, updates.UpdateError('github.com: 连接超时'))
     assert failed.help.isVisibleTo(failed) and '手动下载最新版本' in failed.help.text()
-    assert _links(failed.help) == [updates.LATEST] and 'github.com/hety0211/lumen-raw/releases/latest</a>' in failed.help.text()
+    # 2.1.2: the mirrors' download page follows the release.
+    assert _links(failed.help) == [updates.LATEST, updates.MIRROR_PAGE] and 'github.com/hety0211/lumen-raw/releases/latest</a>' in failed.help.text()
     failed.help.linkActivated.emit(updates.LATEST)
     assert opened == [updates.LATEST]
     latest = update_dialog.CheckResult(parent)
@@ -188,7 +189,7 @@ def test_a_failed_update_download_links_its_release_and_retries(app, feed_server
     dialog.primary.click()                                     # the installer is not on the server
     wait_until(lambda: dialog.primary.isVisible() and dialog.primary.text() == '重试', 15)
     assert dialog.status.text() == '更新下载失败：127.0.0.1: 服务器返回 HTTP 404'
-    assert dialog.help.isVisible() and _links(dialog.help) == [feed_server + 'page']
+    assert dialog.help.isVisible() and _links(dialog.help) == [feed_server + 'page', updates.MIRROR_PAGE]
     assert '已包含全部 AI 模型' in dialog.help.text()
     _Files.files['/v2.9.0/LumenRAW-2.9.0-Update.exe'] = payload
     dialog.primary.click()
@@ -211,12 +212,12 @@ def test_a_failed_model_download_offers_the_installer_the_files_and_the_folder(a
     wait_until(lambda: dialog.primary.isVisible() and dialog.primary.text() == '重试', 15)
     assert '服务器返回 HTTP 404' in dialog.status.text() and dialog.help.isVisible()
     links = _links(dialog.help)
-    assert links[:2] == [updates.release_page(), ai_models.PAGE] and links[2].startswith('file:')
+    assert links[:3] == [updates.release_page(), updates.MIRROR_PAGE, ai_models.PAGE] and links[3].startswith('file:')
     assert '打开模型文件夹' in dialog.help.text()
     folder = ai_models.download_folder()
     import shutil
     shutil.rmtree(folder, ignore_errors=True)
-    dialog.help.linkActivated.emit(links[2])
+    dialog.help.linkActivated.emit(links[3])
     assert folder.is_dir() and opened[-1].isLocalFile() and Path(opened[-1].toLocalFile()) == folder
     # Files downloaded in a browser, put into the folder: “Retry” finds them.
     for name, data in blobs.items():

@@ -79,7 +79,8 @@ def sources(url, mirrors, releases=()):
     """The manifest URL, its mirrors and the release copies (2.0.0, by file name).  Simplified
     Chinese interfaces try the mirror first and the upstream last."""
     mirrored = [mirror + url[len(UPSTREAM):] for mirror in mirrors if url.startswith(UPSTREAM)]
-    released = [release + url.rsplit('/', 1)[-1] for release in releases]
+    # 2.1.2: each release copy on GitHub is followed by LUMEN RAW's own mirrors of it.
+    released = [copy for release in releases for copy in downloads.alternatives(release + url.rsplit('/', 1)[-1])]
     if language() == 'zh_CN':
         return mirrored + released + [url]
     return [url] + released + mirrored

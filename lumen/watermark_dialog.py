@@ -3,8 +3,8 @@ import copy
 from PySide6.QtCore import Qt,Signal
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QWidget,QLabel,
-    QCheckBox,QComboBox,QSpinBox,QDialogButtonBox)
-from . import watermark,engine
+    QCheckBox,QComboBox,QSpinBox,QDialogButtonBox,QPushButton)
+from . import watermark,engine,geo,photo_metadata
 from .widgets import qimage
 from .i18n import tr
 
@@ -45,7 +45,14 @@ class WatermarkEditor(QWidget):
         for key,title in [('camera_logo',tr('机身标志')),('lens_logo',tr('镜头标志'))]:
             control=QCheckBox(tr('按 EXIF 自动显示'));control.setChecked(bool(self.settings.get(key)))
             self.logos[key]=control;form.addRow(title,control)
-        helptext=QLabel(tr('机身与镜头标志按照片 EXIF 自动选择，标志为各品牌所有者的商标；没有内置标志的品牌显示品牌文字。\n缺失 EXIF 会显示“未记录”，不采用文件修改时间。\n水印仅在最终导出时添加，AI 副本保留无边框图像。'))
+        # 2.1.2: where the photo was taken (the 位置 row: a map pin, the time and the position).
+        self.location_label=QLabel();self.location_label.setWordWrap(True)
+        self.location_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        form.addRow(tr('拍摄位置'),self.location_label)
+        self.location_button=QPushButton(tr('在地图上选择位置…'));self.location_button.clicked.connect(self.choose_location)
+        form.addRow(self.location_button)
+        helptext=QLabel(tr('机身与镜头标志按照片 EXIF 自动选择，标志为各品牌所有者的商标；没有内置标志的品牌显示品牌文字。\n缺失 EXIF 会显示“未记录”，不采用文件修改时间。\n水印仅在最终导出时添加，AI 副本保留无边框图像。')+'\n'+
+                        tr('勾选“位置（GPS 图钉）”后，有 GPS 位置的照片会在拍摄时间旁显示图钉和坐标；照片没有 GPS 时可以在地图上选择。'))
         helptext.setWordWrap(True);form.addRow(helptext)
         self.status=QLabel();self.status.setWordWrap(True);root.addWidget(self.status)
         if compact:columns.addWidget(self.preview)
@@ -61,8 +68,27 @@ class WatermarkEditor(QWidget):
                     sides=[k for k,c in self.sides.items() if c.isChecked()],size=self.size.value(),
                     fields=[k for k,c in self.fields.items() if c.isChecked()],**logos)
 
+    def refresh_location(self):
+        photo=self.owner.info.get('photo',{}) if self.owner.source is not None else {}
+        found=photo_metadata.position(photo)
+        if found is None:
+            self.location_label.setText(tr('没有 GPS 位置'))
+        else:
+            origin={'camera':tr('相机记录'),'xmp':tr('地图选择，已写入 XMP')}.get(photo.get('gps_source'),'')
+            self.location_label.setText(geo.dms(found)+('\n'+origin if origin else ''))
+        self.location_button.setEnabled(self.owner.source is not None)
+
+    def choose_location(self):
+        from .location_dialog import edit_location
+        if not edit_location(self.owner):return
+        # A position just chosen here is meant for the border: its pin row is switched on.
+        if photo_metadata.position(self.owner.info.get('photo',{})) and not self.fields['location'].isChecked():
+            self.fields['location'].setChecked(True)
+        self.update_preview()
+
     def update_preview(self,*_):
         if self.refreshing:return
+        self.refresh_location()
         if self.owner.rendered is None:self.preview.setText(tr('导入照片后可预览水印边框'));return
         settings=self.values()
         if settings!=self.settings:

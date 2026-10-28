@@ -192,7 +192,9 @@ def _read_error(tags):
 TAGS = ('-Make', '-Model', '-LensModel', '-Lens', '-LensID', '-DateTimeOriginal', '-SubSecDateTimeOriginal', '-CreateDate',
         '-ISO#', '-FNumber#', '-ExposureTime#', '-FocalLength#', '-Orientation#', '-Composite:GPSLatitude#',
         '-Composite:GPSLongitude#', '-ImageSize#', '-SerialNumber', '-XMP-xmp:Rating#', '-XMP-xmp:Label',
-        '-XMP-dc:Subject', '-IPTC:Keywords', '-Error')
+        '-XMP-dc:Subject', '-IPTC:Keywords', '-Error',
+        # 2.1.2: a position chosen on the map lives in the sidecar (exif:GPSLatitude / GPSLongitude).
+        '-XMP-exif:GPSLatitude#', '-XMP-exif:GPSLongitude#')
 
 
 def read_tags(paths):
@@ -231,7 +233,7 @@ def read_tags(paths):
         photo = side_keys.get(source)
         if photo:
             tags = result.setdefault(photo, {})
-            for name in ('Rating', 'Label', 'Subject', 'Keywords'):
+            for name in ('Rating', 'Label', 'Subject', 'Keywords', 'GPSLatitude', 'GPSLongitude'):
                 if name in record:
                     tags[name] = record[name]
     return result
@@ -721,6 +723,15 @@ class LibraryDB:
                 rows += db.execute(f'SELECT id, path, analysis FROM photos WHERE {lacking} AND missing=0 AND id IN '
                                    f'({",".join("?" * len(chunk))})', (*codes, *chunk)).fetchall()
         return [dict(r) for r in rows]
+
+    def set_position(self, path, position):
+        """2.1.2: the photo's GPS position (``(lat, lon)`` or None), chosen on the map."""
+        lat, lon = position if position is not None else (None, None)
+        with self._lock:
+            self._db().execute('UPDATE photos SET gps_lat=?, gps_lon=? WHERE key=?', (lat, lon, key(path)))
+        photo = self.id_of(path)
+        if photo is not None:
+            self._changed('photos', [photo])
 
     def analysed_parts_of(self, photo_id):
         with self._lock:

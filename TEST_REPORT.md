@@ -1,5 +1,17 @@
 # LUMEN RAW 验证记录
 
+## 2.1.2 验证 · 2026-10-28
+
+同一台 Windows 主机（AMD Ryzen 7 9800X3D，AMD Radeon RX 9070 XT，DirectML）。2026-10-29 发布。
+
+- **图库数据库损坏的根本原因：** 在 `%TEMP%` 的 122 个测试用图库中找到 2.1.1 测试时损坏的 3 个（2026-10-25 17:57–18:05），逐页检查：都是第 4 页（`folders` 表）开头被纯文本覆盖，内容分别是 ONNX Runtime 的 DirectML 配置警告和 OpenCV DNN 的警告（含 CRLF 换行）。PE 导入表显示 `cv2.pyd` 与 `onnxruntime_pybind11_state.pyd` 静态链接 C 运行库。在独立进程中按 pytest 的方式切换 fd 2 后载入 OpenCV、再恢复 fd 2：SQLite 打开的第一个数据库拿到的就是 OpenCV 保存的句柄值，一条 `imread` 警告随即写进数据库文件（文件从 4096 增至 4284 字节）；先用 `native_stdio.pin()` 载入时同样拿到该句柄值，文件不变。新测试两种情况都覆盖。另用每个测试后对共享图库做 `PRAGMA integrity_check` 的插件跑完整回归：672 次检查全部完好（图库创建前的 66 次为“不存在”）。作者本机的图库（5742 张）检查完好。
+- **尼康“高效率”NEF：** Z8（HE，NEFCompression 14）、Z50 II（HE★ 14 / HE 13）、Z5 II（HE★）样片：LibRaw 0.22.1 仍然 `LibRawFileUnsupportedError` / `LibRawDataError`，内嵌 JPEG 无 ICC、无 EXIF，色彩空间取自 NEF 的 `ColorSpace`（样片都是 sRGB，结果与 2.1.1 相同）；用改为 Adobe RGB 的元数据测试了 Adobe RGB 路径。网络检索：截至 2026 年仍没有能解码 TicoRAW（HE）的开源解码器。
+- **ICC 输入：** 读取 LUMEN 自己的 P3 / Adobe RGB 配置文件，矩阵与 `color.SPACES` 相差 < 3×10⁻⁵；构造的 `para` 曲线 P3 配置文件与 LittleCMS 在 8 位随机像素上相差 < 1.5/255；Windows 自带的 sRGB 配置文件识别为 sRGB；CMYK（RSWOP）交给 LittleCMS。
+- **镜像（实网）：** 在进程内模拟 GitHub 不可达：真实的新加坡与香港镜像都返回 2.1.1 的更新清单，由于它发布时没有签名，两处都按“没有有效签名”拒绝（预期，签名从 2.1.2 起才有）；`face-yunet` 模型（232,589 字节）从新加坡镜像下载 2.2 秒，SHA-256 通过，之后的下载从新加坡开始。
+- **自动检查：** 完整回归 **660 项通过、12 项跳过**（打包用的 uv CPython 环境，单独跑一次、构建脚本内再跑一次，结果相同）。新增 `tests/test_v212.py` 31 项。`python tools/i18n_catalog.py`：8 种语言各 1449 条，无缺失、无多余、占位符一致。
+- **打包：** `LumenRAW-2.1.2-Setup.exe` 605,533,954 字节，`LumenRAW-2.1.2-Update.exe` 143,019,388 字节，`LumenRAW-2.1.2-Windows.zip` 672,901,746 字节；安装后 927 个文件、988,065,554 字节，升级包解出 912 个文件，均与冻结版逐个一致；15 个模型不变。`lumen-update.json.sig` 由发布密钥签名，用程序内置公钥验证通过。源码、便携版、安装版的冒烟测试与命令行 / MCP 检查、升级包的模型下载与冒烟测试全部通过。
+- **未覆盖：** 没有真实的 Adobe RGB 高效率 NEF 样片（用改写的元数据测试）；镜像回退的签名路径要等带签名的 2.1.2 发布后才能在真实镜像上走通；没有在中国大陆网络实测镜像下载速度；macOS 与 Linux 未构建。
+
 ## 2.1.1 下载修复验证 · 2026-10-26
 
 发布当天的修复，版本号仍为 2.1.1，GitHub 上的安装包重新构建后替换。同一台 Windows 主机（AMD Ryzen 7 9800X3D，AMD Radeon RX 9070 XT，DirectML）。

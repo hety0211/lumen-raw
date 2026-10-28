@@ -485,6 +485,11 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.edits['watermark']=settings
         self.changed();self.commit()
 
+    def location_changed(self):
+        """2.1.2: the photo's position changed (location_dialog): the border previews follow."""
+        self.watermark_editor.update_preview()
+        self.statusBar().showMessage(tr('拍摄位置已写入照片的 XMP 附属文件'),5000)
+
     def exposure_curve_changed(self,values,points):
         if self.refreshing or self.source is None:return
         for key in ('exposure','blacks','shadows','highlights','whites'):

@@ -126,6 +126,23 @@ def resize_region(image, size, area):
 
 
 def load_image(path, preview_limit=1600, develop_reference=False, clip=False):
+    """``_load_image`` with the photo's position from its XMP sidecar (2.1.2): a position chosen
+    on the map wins over the camera's GPS."""
+    rgb, info = _load_image(path, preview_limit, develop_reference, clip)
+    return rgb, located(info, path)
+
+
+def located(info, path):
+    """``info`` with the position in the photo's XMP sidecar, if any (2.1.2).  The preview cache
+    keeps what ``_load_image`` read and applies this every time, so a position chosen later shows."""
+    from . import geo
+    found = geo.sidecar_position(path)
+    if found is not None:
+        info['photo'] = photo_metadata.with_position(info.get('photo') or {}, found, 'xmp')
+    return info
+
+
+def _load_image(path, preview_limit=1600, develop_reference=False, clip=False):
     """RAW remains linear. Export decodes again at full resolution.
 
     The camera develop reference is derived for previews, or on request for a full decode
@@ -184,18 +201,26 @@ def load_image(path, preview_limit=1600, develop_reference=False, clip=False):
         if arr.dtype == np.uint16:
             if arr.ndim == 2:
                 arr = np.repeat(arr[..., None], 3, axis=2)
-            from . import icc
-            own = icc.identify(embedded_profile(path))
-            if own:
-                # A LUMEN RAW export in Display P3 / Adobe RGB: back to linear sRGB primaries, unclipped.
-                rgb = color.to_linear_srgb(arr[..., :3][..., ::-1].astype(np.float32) / 65535, own)
-                note = tr('{space} · 16-bit · 保留广色域', space=color.space(own).label)
-            else:
-                rgb = to_linear(arr[..., :3][..., ::-1].astype(np.float32) / 65535)
-                note = tr('16-bit 输入按 sRGB 解读（建议先转换非 sRGB 文件）')
-            info.update(width=rgb.shape[1], height=rgb.shape[0], raw=False, note=note)
+            from . import icc, icc_input
+            profile = embedded_profile(path)
+            own = icc.identify(profile)
             embedded = photo_metadata.embedded(path)
             tags = {} if embedded else white_balance.metadata(path)[0]
+            pixels = arr[..., :3][..., ::-1]
+            if own:
+                # A LUMEN RAW export in Display P3 / Adobe RGB: back to linear sRGB primaries, unclipped.
+                rgb = color.to_linear_srgb(pixels.astype(np.float32) / 65535, own)
+                note = tr('{space} · 16-bit · 保留广色域', space=color.space(own).label)
+            else:
+                # 2.1.2: other matrix / TRC profiles and camera Adobe RGB are converted, unclipped.
+                source, note = input_source(profile, tags, path)
+                if source is not None:
+                    rgb = icc_input.to_linear(np.ascontiguousarray(pixels), source)
+                    note = tr('{space} · 16-bit · 保留广色域', space=note)
+                else:
+                    rgb = to_linear(pixels.astype(np.float32) / 65535)
+                    note = tr('16-bit 输入按 sRGB 解读（这个文件的 ICC 配置文件无法读取）') if note else tr('sRGB · 16-bit')
+            info.update(width=rgb.shape[1], height=rgb.shape[0], raw=False, note=note)
             info['photo'] = embedded or photo_metadata.from_tags(tags)
             if not embedded:
                 _lens_info(info, tags)
@@ -297,18 +322,24 @@ def load_embedded(path, limit, info, metadata=None, known=True):
     if preview is None or preview.shape[0] * preview.shape[1] < .5 * width * height:
         size = f'{preview.shape[1]} × {preview.shape[0]}' if preview is not None else tr('无')
         raise ValueError(tr('内置 LibRaw 无法解码这个文件的传感器数据（例如尼康“高效率”压缩），文件内嵌的预览（{size}）也不足以编辑。请在相机中改用无损压缩 RAW，或先用厂商软件转换为 DNG / TIFF。', size=size))
+    from . import icc_input
     tags, warning = metadata or white_balance.metadata(path)
+    # 2.1.2: the camera writes this JPEG in the colour space set in the camera (sRGB or Adobe RGB).
+    space = icc_input.camera_space(tags, path.name)
+    label = color.space(space).label
     info.update(width=preview.shape[1], height=preview.shape[0], raw=False, embedded=True,
                 format=info['format'] + tr(' · 内嵌 JPEG'),
-                camera_model=tags.get('Model', ''), wb_warning=warning,
-                note=tr('内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用') if known else
-                tr('内置 LibRaw 无法解码这个文件的传感器数据（压缩格式不受支持或数据不完整），已改用相机内嵌的全尺寸 JPEG：8 位 sRGB，相机白平衡与风格已应用'))
+                camera_model=tags.get('Model', ''), wb_warning=warning, input_space=space or 'srgb',
+                note=tr('内置 LibRaw 不支持这种 RAW 压缩（如尼康“高效率”），已改用相机内嵌的全尺寸 JPEG：8 位 {space}，相机白平衡与风格已应用', space=label) if known else
+                tr('内置 LibRaw 无法解码这个文件的传感器数据（压缩格式不受支持或数据不完整），已改用相机内嵌的全尺寸 JPEG：8 位 {space}，相机白平衡与风格已应用', space=label))
     info['photo'] = photo_metadata.from_tags(tags)
     _lens_info(info, tags)
     large_image.validate_size(preview.shape)
     image = Image.fromarray(np.ascontiguousarray(preview))
     if limit:
         image.thumbnail((limit, limit), Image.Resampling.LANCZOS)
+    if space:
+        return icc_input.to_linear(np.asarray(image), icc_input.standard(space)), info
     rgb = np.asarray(image).astype(np.float32)
     rgb /= 255
     return to_linear(rgb), info
@@ -328,31 +359,57 @@ def embedded_profile(path):
         return None
 
 
+def input_source(profile, tags, path):
+    """2.1.2: ``(icc_input.Source, label)`` for a photo that is not plain sRGB: an embedded matrix /
+    TRC profile, or no profile and the camera's Adobe RGB.  ``(None, label)`` for a profile that
+    cannot be read here (lookup tables: LittleCMS converts it), ``(None, '')`` for sRGB."""
+    from . import icc_input
+    if profile:
+        source = icc_input.read(profile)
+        if source is None:
+            return None, 'ICC'
+        return (None, '') if icc_input.is_identity(source) else (source, source.label)
+    space = icc_input.camera_space(tags, Path(path).name)
+    if space:
+        source = icc_input.standard(space)
+        return source, tr('{space}（相机色彩空间）', space=source.label)
+    return None, ''
+
+
 def load_pillow(path, limit):
-    from . import icc
+    from . import icc, icc_input
     with Image.open(path) as src:
         large_image.validate_size((src.height,src.width))
         img = ImageOps.exif_transpose(src)
         profile = src.info.get('icc_profile')
         own = icc.identify(profile)
+        tags = white_balance.metadata(path)[0]
+        source, label = (None, '') if own else input_source(profile, tags, path)
         if own:
             img = img.convert('RGB')        # a LUMEN RAW export in Display P3 / Adobe RGB: decoded below
+            note = tr('{space} · EXIF 方向已应用', space=color.space(own).label)
+        elif source is not None:
+            img = img.convert('L' if source.gray else 'RGB')    # decoded below, wide gamut kept
+            note = tr('{space} · ICC 色彩管理 · EXIF 方向已应用', space=label)
         elif profile:
             import io
-            img = ImageCms.profileToProfile(img.convert('RGB'), ImageCms.ImageCmsProfile(io.BytesIO(profile)),
+            img = ImageCms.profileToProfile(img.convert('CMYK' if img.mode == 'CMYK' else 'RGB'),
+                                           ImageCms.ImageCmsProfile(io.BytesIO(profile)),
                                            ImageCms.createProfile('sRGB'), outputMode='RGB')
+            note = tr('ICC → sRGB · EXIF 方向已应用') if label else tr('sRGB · EXIF 方向已应用')
         else:
             img = img.convert('RGB')
+            note = tr('sRGB · EXIF 方向已应用')
         info = dict(name=path.name, width=img.width, height=img.height, raw=False,
-                    format=path.suffix[1:].upper(), path=str(path.resolve()),
-                    note=tr('{space} · EXIF 方向已应用', space=color.space(own).label) if own else tr('sRGB · EXIF 方向已应用'))
-        tags = white_balance.metadata(path)[0]
+                    format=path.suffix[1:].upper(), path=str(path.resolve()), note=note)
         info['photo'] = photo_metadata.from_tags(tags)
         _lens_info(info, tags)
         if limit:
             img.thumbnail((limit, limit), Image.Resampling.LANCZOS)
         if own:
             return color.to_linear_srgb(np.asarray(img).astype(np.float32) / 255, own), info
+        if source is not None:
+            return icc_input.to_linear(np.asarray(img), source), info
         return to_linear(np.asarray(img).astype(np.float32) / 255), info
 
 
@@ -1476,7 +1533,8 @@ def export_image(path, rgb, quality=95, photo=None, provenance=None, metadata=No
     def copy_metadata():
         if not (metadata and metadata.get('source')):
             return ''
-        note = photo_metadata.copy_from(metadata['source'], temp, metadata.get('location', True))
+        note = photo_metadata.copy_from(metadata['source'], temp, metadata.get('location', True),
+                                        photo_metadata.position(photo or {}))
         if note:
             log.warning('metadata of %s not copied into %s: %s', metadata['source'], path.name, note)
         return note

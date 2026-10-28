@@ -491,7 +491,8 @@ def read_xmp(paths):
 def _write_sidecars(entries):
     """Write ``[{photo, fields, keywords}]`` into the sidecars, one ExifTool run per 200 photos;
     ``fields`` (rating, flag, label) and ``keywords`` (dc:subject) are each written when not
-    None, other tags kept.  Returns the error lines."""
+    None, other tags kept.  2.1.2: an entry with ``location`` writes that GPS position
+    (``(lat, lon)``; None removes it).  Returns the error lines."""
     errors = []
     for start in range(0, len(entries), 200):
         lines = []
@@ -505,6 +506,13 @@ def _write_sidecars(entries):
             words = entry.get('keywords')
             if words is not None:
                 lines += ['-XMP-dc:Subject='] + [f'-XMP-dc:Subject={w}' for w in words]
+            if 'location' in entry:
+                position = entry['location']
+                if position is None:
+                    lines += ['-XMP-exif:GPSLatitude=', '-XMP-exif:GPSLongitude=', '-XMP-exif:GPSMapDatum=']
+                else:
+                    lines += [f'-XMP-exif:GPSLatitude={position[0]:.6f}', f'-XMP-exif:GPSLongitude={position[1]:.6f}',
+                              '-XMP-exif:GPSMapDatum=WGS-84']
             lines += [str(sidecar(entry['photo']).resolve()), '-execute']
         with tempfile.NamedTemporaryFile('w', suffix='.args', delete=False, encoding='utf-8') as handle:
             handle.write('\n'.join(lines))
@@ -524,7 +532,7 @@ class SidecarWriter:
     change, and two quick changes could land out of order.  Now every write goes through this
     queue: one thread writes in order, changes queued meanwhile are merged per photo (the newest
     rating and the newest keyword list win), and what is queued is written before the program
-    exits."""
+    exits.  2.1.2: GPS positions chosen on the map go the same way."""
 
     def __init__(self):
         self._lock = threading.Condition()
@@ -534,13 +542,16 @@ class SidecarWriter:
         self._exit_hook = False
         self._results = []              # (last request of a batch, errors)
 
-    def queue(self, ratings=None, keywords=None):
-        """Queue ``{photo: fields}`` and ``{photo: [keywords]}``; returns the request number."""
+    def queue(self, ratings=None, keywords=None, locations=None):
+        """Queue ``{photo: fields}``, ``{photo: [keywords]}`` and ``{photo: (lat, lon) or None}``;
+        returns the request number."""
         with self._lock:
             for photo, fields in (ratings or {}).items():
                 self._entry(photo)['fields'] = dict(fields)
             for photo, words in (keywords or {}).items():
                 self._entry(photo)['keywords'] = list(words)
+            for photo, position in (locations or {}).items():
+                self._entry(photo)['location'] = None if position is None else tuple(position)
             self._queued += 1
             ticket = self._queued
             if self._thread is None:

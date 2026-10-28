@@ -22,8 +22,12 @@ def onnxruntime():
     global _QUIET
     os.environ.setdefault('ORT_DISABLE_TELEMETRY','1')   # its uploader threads (see lumen/__init__.py)
     import onnxruntime as ort
-    if not _QUIET and hasattr(ort, 'disable_telemetry_events'):
-        ort.disable_telemetry_events()
+    if not _QUIET:
+        if hasattr(ort, 'disable_telemetry_events'):
+            ort.disable_telemetry_events()
+        # 2.1.2: errors only; its warnings went to a stale copy of stderr (lumen/native_stdio.py).
+        if hasattr(ort, 'set_default_logger_severity'):
+            ort.set_default_logger_severity(3)
         _QUIET=True
     return ort
 

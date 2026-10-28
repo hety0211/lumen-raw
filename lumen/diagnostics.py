@@ -91,6 +91,7 @@ def run(source, output):
         report['library'] = library_and_culling(w, app, source, destination)
         report['models'] = models_load()
         report['updates'] = update_check(destination)
+        report['location'] = location_check(w, app, destination)
         report['video'] = video_encoding(destination)
         model.save_project(destination / 'smoke.lumen', source, w.edits, w.snapshots)
         engine.export_image(destination / 'smoke.tif', w.rendered)
@@ -178,6 +179,48 @@ def models_load():
     if len(loaded) < 15:
         raise RuntimeError(f'only {len(loaded)} models bundled: {sorted(loaded)}')
     return {name: inputs for name, inputs in loaded.items()}
+
+
+def location_check(w, app, destination):
+    """2.1.2: the bundled map renders, the picker window works, a position goes into an XMP sidecar
+    and back through the bundled ExifTool, the border draws the pin; the feed signature check and
+    the ICC input decoder work in the package."""
+    import numpy as np
+    from PIL import Image
+    from . import geo, icc, icc_input, signing, watermark, world_map
+    from .location_dialog import LocationDialog
+    if not world_map.available():
+        raise RuntimeError('offline map missing')
+    view = world_map.clamp(world_map.View(geo.to_world(30.6, 104.0), 6, 320, 200))
+    if tuple(world_map.Renderer('light').render(view)[100, 160]) != world_map.COLORS['light']['land']:
+        raise RuntimeError('offline map renders wrongly')
+    found = world_map.search('上海', 'zh_CN')
+    if not found:
+        raise RuntimeError('map search found nothing')
+    dialog = LocationDialog(w, 'smoke.png')
+    dialog.resize(900, 640)
+    dialog.show()
+    dialog.set_position((found[0][1].lat, found[0][1].lon))
+    dialog.map.show_position(dialog.position, 9.)
+    app.processEvents()
+    dialog.grab().save(str(destination / 'location.png'))
+    dialog.close()
+    photo = destination / 'location-smoke.png'
+    Image.fromarray(np.full((16, 16, 3), 128, np.uint8)).save(photo)
+    errors = geo.write(photo, (31.2304, 121.4737))
+    if errors or geo.sidecar_position(photo) != (31.2304, 121.4737):
+        raise RuntimeError(f'XMP sidecar position not written: {errors}')
+    settings = dict(watermark.defaults(), enabled=True, fields=['date', 'location'])
+    border = watermark.apply(np.full((400, 600, 3), .5, np.float32), settings,
+                             dict(date='2026-10-28 12:00:00', latitude='31.230400', longitude='121.473700'))
+    if not np.any(np.all(np.abs(np.round(border * 255) - watermark.PIN) < 30, axis=2)):
+        raise RuntimeError('the border has no pin')
+    seed = bytes.fromhex('9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60')
+    if not signing.verify(signing.public_key(seed), b'smoke', signing.sign(seed, b'smoke')):
+        raise RuntimeError('signature check failed')
+    if icc_input.read(icc.profile('p3')) is None:
+        raise RuntimeError('ICC input failed')
+    return dict(map_places=len(world_map.places()), search=found[0][0], sidecar='written', pin='drawn')
 
 
 def update_check(destination):

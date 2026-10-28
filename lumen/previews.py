@@ -225,10 +225,27 @@ def _transform(profile):
         return _transforms[key]
 
 
+def _exif_adobe(image):
+    """Whether a JPEG's own EXIF says Adobe RGB (``icc_input.camera_space``)."""
+    try:
+        exif = image.getexif()
+        main = exif.get_ifd(0x8769)
+        interop = exif.get_ifd(0xA005).get(0x0001, '') if 0xA005 in main else ''
+        from . import icc_input
+        return icc_input.camera_space(dict(ColorSpace=main.get(0xA001), InteropIndex=interop),
+                                      getattr(image, 'filename', '') and Path(image.filename).name) is not None
+    except Exception:
+        return False
+
+
 def _srgb(image):
     """``image`` in sRGB for display: an embedded ICC profile is converted (LUMEN's own wide-gamut
-    exports and other profiles alike)."""
+    exports and other profiles alike).  2.1.2: a camera JPEG without a profile that its EXIF marks
+    as Adobe RGB is converted too."""
     profile = image.info.get('icc_profile')
+    if not profile and _exif_adobe(image):
+        from . import icc
+        profile = icc.profile('adobe-rgb')
     image = image.convert('RGB')
     if profile:
         transform = _transform(profile)

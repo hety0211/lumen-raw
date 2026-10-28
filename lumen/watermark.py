@@ -12,7 +12,10 @@ PRESETS = {'gallery':(tr('画廊白'),(250,249,246),(39,43,39)),
            'noir':(tr('暗夜黑'),(20,23,23),(231,234,225)),
            'travel':(tr('旅行纸'),(238,231,214),(74,71,54)),
            'sage':(tr('山野绿'),(220,228,214),(41,62,43))}
-LABELS = {'date':tr('拍摄时间'),'body':tr('机身'),'lens':tr('镜头'),'aperture':tr('光圈'),'shutter':tr('快门'),'iso':'ISO','focal':tr('焦距'),'brand':tr('品牌文字')}
+LABELS = {'date':tr('拍摄时间'),'body':tr('机身'),'lens':tr('镜头'),'aperture':tr('光圈'),'shutter':tr('快门'),'iso':'ISO','focal':tr('焦距'),'brand':tr('品牌文字'),
+          'location':tr('位置（GPS 图钉）')}
+#: 2.1.2: the colour of the map pin in front of the time and position row.
+PIN = (224, 70, 60)
 
 
 #: Built-in camera and lens logos (assets/logos, see its README.txt): ``camera_logo`` / ``lens_logo``
@@ -23,8 +26,9 @@ LOGOS = Path(__file__).resolve().parents[1] / 'assets' / 'logos'
 
 
 def defaults():
+    # 2.1.2: the position is off until chosen: a border should not give away where a photo was taken.
     return dict(enabled=False,preset='gallery',sides=['bottom'],size=14.,
-                fields=list(LABELS),camera_logo=AUTO,lens_logo=AUTO)
+                fields=[k for k in LABELS if k!='location'],camera_logo=AUTO,lens_logo=AUTO)
 
 
 @lru_cache(maxsize=1)
@@ -115,20 +119,54 @@ def validate(data):
     return result
 
 
-def lines(settings,photo,hidden=()):
-    """Text rows of a border; brand names in ``hidden`` (upper case) are drawn as logos instead."""
+def position_text(photo):
+    """``31°13′49″N  121°28′25″E`` of a photo with a GPS position, else ''."""
+    from . import geo, photo_metadata
+    found=photo_metadata.position(photo)
+    return geo.dms(found).replace(' ','  ') if found else ''
+
+
+def rows(settings,photo,hidden=()):
+    """``[(text, pinned)]`` rows of a border.  2.1.2: with 位置 on and a GPS position, the last row
+    is the capture time and the position behind a map pin (``pinned``)."""
     fields=settings['fields']
     def val(k): return photo.get(k) or tr('{v}未记录', v=LABELS[k])
     output=[]
     if 'brand' in fields:
         brands=list(dict.fromkeys(p.upper() for p in (photo.get('brand'),photo.get('lens_brand')) if p and p.upper() not in hidden))
-        if brands: output.append(' / '.join(brands))
+        if brands: output.append((' / '.join(brands),False))
     for key in ('body','lens'):
-        if key in fields: output.append(val(key))
+        if key in fields: output.append((val(key),False))
     tech='  ·  '.join(val(k) for k in ('focal','aperture','shutter','iso') if k in fields)
-    if tech: output.append(tech)
-    if 'date' in fields: output.append(val('date'))
+    if tech: output.append((tech,False))
+    where=position_text(photo) if 'location' in fields else ''
+    if where:
+        output.append(('  ·  '.join(([val('date')] if 'date' in fields else [])+[where]),True))
+    elif 'date' in fields: output.append((val('date'),False))
     return output
+
+
+def lines(settings,photo,hidden=()):
+    """Text rows of a border; brand names in ``hidden`` (upper case) are drawn as logos instead."""
+    return [text for text,_ in rows(settings,photo,hidden)]
+
+
+@lru_cache(maxsize=32)
+def pin_image(height,paper):
+    """RGBA map pin ``height`` pixels tall (red, with a hole in the border's colour), drawn four
+    times larger and reduced so its edges are smooth."""
+    import math
+    scale=4;h=max(4,height)*scale;r=h*.36;cx=r+scale;cy=r+scale;tip=(cx,cy+h-r)
+    size=(int(2*r+2*scale),int(h+2*scale))
+    image=Image.new('RGBA',size,(0,0,0,0));draw=ImageDraw.Draw(image)
+    alpha=math.acos(r/(h-r))
+    # Points of the outline: the arc over the top between the two tangent points, then the tip.
+    start=math.pi/2+alpha;steps=64
+    outline=[(cx+r*math.cos(start+(2*math.pi-2*alpha)*i/steps),cy+r*math.sin(start+(2*math.pi-2*alpha)*i/steps)) for i in range(steps+1)]
+    draw.polygon(outline+[tip],fill=PIN+(255,))
+    hole=r*.42
+    draw.ellipse((cx-hole,cy-hole,cx+hole,cy+hole),fill=tuple(paper)+(255,))
+    return image.resize((max(1,size[0]//scale),max(1,size[1]//scale)),Image.Resampling.LANCZOS)
 
 
 def band(length,thickness,settings,photo):
@@ -158,21 +196,29 @@ def band(length,thickness,settings,photo):
         x=margin if side==0 else length-margin-emblem.width
         strip.paste(emblem,(x,(thickness-emblem.height)//2),emblem)
         reserved[side]+=emblem.width+margin
-    rows=lines(settings,photo,hidden)
+    texts=rows(settings,photo,hidden)
     available=max(1,length-sum(reserved))
     fontpath=str(Path(__file__).resolve().parents[1]/'assets/NotoSansSC.ttf')
-    fontsize=max(2,int((thickness-2*margin)/max(1,len(rows))*.76))
+    fontsize=max(2,int((thickness-2*margin)/max(1,len(texts))*.76))
+    def pin_width(size): return round(size*1.05)*.72+size*.45
     while True:
         font=ImageFont.truetype(fontpath,fontsize)
         try:font.set_variation_by_axes([420])
         except (OSError,AttributeError):pass
-        if fontsize<=2 or all(draw.textlength(t,font=font)<=available for t in rows): break
+        if fontsize<=2 or all(draw.textlength(t,font=font)+(pin_width(fontsize) if pinned else 0)<=available for t,pinned in texts): break
         fontsize-=1
-    lineheight=max(fontsize+1,(thickness-2*margin)/max(1,len(rows)))
-    for i,text in enumerate(rows):
+    lineheight=max(fontsize+1,(thickness-2*margin)/max(1,len(texts)))
+    for i,(text,pinned) in enumerate(texts):
         x=reserved[0]+available/2
-        y=thickness/2+(i-(len(rows)-1)/2)*lineheight
-        draw.text((x,y),text,font=font,fill=fg,anchor='mm')
+        y=thickness/2+(i-(len(texts)-1)/2)*lineheight
+        if pinned:
+            # 2.1.2: a map pin, then the time and the position, centred together.
+            pin=pin_image(round(fontsize*1.05),tuple(bg))
+            left=x-(pin_width(fontsize)+draw.textlength(text,font=font))/2
+            strip.paste(pin,(round(left),round(y-pin.height*.55)),pin)
+            draw.text((left+pin_width(fontsize),y),text,font=font,fill=fg,anchor='lm')
+        else:
+            draw.text((x,y),text,font=font,fill=fg,anchor='mm')
     return np.asarray(strip,dtype=np.float32)/255
 
 

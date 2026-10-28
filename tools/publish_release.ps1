@@ -41,7 +41,11 @@ try {
     $notes = Join-Path $publish 'release-notes.md'
     $updateSetup = Join-Path $packages "LumenRAW-$version-Update.exe"
     $feed = Join-Path $packages 'lumen-update.json'
-    foreach ($file in @($setup, $zip, $sums, $notes, $updateSetup, $feed)) { if (-not (Test-Path -LiteralPath $file)) { Fail "missing $file" } }
+    # 2.1.2: the feed's signature (tools/make_update_feed.py); editors trust the mirrors' copy only with it.
+    $feedSig = Join-Path $packages 'lumen-update.json.sig'
+    foreach ($file in @($setup, $zip, $sums, $notes, $updateSetup, $feed, $feedSig)) {
+        if (-not (Test-Path -LiteralPath $file)) { Fail "missing $file (the feed is signed by tools\make_update_feed.py with the release key)" }
+    }
     $feedData = Get-Content -Raw -Encoding UTF8 -LiteralPath $feed | ConvertFrom-Json
     if ($feedData.version -ne $version) { Fail "lumen-update.json is for $($feedData.version), not $version" }
     $modelFolder = Join-Path $root 'dist\LumenRAW\models'
@@ -93,7 +97,8 @@ try {
     Run 'git add' $git @('add', '-A')
     $staged = Capture $git @('diff', '--cached', '--name-only')
     foreach ($name in $staged) {
-        if ($name -and (Test-Path -LiteralPath $name) -and (Get-Item -LiteralPath $name).Length -gt 5MB) {
+        # 2.1.2: the offline map (Natural Earth, tools/build_map.py) is a deliberate 7.9 MB asset.
+        if ($name -and $name -ne 'assets/map/world.npz' -and (Test-Path -LiteralPath $name) -and (Get-Item -LiteralPath $name).Length -gt 5MB) {
             Fail "refusing to commit large file $name"
         }
     }
@@ -156,10 +161,10 @@ try {
     & $gh release view $tag --repo $Repo 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
         Say "Release $tag exists; replacing assets and notes."
-        Run 'upload assets' $gh @('release', 'upload', $tag, $setup, $updateSetup, $zip, $sums, $feed, '--repo', $Repo, '--clobber')
+        Run 'upload assets' $gh @('release', 'upload', $tag, $setup, $updateSetup, $zip, $sums, $feed, $feedSig, '--repo', $Repo, '--clobber')
         Run 'edit release' $gh @('release', 'edit', $tag, '--repo', $Repo, '--title', "LUMEN RAW $version", '--notes-file', $notes)
     } else {
-        $arguments = @('release', 'create', $tag, $setup, $updateSetup, $zip, $sums, $feed, '--repo', $Repo, '--title', "LUMEN RAW $version",
+        $arguments = @('release', 'create', $tag, $setup, $updateSetup, $zip, $sums, $feed, $feedSig, '--repo', $Repo, '--title', "LUMEN RAW $version",
                        '--notes-file', $notes, '--verify-tag')
         if ($Draft) { $arguments += '--draft' } else { $arguments += '--latest' }
         Run 'create release' $gh $arguments
@@ -167,7 +172,7 @@ try {
 
     Step 'Verify remote assets'
     $release = ((Capture $gh @('api', "repos/$Repo/releases/tags/$tag")) -join "`n") | ConvertFrom-Json
-    foreach ($file in @($setup, $updateSetup, $zip, $sums, $feed)) {
+    foreach ($file in @($setup, $updateSetup, $zip, $sums, $feed, $feedSig)) {
         $item = Get-Item -LiteralPath $file
         $asset = @($release.assets | Where-Object name -eq $item.Name)
         $expected = 'sha256:' + (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLower()

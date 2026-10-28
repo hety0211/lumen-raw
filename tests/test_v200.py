@@ -81,8 +81,9 @@ def test_a_photo_decodes_once_and_then_comes_from_the_cache(tmp_path, cache, mon
     from lumen import engine
     path = photo(tmp_path / 'a.jpg', when='2026:10:01 10:00:00')
     calls = []
-    original = engine.load_image
-    monkeypatch.setattr(engine, 'load_image', lambda *a, **k: calls.append(a) or original(*a, **k))
+    # 2.1.2: the cache decodes with _load_image (load_image adds the XMP sidecar's position).
+    original = engine._load_image
+    monkeypatch.setattr(engine, '_load_image', lambda *a, **k: calls.append(a) or original(*a, **k))
     rgb, info = cache.load(path)
     cache.flush()
     assert len(calls) == 1 and rgb.dtype == np.float32
