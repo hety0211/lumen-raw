@@ -140,7 +140,9 @@ def test_a_model_download_failure_names_the_server_and_the_file(packaged):
 
 
 def test_the_manual_download_pages():
-    assert updates.release_page() == 'https://github.com/hety0211/lumen-raw/releases/latest'
+    # The macOS releases are not marked latest: a Mac gets the list of releases (2.1.2: checked on a Mac).
+    assert updates.release_page() == ('https://github.com/hety0211/lumen-raw/releases' if updates.host.MACOS
+                                      else 'https://github.com/hety0211/lumen-raw/releases/latest')
     assert ai_models.PAGE == 'https://github.com/hety0211/lumen-raw/releases/tag/ai-models'
     assert speech.release_page() == 'https://github.com/hety0211/lumen-raw/releases/tag/speech-model-1'
 
@@ -169,7 +171,8 @@ def test_a_failed_check_links_the_latest_release(app, monkeypatch):
     failed = update_dialog.CheckResult(parent, updates.UpdateError('github.com: 连接超时'))
     assert failed.help.isVisibleTo(failed) and '手动下载最新版本' in failed.help.text()
     # 2.1.2: the mirrors' download page follows the release.
-    assert _links(failed.help) == [updates.LATEST, updates.MIRROR_PAGE] and 'github.com/hety0211/lumen-raw/releases/latest</a>' in failed.help.text()
+    page = updates.release_page()
+    assert _links(failed.help) == [page, updates.MIRROR_PAGE] and page.split('://')[1] + '</a>' in failed.help.text()
     failed.help.linkActivated.emit(updates.LATEST)
     assert opened == [updates.LATEST]
     latest = update_dialog.CheckResult(parent)

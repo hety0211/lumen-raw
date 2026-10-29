@@ -1,5 +1,12 @@
 # LUMEN RAW 验证记录
 
+## 2.1.2 macOS 验证 · 2026-10-29
+
+Apple M1 Pro（16 GB），macOS 27.0.1，tools/build_macos.sh（python-build-standalone CPython 3.12.14）。
+
+- **自动检查：** 完整回归 **649 项通过、23 项跳过**（Windows 专属、未复制到 Mac 的样片、SSH 会话中的钥匙串等）。第一次运行有 5 项失败，都是测试本身的 Windows 假设：2.1.1 的两项下载测试写死了 Windows 的「最新发布」链接（Mac 版按设计打开发布列表），2.1.2 的三项测试写死了 `exiftool.exe` 的路径；改为按平台判断后在 Windows 与 Mac 上都通过。另有一轮在 Mac 被其他程序占满（负载约 56）时，延时视频 10 位 HEVC（libx265）编码报了一次错，单独运行连续 3 次 22/22 通过，下一轮完整回归也没有再出现；2.1.2 没有改动延时视频代码。
+- **打包：** `LumenRAW-2.1.2-macOS-arm64.dmg` 662,274,267 字节，SHA-256 `533626d3…b511`；`codesign --verify --deep --strict` 通过。源码与打包后应用的冒烟测试通过（含离线地图、选点窗口、XMP 位置写入、水印图钉；应用在自己的 `models` 文件夹找到全部 15 个模型——2.1.1 起的模型布局第一次在 Mac 上验证）。
+
 ## 2.1.2 验证 · 2026-10-28
 
 同一台 Windows 主机（AMD Ryzen 7 9800X3D，AMD Radeon RX 9070 XT，DirectML）。2026-10-29 发布。

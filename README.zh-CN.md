@@ -6,7 +6,7 @@
 
 LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Windows、Apple 芯片 Mac 和 x86_64 Linux（源码运行），无需账号。界面有简体中文、繁體中文、English、日本語、한국어、Deutsch、Français、Español、Русский 九种语言。导入、选片、调色、镜头校正、AI 移除 / 降噪 / 超分 / 蒙版、导出和延时视频全部在本机离线完成；只有你主动使用云端大模型修图时才会联网发送指令和参数，使用语音指令时会下载一次语音识别模型；2.1.1 起启动时会检查一次新版本，可以关闭。
 
-当前版本：**2.1.2**（Windows，2026-10-29）。macOS 为 2.1.0（2026-10-23）。Linux 从源码运行或自行构建（2.1.1 起加入 Linux 移植）。
+当前版本：**2.1.2**（Windows 与 macOS，2026-10-29）。Linux 从源码运行或自行构建（2.1.1 起加入 Linux 移植）。
 
 ![LUMEN RAW 2.0.0「图库」页：左侧为文件夹树、智能相册与关键词，中间的缩略图网格显示星级、留用旗标、色标和被排除的照片，右侧为所选照片的拍摄信息、清晰度、评级与关键词](docs/screenshots/library-grid.png)
 
@@ -17,10 +17,10 @@ LUMEN RAW 是面向风光与旅行摄影的本地桌面编辑器，支持 Window
 | 系统 | 下载 | 要求 |
 |---|---|---|
 | Windows | [`LumenRAW-2.1.2-Setup.exe`（完整安装包，606 MB）、`LumenRAW-2.1.2-Update.exe`（升级包，143 MB）或 `LumenRAW-2.1.2-Windows.zip`（便携版，673 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.2) | Windows 10 22H2 / Windows 11，x64 |
-| macOS | [`LumenRAW-2.1.0-macOS-arm64.dmg`（654 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.0-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
+| macOS | [`LumenRAW-2.1.2-macOS-arm64.dmg`（662 MB）](https://github.com/hety0211/lumen-raw/releases/tag/v2.1.2-macos) | Apple 芯片（M1 及更新），macOS 15 Sequoia 或更新 |
 | Linux | 没有预编译下载：从源码运行（见[下方](#从源码运行)）；`tools/build_linux.sh --sample 照片.DNG` 可生成便携的 `LumenRAW-<版本>-Linux-x86_64.tar.gz` | x86_64、Python 3.12；可选 NVIDIA 显卡（CUDA 13 驱动） |
 
-Windows 版为 2.1.2：水印面板加入拍摄位置（离线地图选点、写入 XMP、边框图钉），检查更新在 GitHub 连不上时改用镜像，查明并修复图库数据库损坏的根本原因，尼康“高效率”NEF 与内嵌 ICC 配置文件的照片按原色彩空间读入。2.1.1 带来了软件内更新、AI 模型与程序分开存放、清晰度与闭眼分开分析、DeepSeek Harness 接入和小米 MiMo。Mac 版仍为 2.1.0；Mac 版 2.1.0 是 1.7.0 之后的第一个 Mac 版本，同时带来 2.0 的图库、选片、预览缓存、延时视频和新主题。2.1.1 起可在 x86_64 Linux 上从源码运行，NVIDIA 显卡使用原生 CUDA 内核（社区贡献，见下方 Linux 说明）。2.1.1 和 2.1.2 的工程格式不变（仍为 8），与 2.1.0 互相打开。2.1.0 的工程（`.lumen`）和选片集（`.lumenalbum`）升为格式 8（用于保存 AI 移除与新蒙版）：2.1.0 能打开所有旧工程，2.0.1 及更早版本打不开 2.1.0 保存的工程。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
+Windows 版为 2.1.2：水印面板加入拍摄位置（离线地图选点、写入 XMP、边框图钉），检查更新在 GitHub 连不上时改用镜像，查明并修复图库数据库损坏的根本原因，尼康“高效率”NEF 与内嵌 ICC 配置文件的照片按原色彩空间读入。2.1.1 带来了软件内更新、AI 模型与程序分开存放、清晰度与闭眼分开分析、DeepSeek Harness 接入和小米 MiMo。Mac 版同为 2.1.2（2.1.0 之后的第一个 Mac 版本，也带来 2.1.1 的检查更新与清晰度 / 闭眼分开分析；Mac 版发现新版本时打开下载页面）。2.1.1 起可在 x86_64 Linux 上从源码运行，NVIDIA 显卡使用原生 CUDA 内核（社区贡献，见下方 Linux 说明）。2.1.1 和 2.1.2 的工程格式不变（仍为 8），与 2.1.0 互相打开。2.1.0 的工程（`.lumen`）和选片集（`.lumenalbum`）升为格式 8（用于保存 AI 移除与新蒙版）：2.1.0 能打开所有旧工程，2.0.1 及更早版本打不开 2.1.0 保存的工程。下载页附有 SHA-256 校验值。安装包都没有商业代码签名。
 
 **国内镜像站：[lumenraw.com](https://lumenraw.com/download/)**
 

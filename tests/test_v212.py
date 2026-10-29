@@ -24,7 +24,6 @@ from test_ui import app, window  # noqa: E402,F401
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLES = Path(os.environ.get('LUMEN_SAMPLES', r'E:\LumenSamples'))
-EXIFTOOL = ROOT / 'assets' / 'exiftool' / ('exiftool.exe' if os.name == 'nt' else 'exiftool')
 windows = pytest.mark.skipif(os.name != 'nt', reason='Windows handles')
 
 
@@ -187,7 +186,8 @@ def test_camera_adobe_rgb_comes_from_the_metadata():
 
 
 def _exiftool(*arguments):
-    return subprocess.run([str(EXIFTOOL), *map(str, arguments)], capture_output=True, check=True)
+    from lumen.white_balance import exiftool          # exiftool.exe, or the Perl ExifTool on macOS / Linux
+    return subprocess.run([*exiftool(), *map(str, arguments)], capture_output=True, check=True)
 
 
 def test_an_adobe_rgb_camera_jpeg_keeps_its_colours(tmp_path):
