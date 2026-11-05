@@ -25,8 +25,11 @@ def effects():
 
 
 #: Recipe format written by this version; 6 adds ``process`` (1.6.0), 7 ``lut`` (1.7.0), 8 AI
-#: removal in ``retouch`` and the landscape and object masks (2.1.0).
-VERSION = 8
+#: removal in ``retouch`` and the landscape and object masks (2.1.0), 9 ``portrait``, ``flip`` and
+#: straightening up to 45° (2.3.0).
+VERSION = 9
+#: Largest straightening angle, degrees (15 before 2.3.0).
+STRAIGHTEN = 45.
 #: Process version of new photos: 2 is the scene-referred pipeline of 1.6.0 (see engine).
 PROCESS = 2
 
@@ -37,10 +40,15 @@ def recipe():
                 hsl=[[0., 0., 0.] for _ in COLORS],
                 curves={c: [[0., 0.], [1., 1.]] for c in ['RGB', 'R', 'G', 'B']},
                 tone_curve=[[0., 0.], [1., 1.]],
-                masks=[], crop=None, rotation=0, straighten=0., monochrome=False,
+                masks=[], crop=None, rotation=0, straighten=0., flip=[False, False], monochrome=False,
                 wb_gain=[1., 1., 1.], grading=grading(), effects=effects(), retouch=[],
                 white_balance=dict(camera_kelvin=None, kelvin=None, estimated=False), lens=lens_defaults(),
-                lut=None)
+                lut=None, portrait=portrait_defaults())
+
+
+def portrait_defaults():
+    from .portrait import defaults
+    return defaults()
 
 
 def lens_defaults():
@@ -84,7 +92,7 @@ def validate(data):
             base[k] = number(a.get(k, 0), -5 if k == 'exposure' else -100,
                              5 if k == 'exposure' else 100)
         return base
-    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5, 6, 7, 8):
+    if not isinstance(data, dict) or data.get('version') not in (1, 2, 3, 4, 5, 6, 7, 8, 9):
         raise ValueError(tr('不支持的工程版本。'))
     r = recipe()
     # Projects before 1.6.0 have no process version: they keep rendering as they always did.
@@ -153,7 +161,17 @@ def validate(data):
             raise ValueError(tr('裁切区域太小。'))
     r['crop'] = crop
     r['rotation'] = int(number(data.get('rotation', 0), 0, 3))
-    r['straighten'] = number(data.get('straighten', 0), -15, 15)
+    r['straighten'] = number(data.get('straighten', 0), -STRAIGHTEN, STRAIGHTEN)
+    flip = data.get('flip', [False, False])
+    if not isinstance(flip, list) or len(flip) != 2 or not all(isinstance(v, bool) for v in flip):
+        raise ValueError(tr('无效裁切。'))
+    r['flip'] = list(flip)
+    # 2.3.0: portrait retouching, faces with their landmarks (absent in older projects: none).
+    from . import portrait
+    try:
+        r['portrait'] = portrait.validate(data.get('portrait'))
+    except (ValueError, TypeError, KeyError):
+        raise ValueError(tr('无效的人像数据。'))
     r['monochrome'] = bool(data.get('monochrome', False))
     gains = data.get('wb_gain', [1., 1., 1.])
     if not isinstance(gains, list) or len(gains) != 3:
@@ -586,19 +604,33 @@ def builtin_presets():
 
 
 class History:
-    def __init__(self, value):
+    """Undo states of one photo.  2.3.0: every state has a name (``labels``, see
+    ``history.describe``) for the history list, which jumps to any of them (``goto``)."""
+    #: States kept (60 before 2.3.0).
+    LIMIT = 100
+
+    def __init__(self, value, label=None):
         self.items = [copy.deepcopy(value)]
+        self.labels = [label or tr('打开照片')]
         self.index = 0
 
-    def push(self, value):
+    def push(self, value, label=None):
         if value == self.items[self.index]:
-            return
+            return False
+        from .history import describe
         del self.items[self.index + 1:]
+        del self.labels[self.index + 1:]
+        self.labels.append(label or describe(self.items[self.index], value))
         self.items.append(copy.deepcopy(value))
-        if len(self.items) > 60:
+        if len(self.items) > self.LIMIT:
             self.items.pop(0)
+            self.labels.pop(0)
         self.index = len(self.items) - 1
+        return True
 
     def move(self, delta):
         self.index = max(0, min(len(self.items) - 1, self.index + delta))
         return copy.deepcopy(self.items[self.index])
+
+    def goto(self, index):
+        return self.move(index - self.index)

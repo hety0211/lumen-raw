@@ -70,7 +70,7 @@ def run(output, sources):
             alpha,provider=selection.automatic(w.rendered,kind,False)
             assert alpha.shape==w.rendered.shape[:2] and np.isfinite(alpha).all()
             report['packaged_mask_models'][kind]=provider
-        w.tabs.setCurrentIndex(4)
+        w.show_tab('masks')
         w.create_auto_mask('sky');settle()
         assert w.selected_mask()['kind']=='sky'
         sky=engine.mask_alpha(w.selected_mask(),w.source.shape)
@@ -78,7 +78,7 @@ def run(output, sources):
         assert float(sky[-sky.shape[0]//4:].mean())<.1
         w.grab().save(str(destination/'sky-mask.png'))
         w.local_controls['exposure'].spin.setValue(-.2);settle()
-        w.tabs.setCurrentIndex(5)
+        w.start_crop()
         w.edits['crop']=[.1,.15,.9,.9];w.update_display()
         w.canvas.setFocus();QTest.keyClick(w.canvas,Qt.Key.Key_Return);settle()
         assert w.final_view.isChecked() and w.canvas.crop is None
@@ -99,7 +99,7 @@ def run(output, sources):
         assert w.save_album(path=str(destination/'旅行选片.lumenalbum'))
         w.open_album(str(destination/'旅行选片.lumenalbum'));settle()
         assert len(w.documents)==len(paths)
-        w.tabs.setCurrentIndex(1);w.tabs.widget(1).ensureWidgetVisible(w.curve);app.processEvents()
+        w.show_tab('color');w.tabs.widget(w.tab_index('color')).ensureWidgetVisible(w.curve);app.processEvents()
         w.grab().save(str(destination/'workspace.png'))
         for path in paths:assert hashlib.sha256(Path(path).read_bytes()).hexdigest()==before[path]
         report.update(ok=True,photos=rows,source_hashes_unchanged=True,source_hashes=before,sky=True,album=True,full_resolution=True)

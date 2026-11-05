@@ -143,7 +143,9 @@ class Job(QRunnable):
                 log.info('job %s cancelled: %s', self.name, exc)
             else:
                 log.exception('job %s failed', self.name)
-            self.signals.failed.emit(str(exc) or type(exc).__name__)
+            # 2.3.0: running out of memory is explained in plain words with the real numbers.
+            from .large_image import explain
+            self.signals.failed.emit(explain(exc))
         finally:
             log.debug('job %s finished in %.0f ms', self.name, (time.perf_counter() - started) * 1000)
             self.signals.done.emit()

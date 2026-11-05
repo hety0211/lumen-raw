@@ -86,7 +86,7 @@ def platform_hardware(names):
 
 #: Recipe keys that are never blended: they switch at the middle between keyframes.
 DISCRETE = {'version', 'process', 'rotation', 'mode', 'kind', 'name', 'source', 'raster', 'enabled', 'invert',
-            'monochrome', 'curve_mode', 'estimated', 'erase', 'manual', 'profile', 'auto'}
+            'monochrome', 'curve_mode', 'estimated', 'erase', 'manual', 'profile', 'auto', 'flip', 'portrait'}
 #: Exposure corrections of the deflicker never exceed this many stops.
 DEFLICKER_LIMIT = 1.5
 

@@ -94,7 +94,8 @@ def _requests(conn, sessions):
                 return
         except Exception as exc:
             log.exception('worker request %s failed', kind)
-            send('error', f'{type(exc).__name__}: {exc}')
+            from .large_image import explain, out_of_memory
+            send('error', explain(exc) if out_of_memory(exc) else f'{type(exc).__name__}: {exc}')
 
 
 # ----------------------------------------------------------------------------- crash record

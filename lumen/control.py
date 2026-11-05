@@ -416,7 +416,8 @@ class Server(QObject):
                     outcome = exc
                 except Exception as exc:
                     log.exception('command %s failed', command)
-                    outcome = commands.CommandError(f'{type(exc).__name__}: {exc}')
+                    from .large_image import explain, out_of_memory
+                    outcome = commands.CommandError(explain(exc) if out_of_memory(exc) else f'{type(exc).__name__}: {exc}')
                 self.finished.emit(callback, outcome)
                 continue
             connection, line = item
@@ -433,7 +434,8 @@ class Server(QObject):
             reply = dict(id=ident, ok=False, error=str(exc))
         except Exception as exc:
             log.exception('control command failed')
-            reply = dict(id=ident, ok=False, error=f'{type(exc).__name__}: {exc}')
+            from .large_image import explain, out_of_memory
+            reply = dict(id=ident, ok=False, error=explain(exc) if out_of_memory(exc) else f'{type(exc).__name__}: {exc}')
         return json.dumps(reply, ensure_ascii=False).encode('utf-8')
 
     def _write(self, connection, data):

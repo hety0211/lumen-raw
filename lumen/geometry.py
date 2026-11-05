@@ -25,6 +25,12 @@ def frame(edits, size):
     elif rotation==3:
         matrix=np.array([[0,1,0],[-1,0,cw-1],[0,0,1]])@matrix
     ow,oh=(ch,cw) if rotation%2 else (cw,ch)
+    # 2.3.0: mirrored output (engine.flipped).
+    horizontal,vertical=(edits.get('flip') or (False,False))[:2]
+    if horizontal:
+        matrix=np.array([[-1,0,ow-1],[0,1,0],[0,0,1.]])@matrix
+    if vertical:
+        matrix=np.array([[1,0,0],[0,-1,oh-1],[0,0,1.]])@matrix
     matrix=np.diag([1/max(1,ow-1),1/max(1,oh-1),1])@matrix
     return matrix,(ow,oh),scale*min(w,h)/max(1,min(ow,oh))
 

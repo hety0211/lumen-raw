@@ -68,6 +68,10 @@ app = BUNDLE(
         'LSMinimumSystemVersion': minimum,
         'LSArchitecturePriority': ['arm64'],
         'LSApplicationCategoryType': 'public.app-category.photography',
+        # 2.3.0 (issue #11): lumen-cli is a console EXE in the same COLLECT, and PyInstaller turns that
+        # into LSBackgroundOnly = true: the window opens but the app never becomes the active one, so
+        # the menu bar stays on the previous app and key equivalents do not reach it.
+        'LSBackgroundOnly': False,
         'NSHighResolutionCapable': True,
         'NSHumanReadableCopyright': 'LUMEN RAW · MIT License',
         # 1.5.0: voice instructions are recognized offline on this Mac.

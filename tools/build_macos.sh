@@ -98,6 +98,8 @@ step 'Minimum macOS version and ad-hoc signature'
 MINIMUM="$("$PY" tools/package_macos.py --minimum "$APP")" || fail 'minimum macOS scan'
 say "Bundled binaries require macOS $MINIMUM"
 plutil -replace LSMinimumSystemVersion -string "$MINIMUM" "$APP/Contents/Info.plist" || fail 'Info.plist'
+# A background-only app has no menu bar and no key equivalents (issue #11).
+[ "$(plutil -extract LSBackgroundOnly raw "$APP/Contents/Info.plist")" = "false" ] || fail 'LSBackgroundOnly must be false'
 xattr -cr "$APP"
 run 'codesign' "$BUILD_LOG" codesign --force --deep --sign - --timestamp=none "$APP"
 run 'codesign verify' "$BUILD_LOG" codesign --verify --deep --strict --verbose=2 "$APP"

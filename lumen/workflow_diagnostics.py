@@ -22,7 +22,7 @@ def run(destination,primary,others):
         for i in range(w.tabs.count()):
             w.tabs.setCurrentIndex(i);app.processEvents()
             assert w.tabs.tabBar().isEnabled() and not w.tabs.widget(i).widget().isEnabled()
-        w.tabs.setCurrentIndex(3);w.grab().save(str(out/'empty-browse.png'))
+        w.show_tab('details');w.grab().save(str(out/'empty-browse.png'))
         def settle(timeout=300):
             end=time.monotonic()+timeout
             while w.loading or w.jobs or w.timer.isActive() or w.detail_timer.isActive() or w.ai_busy:
@@ -36,7 +36,7 @@ def run(destination,primary,others):
             w.open_path(path);settle()
             assert w.info['raw'] and w.info['photo'].get('body')
             brands.append(dict(file=Path(path).name,shape=list(w.source.shape),photo=w.info['photo']))
-        w.open_path(paths[0]);settle();w.tabs.setCurrentIndex(4)
+        w.open_path(paths[0]);settle();w.show_tab('masks')
         report['mask_results']={}
         for kind in ('subject','foreground'):
             w.create_auto_mask(kind);settle()

@@ -110,22 +110,73 @@ class StudioMixin:
         self.fill_presets()
         library_tabs.addTab(preset_page, tr('预设'))
         library_tabs.addTab(self.build_natural_language(), tr('自然语言输入'))
+        # 2.3.0: 历史 lists every edit step of the photo (click one to go back to it); the
+        # snapshots, kept with the project, sit below it.
         versions = QWidget()
         v = QVBoxLayout(versions)
         v.setContentsMargins(0, 12, 0, 0)
-        v.addWidget(label(tr('保留不同处理版本，随时切换比较。快照随工程保存。')))
+        v.addWidget(label(tr('每一步编辑都在这里，点击回到那一步；之后再编辑会替换其后的步骤。')))
+        self.history_list = QListWidget()
+        self.history_list.setObjectName('historyList')
+        self.history_list.itemClicked.connect(lambda item: self.goto_history(item.data(Qt.ItemDataRole.UserRole)))
+        self.history_list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.history_list.customContextMenuRequested.connect(self.history_menu)
+        v.addWidget(self.history_list, 3)
+        v.addWidget(label(tr('快照'), 'section'))
         self.snapshot_list = QListWidget()
         self.snapshot_list.itemDoubleClicked.connect(lambda _: self.restore_snapshot())
         v.addWidget(self.snapshot_list, 1)
-        v.addWidget(self.button(tr('＋ 创建快照'), lambda: self.add_snapshot()))
         row = QHBoxLayout()
+        row.addWidget(self.button(tr('＋ 快照'), lambda: self.add_snapshot()))
         row.addWidget(self.button(tr('恢复'), self.restore_snapshot))
         row.addWidget(self.button(tr('删除'), self.delete_snapshot))
         v.addLayout(row)
-        v.addWidget(label(tr('双击快照恢复 · 最多 20 个')))
-        library_tabs.addTab(versions, tr('快照'))
+        v.addWidget(label(tr('快照随工程保存 · 双击恢复 · 最多 20 个')))
+        library_tabs.addTab(versions, tr('历史'))
         self.library_strip.rebuild()
         return side
+
+    def refresh_history(self):
+        """The history list: newest step on top, the current one selected, steps that a new edit
+        would replace (after an undo) dimmed."""
+        if not hasattr(self, 'history_list'):
+            return
+        from PySide6.QtGui import QBrush
+        from . import theme
+        history = self.history
+        self.history_list.blockSignals(True)
+        self.history_list.clear()
+        for index in range(len(history.items) - 1, -1, -1):
+            item = QListWidgetItem(f'{index + 1:>2}  {history.labels[index]}')
+            item.setData(Qt.ItemDataRole.UserRole, index)
+            if index > history.index:
+                item.setForeground(QBrush(theme.color('disabled')))
+            self.history_list.addItem(item)
+            if index == history.index:
+                item.setSelected(True)
+                self.history_list.setCurrentItem(item)
+        self.history_list.blockSignals(False)
+        self.history_list.setEnabled(self.source is not None)
+
+    def history_menu(self, position):
+        item = self.history_list.itemAt(position)
+        if item is None or self.source is None:
+            return
+        index = item.data(Qt.ItemDataRole.UserRole)
+        menu = QMenu(self)
+        menu.addAction(tr('回到这一步'), lambda: self.goto_history(index))
+        menu.addAction(tr('从这一步创建快照'), lambda: self.snapshot_from_history(index))
+        menu.exec(self.history_list.viewport().mapToGlobal(position))
+
+    def snapshot_from_history(self, index):
+        if not 0 <= index < len(self.history.items):
+            return
+        if len(self.snapshots) >= 20:
+            return self.error(tr('最多保留 20 个快照，请先删除不需要的版本。'))
+        self.snapshots.append(dict(name=self.history.labels[index][:80], edits=copy.deepcopy(self.history.items[index])))
+        self.refresh_snapshots()
+        self.snapshot_list.setCurrentRow(len(self.snapshots) - 1)
+        self.state_label.setText(tr('快照尚未保存'))
 
     def update_thumbnails(self):
         """Render the presets shown in the list on a small copy of the photo (visible ones only:
@@ -225,7 +276,7 @@ class StudioMixin:
         self.edits = model.apply_look(self.edits, self.presets[index]['look'])
         self.refresh()
         self.changed()
-        self.commit()
+        self.commit(tr('预设：{name}', name=self.presets[index]['name']))
         self.statusBar().showMessage(tr('已应用：') + self.presets[index]['name'] + tr(' · 保留蒙版、取样白平衡与构图'))
 
     def change_preset_amount(self, value):
@@ -443,7 +494,7 @@ class StudioMixin:
             self.current_mask = -1
             self.refresh()
             self.changed()
-            self.commit()
+            self.commit(tr('恢复快照：{name}', name=self.snapshots[index]['name']))
 
     def delete_snapshot(self):
         index = self.snapshot_list.currentRow()
@@ -459,9 +510,8 @@ class StudioMixin:
             self.snapshot_list.addItem(f'{i + 1:02d}  {snap["name"]}')
         self.snapshot_list.setCurrentRow(min(selected, len(self.snapshots) - 1))
 
-    def build_grading(self):
-        l = self.panel(tr('调色'))
-        l.addWidget(label(tr('色彩分级'), 'section'))
+    def build_grading(self, l):
+        """Colour grading; 2.3.0: a section of the 色彩 panel (the 调色 panel before)."""
         l.addWidget(label(tr('为暗部、中间调与高光分别赋予色彩。')))
         row = QHBoxLayout()
         row.setSpacing(0)
@@ -498,7 +548,6 @@ class StudioMixin:
         l.addWidget(self.grade_balance)
         l.addWidget(self.button(tr('重置色彩分级'), self.reset_grading))
         l.addWidget(label(tr('提示：给阴影加入轻微青蓝色、给高光加入暖金色，适合海岸和日落场景。双击色轮清除该区域颜色。')))
-        l.addStretch()
 
     def grade_pick_mode(self, checked):
         if checked:
@@ -582,7 +631,7 @@ class StudioMixin:
         self.commit()
 
     def build_effects(self):
-        l = self.panel(tr('效果'))
+        l = self.panel(tr('效果'), 'effects')
         l.addWidget(label(tr('镜头氛围'), 'section'))
         l.addWidget(label(tr('暗角以当前裁切框为中心，支持压暗或提亮边缘。')))
         for key, title, low in [('vignette', tr('暗角 · 暗 / 亮'), -100), ('midpoint', tr('中点'), 0), ('feather', tr('羽化'), 0)]:
@@ -610,14 +659,34 @@ class StudioMixin:
             self.changed()
 
     def automatic(self):
-        if self.source is None or self.loading:
+        """自动 (2.3.0): white balance, exposure, tone and vibrance from ``auto_adjust``, as sliders."""
+        if self.source is None or self.loading or not self.auto_button.isEnabled():
             return
+        from . import auto_adjust
         self.commit()
-        self.edits['adjustments'].update(engine.auto_tone_for(self.source, self.edits))
-        self.clear_preset_selection()
-        self.refresh()
-        self.changed()
-        self.commit()
+        source, edits = self.source, copy.deepcopy(self.edits)
+        self.auto_running = True
+        self.auto_button.setEnabled(False)
+        self.statusBar().showMessage(tr('正在自动调整…'))
+
+        def done(values):
+            self.auto_running = False
+            self.auto_button.setEnabled(self.source is not None)
+            if source is not self.source:
+                return
+            self.commit()
+            self.edits['adjustments'].update(values)
+            self.clear_preset_selection()
+            self.refresh()
+            self.changed()
+            self.commit(tr('自动调整'))
+            self.statusBar().showMessage(tr('已自动调整白平衡、曝光、影调与自然饱和度，可继续微调各滑块。'))
+
+        def failed(text):
+            self.auto_running = False
+            self.auto_button.setEnabled(self.source is not None)
+            self.error(text)
+        self.job(lambda: auto_adjust.suggest(source, edits), done, failed)
 
     def toggle_wb(self, checked):
         self.wb_sampling = checked
@@ -660,13 +729,6 @@ class StudioMixin:
             self.changed()
             self.commit()
 
-    def straighten_changed(self, value):
-        if not self.refreshing:
-            self.edits['straighten'] = value
-            self.final_view.setChecked(True)
-            self.update_display()
-            self.changed()
-
     def range_value(self, key, value):
         mask = self.selected_mask()
         if not mask or self.refreshing:
@@ -684,14 +746,13 @@ class StudioMixin:
     def refresh_studio(self):
         self.mono_check.setChecked(self.edits['monochrome'])
         self.refresh_lut()
-        self.straighten.setValue(self.edits['straighten'])
         self.refresh_grading()
         for key, control in self.effect_controls.items():
             control.setValue(self.edits['effects'][key])
         self.refresh_snapshots()
         self.refresh_natural_language()
         self.update_navigator()
-        self.auto_button.setEnabled(self.source is not None and not self.loading)
+        self.auto_button.setEnabled(self.source is not None and not self.loading and not getattr(self, 'auto_running', False))
         self.preset_list.setEnabled(self.source is not None and not self.loading)
         self.split_check.setEnabled(self.source is not None)
         self.wb_button.setEnabled(self.source is not None and not self.loading)

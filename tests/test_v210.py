@@ -119,7 +119,8 @@ def test_removal_recipes_validate_pack_and_reject_damaged_patches(tmp_path):
     edits['retouch'] = [dict(kind='remove', enabled=True, points=[[.45, .4]], radius=.02, opacity=80., feather=0.,
                              picked=True, patch=patch)]
     checked = model.validate(copy.deepcopy(edits))
-    assert checked['version'] == model.VERSION == 8 and checked['retouch'][0]['patch']['png'] == patch['png']
+    # Format 8 brought AI removal; 2.3.0 is format 9 (portrait, flips).
+    assert checked['version'] == model.VERSION >= 8 and checked['retouch'][0]['patch']['png'] == patch['png']
     colour, decoded = remove.decode(patch['png'], .8)
     assert np.allclose(colour[10, 20], .2, atol=1e-3) and decoded[0, 0] == 0
     # Projects and snapshots store each patch once.
@@ -349,7 +350,7 @@ def scene_window(window, tmp_path):
 @needs('inpaint-lama.onnx')
 def test_window_paint_removal_queue_list_and_undo(scene_window):
     w = scene_window
-    w.tabs.setCurrentIndex(8)
+    w.show_tab('retouch')
     w.retouch_tool.setCurrentIndex(2)
     assert w.canvas.tool == 'remove' and 'LaMa' in w.retouch_tip.text()
     h, wd = 800, 1200
@@ -374,7 +375,7 @@ def test_window_paint_removal_queue_list_and_undo(scene_window):
 @needs('inpaint-lama.onnx', 'object-encoder.onnx', 'object-decoder.onnx')
 def test_window_click_removal_and_object_masks(scene_window):
     w = scene_window
-    w.tabs.setCurrentIndex(8)
+    w.show_tab('retouch')
     w.retouch_tool.setCurrentIndex(3)
     assert w.canvas.tool == 'object'
     w.canvas.object_picked.emit([630 / 1200, 425 / 800], 'new')
@@ -382,7 +383,7 @@ def test_window_click_removal_and_object_masks(scene_window):
     assert w.edits['retouch'][0]['picked'] and w.retouch_list.item(0).text().endswith('AI 移除 · 物体')
     assert w.removal_overlay is None
     # Masks: a click makes an object mask, Shift adds a point, Alt takes one away.
-    w.tabs.setCurrentIndex(4)
+    w.show_tab('masks')
     w.object_button.setChecked(True)
     assert w.canvas.tool == 'object'
     w.edits['retouch'] = []
@@ -409,7 +410,7 @@ def test_window_landscape_buttons(scene_window, monkeypatch):
         seen.append(kind)
         return np.ones(rgb.shape[:2], np.float32) * (np.arange(rgb.shape[1]) > rgb.shape[1] / 2), 'test'
     monkeypatch.setattr(selection, 'automatic', automatic)
-    w.tabs.setCurrentIndex(4)
+    w.show_tab('masks')
     w.fine_mask_check.setChecked(False)
     labels = {b.text(): b for b in w.ai_mask_buttons}
     for text in ('水面', '植被', '山体', '建筑', '地面'):
@@ -424,7 +425,7 @@ def test_window_drags_the_exposure_curve_ends(scene_window):
     from PySide6.QtTest import QTest
     from lumen import exposure_curve as ec
     w = scene_window
-    w.tabs.setCurrentIndex(0)
+    w.show_tab('basic')
     curve = w.exposure_curve
     wait_until(lambda: curve.isVisible() and curve.histogram is not None)
     assert 0 < curve.histogram.max() <= 1

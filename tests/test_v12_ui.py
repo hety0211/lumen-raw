@@ -22,11 +22,11 @@ def test_close_drains_active_job_and_drops_queued_previews(app):
 
 def test_tabs_have_inline_watermark_and_color_curves(app):
     w=MainWindow();w.show()
-    assert [w.tabs.tabText(i) for i in range(3)]==['光影','色彩','水印']
+    assert [w.tabs.tabText(i) for i in range(2)]==['光影','色彩'] and w.tabs.tabText(w.tabs.count()-1)=='水印'
     assert '曲线' not in [w.tabs.tabText(i) for i in range(w.tabs.count())]
-    assert w.tabs.widget(1).isAncestorOf(w.curve)
-    assert w.tabs.widget(2).isAncestorOf(w.watermark_editor)
-    w.tabs.setCurrentIndex(2)
+    assert w.tabs.widget(w.tab_index('color')).isAncestorOf(w.curve)
+    assert w.tabs.widget(w.tab_index('watermark')).isAncestorOf(w.watermark_editor)
+    w.show_tab('watermark')
     assert not w.watermark_editor.enabled.isEnabled()
     assert w.pool.maxThreadCount()==32
     assert all(a.text()!='水印' for a in w.menuBar().actions())
@@ -34,7 +34,7 @@ def test_tabs_have_inline_watermark_and_color_curves(app):
 
 
 def test_curve_sliders_undo_and_inline_watermark(window):
-    w=window;w.tabs.setCurrentIndex(0);w.tabs.widget(0).ensureWidgetVisible(w.exposure_curve)
+    w=window;w.show_tab('basic');w.tabs.widget(w.tab_index('basic')).ensureWidgetVisible(w.exposure_curve)
     w.controls['shadows'].spin.setValue(25);w.commit()
     assert w.exposure_curve.values['shadows']==25
     baseline=copy.deepcopy(w.edits['adjustments'])
@@ -48,7 +48,7 @@ def test_curve_sliders_undo_and_inline_watermark(window):
     assert w.edits['curves']==model.recipe()['curves']
     w.undo(-1);assert w.edits['adjustments']==baseline
     assert w.exposure_curve.values==baseline
-    w.tabs.setCurrentIndex(2)
+    w.show_tab('watermark')
     w.watermark_editor.enabled.setChecked(True)
     w.watermark_editor.sides['left'].setChecked(True)
     assert w.edits['watermark']['enabled'] and 'left' in w.edits['watermark']['sides']

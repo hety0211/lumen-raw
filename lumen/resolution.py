@@ -84,7 +84,8 @@ class ResolutionMixin:
 
     def detail_keys(self):
         final = self.final_view.isChecked()
-        geometry = [self.edits.get('crop'), self.edits.get('straighten', 0), self.edits.get('rotation', 0)] if final else None
+        geometry = [self.edits.get('crop'), self.edits.get('straighten', 0), self.edits.get('rotation', 0),
+                    self.edits.get('flip')] if final else None
         return {'edited': (self.document_token, self.generation, final),
                 'original': (self.document_token, engine._key(self.edits.get('develop', {}), geometry,
                                                               engine.process_version(self.edits)), final)}
@@ -96,7 +97,7 @@ class ResolutionMixin:
 
     def detail_view(self):
         """Resolution level and visible tiles the zoom needs, or None while the preview suffices."""
-        if self.source is None or self.canvas.image is None or not self.info:
+        if self.source is None or self.canvas.image is None or not self.info or getattr(self, 'crop_active', False):
             return None
         width, height = self.info.get('width', 0), self.info.get('height', 0)
         if width <= self.source.shape[1] and height <= self.source.shape[0]:

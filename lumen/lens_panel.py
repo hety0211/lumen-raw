@@ -94,9 +94,7 @@ class LensDialog(QDialog):
 
 class LensMixin:
     def build_lens(self, layout):
-        title = QLabel(tr('镜头校正  /  LENS'))
-        title.setObjectName('section')
-        layout.addWidget(title)
+        """2.3.0: ``layout`` is the folding 镜头校正 section at the bottom of 细节."""
         self.lens_enable = QCheckBox(tr('启用配置文件校正'))
         self.lens_enable.toggled.connect(self.lens_enabled)
         layout.addWidget(self.lens_enable)

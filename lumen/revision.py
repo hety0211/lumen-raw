@@ -46,7 +46,7 @@ class RevisionMixin:
         self.camera_wb_label.setToolTip(self.info.get('wb_warning', ''))
 
     def build_retouch(self):
-        layout = self.panel(tr('修复'))
+        layout = self.panel(tr('修复'), 'retouch')
         title = QLabel(tr('修复与仿制  /  RETOUCH'))
         title.setObjectName('section')
         layout.addWidget(title)

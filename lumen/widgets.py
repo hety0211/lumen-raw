@@ -8,7 +8,7 @@ from PySide6.QtGui import (QColor, QCursor, QIcon, QImage, QPainter, QPen, QPain
                            QRadialGradient)
 from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSlider, QDoubleSpinBox, QLayout,
                                QToolButton, QButtonGroup, QAbstractSlider, QAbstractSpinBox, QComboBox, QScrollArea,
-                               QScrollBar, QApplication, QCheckBox, QSpinBox)
+                               QScrollBar, QApplication, QCheckBox, QSpinBox, QSizePolicy)
 from . import theme
 from .i18n import tr, N_
 
@@ -277,6 +277,46 @@ class TabStrip(QWidget):
     def sync(self, index):
         if 0 <= index < len(self.buttons):
             self.buttons[index].setChecked(True)
+
+
+class Section(QWidget):
+    """2.3.0: a titled part of a panel that folds away (the merged 色彩 panel, 镜头校正 in 细节).
+    Its controls go in ``body`` (a QVBoxLayout)."""
+    toggled = Signal(bool)
+
+    def __init__(self, title, expanded=True):
+        super().__init__()
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 2, 0, 0)
+        outer.setSpacing(6)
+        self.header = QToolButton()
+        self.header.setObjectName('sectionHeader')
+        self.header.setText(title)
+        self.header.setCheckable(True)
+        self.header.setChecked(expanded)
+        self.header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.header.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.header.toggled.connect(self.set_expanded)
+        outer.addWidget(self.header)
+        self.content = QWidget()
+        self.body = QVBoxLayout(self.content)
+        self.body.setContentsMargins(0, 0, 0, 4)
+        self.body.setSpacing(7)
+        outer.addWidget(self.content)
+        self.set_expanded(expanded)
+
+    def set_expanded(self, expanded):
+        self.header.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        if self.header.isChecked() != expanded:
+            self.header.setChecked(expanded)
+        self.content.setVisible(expanded)
+        self.toggled.emit(expanded)
+
+    def addWidget(self, widget, *args):
+        self.body.addWidget(widget, *args)
+
+    def addLayout(self, layout, *args):
+        self.body.addLayout(layout, *args)
 
 
 class AdjustSlider(QWidget):
@@ -612,9 +652,19 @@ class Canvas(QWidget):
     object_picked = Signal(object, str)
     viewport_changed = Signal()
     files_dropped = Signal(list)
+    #: 2.3.0: the canvas changed size (the crop tool's floating bar follows).
+    resized = Signal()
+    #: 2.3.0: a click on a face (tool 'face'): point and 'new' or 'add' (Ctrl / Shift).
+    face_picked = Signal(object, str)
 
     def __init__(self):
         super().__init__()
+        #: 2.3.0: the crop tool (``crop_tool.CropTool``) handling the mouse while ``tool == 'crop'``.
+        self.cropper = None
+        #: 2.3.0: numbered faces drawn in the 人像 panel: ``[{box: [x, y, w, h], number, selected}]``.
+        self.faces = []
+        #: 2.3.0: pixels kept free at the bottom (under the crop tool's bar) when fitting the photo.
+        self.reserve = 0
         self.image = None
         self.reference_size = None
         self.to_source = None
@@ -690,9 +740,12 @@ class Canvas(QWidget):
         if self.image is None:
             return QRectF()
         iw, ih = self.reference_size or (self.image.width(), self.image.height())
-        scale = min((self.width() - 64) / iw, (self.height() - 64) / ih) * self.zoom
+        scale = self.fit_scale(iw, ih) * self.zoom
         w, h = iw * scale, ih * scale
-        return QRectF((self.width() - w) / 2 + self.offset.x(), (self.height() - h) / 2 + self.offset.y(), w, h)
+        return QRectF((self.width() - w) / 2 + self.offset.x(), (self.height() - self.reserve - h) / 2 + self.offset.y(), w, h)
+
+    def fit_scale(self, iw, ih):
+        return min((self.width() - 64) / iw, max(40, self.height() - 64 - self.reserve) / ih)
 
     def view_pos(self, p):
         r = self.image_rect()
@@ -718,7 +771,7 @@ class Canvas(QWidget):
     def actual_size(self):
         if self.image:
             iw,ih = self.reference_size or (self.image.width(),self.image.height())
-            fit = min((self.width() - 64) / iw, (self.height() - 64) / ih)
+            fit = self.fit_scale(iw, ih)
             self.zoom = 1 / (fit * self.devicePixelRatioF())
             self.offset = QPointF()
             self.zoom_changed.emit(tr('原图 100%'))
@@ -744,9 +797,9 @@ class Canvas(QWidget):
     def zoom_by(self, factor, position):
         old_zoom = self.zoom
         iw,ih = self.reference_size or (self.image.width(),self.image.height())
-        fit = min((self.width()-64)/iw,(self.height()-64)/ih)
+        fit = self.fit_scale(iw, ih)
         self.zoom = float(np.clip(self.zoom * factor, .3, max(12,8/fit)))
-        center = QPointF(self.width() / 2, self.height() / 2)
+        center = QPointF(self.width() / 2, (self.height() - self.reserve) / 2)
         relative = position - center
         self.offset = relative - (relative - self.offset) * (self.zoom / old_zoom)
         hint = tr('双指平移') if sys.platform == 'darwin' else tr('中键平移')
@@ -778,6 +831,20 @@ class Canvas(QWidget):
             mode = ('subtract' if modifiers & Qt.KeyboardModifier.AltModifier else
                     'add' if modifiers & Qt.KeyboardModifier.ShiftModifier else 'new')
             self.object_picked.emit(self.pos(e.position()), mode)
+            return
+        if e.button() == Qt.MouseButton.LeftButton and self.tool == 'face' and self.image_rect().contains(e.position()):
+            point = self.pos(e.position())
+            if any(f['box'][0] <= point[0] <= f['box'][0] + f['box'][2] and f['box'][1] <= point[1] <= f['box'][1] + f['box'][3]
+                   for f in self.faces):
+                modifiers = e.modifiers()
+                add = modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier)
+                self.face_picked.emit(point, 'add' if add else 'new')
+            else:
+                self.pan = e.position()
+            return
+        if e.button() == Qt.MouseButton.LeftButton and self.tool == 'crop' and self.cropper is not None:
+            self.cropper.press(self, e)
+            self.update()
             return
         if e.button() == Qt.MouseButton.LeftButton and self.split:
             line = self.image_rect().left() + self.split_position * self.image_rect().width()
@@ -818,16 +885,10 @@ class Canvas(QWidget):
             self.offset += e.position() - self.pan
             self.pan = e.position()
             self.viewport_changed.emit()
+        elif self.tool == 'crop' and self.cropper is not None:
+            self.cropper.move(self, e)
         elif self.start is not None:
             self.end = self.pos(e.position())
-            if self.tool == 'crop' and self.ratio:
-                r = self.image_rect()
-                dx = self.end[0] - self.start[0]
-                dy = abs(dx) * r.width() / (self.ratio * r.height())
-                sign = 1 if self.end[1] >= self.start[1] else -1
-                dy = min(dy, 1 - self.start[1] if sign > 0 else self.start[1])
-                self.end[1] = self.start[1] + sign * dy
-                self.end[0] = self.start[0] + (1 if dx >= 0 else -1) * dy * self.ratio * r.height() / r.width()
             if self.stroke is not None:
                 if np.linalg.norm(np.array(self.end) - self.stroke['points'][-1]) > .001:
                     self.stroke['points'].append(self.end)
@@ -841,10 +902,14 @@ class Canvas(QWidget):
             self.pan = None
             self.viewport_changed.emit()
             return
+        if self.tool == 'crop' and self.cropper is not None:
+            self.cropper.release(self, e)
+            self.update()
+            return
         if self.start is not None:
             if self.stroke is not None:
                 self.stroke_finished.emit(self.stroke)
-            elif self.tool in ('crop', 'linear', 'radial') and np.linalg.norm(np.array(self.end) - self.start) > .01:
+            elif self.tool in ('linear', 'radial') and np.linalg.norm(np.array(self.end) - self.start) > .01:
                 self.geometry_changed.emit([self.start, self.end])
         self.start = self.end = self.stroke = None
         self.update()
@@ -852,6 +917,7 @@ class Canvas(QWidget):
     def resizeEvent(self, event):
         self.viewport_changed.emit()
         super().resizeEvent(event)
+        self.resized.emit()
 
     def leaveEvent(self, _):
         self.pointer = None
@@ -865,6 +931,30 @@ class Canvas(QWidget):
         paths = [u.toLocalFile() for u in e.mimeData().urls() if u.isLocalFile()]
         if len(paths)>1:self.files_dropped.emit(paths)
         elif paths:self.dropped.emit(paths[0])
+
+    def paint_faces(self, p):
+        """Face boxes with their numbers (2.3.0), through the display mapping (crop, rotation)."""
+        font = p.font()
+        font.setPixelSize(13)
+        font.setBold(True)
+        p.setFont(font)
+        for face in self.faces:
+            x, y, w, h = face['box']
+            corners = [self.screen(c) for c in ([x, y], [x + w, y], [x + w, y + h], [x, y + h])]
+            colour = theme.color('accent') if face['selected'] else QColor(255, 255, 255, 170)
+            p.setPen(QPen(colour, 2 if face['selected'] else 1.2, Qt.PenStyle.SolidLine if face['selected'] else Qt.PenStyle.DashLine))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            path = QPainterPath(corners[0])
+            for corner in corners[1:] + corners[:1]:
+                path.lineTo(corner)
+            p.drawPath(path)
+            top = min(corners, key=lambda c: (c.y(), c.x()))
+            badge = QRectF(top.x() - 1, top.y() - 24, 26, 22)
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(colour if face['selected'] else QColor(20, 20, 22, 200))
+            p.drawRoundedRect(badge, 6, 6)
+            p.setPen(theme.color('accent_text') if face['selected'] else QColor('#ffffff'))
+            p.drawText(badge, Qt.AlignmentFlag.AlignCenter, str(face['number']))
 
     def draw_tiles(self, p, r, tiles, clipping=False):
         """Draw finished detail tiles that fall inside the widget over the preview."""
@@ -943,9 +1033,9 @@ class Canvas(QWidget):
         if self.overlay is not None:
             p.drawImage(r, self.overlay)
         crop = self.crop
-        if self.tool == 'crop' and self.start is not None:
-            crop = [min(self.start[0], self.end[0]), min(self.start[1], self.end[1]),
-                    max(self.start[0], self.end[0]), max(self.start[1], self.end[1])]
+        if self.tool == 'crop' and self.cropper is not None:
+            self.cropper.paint(self, p, r)
+            crop = None
         if crop:
             area = QRectF(self.screen(crop[:2]), self.screen(crop[2:]))
             shadow = QPainterPath()
@@ -958,6 +1048,8 @@ class Canvas(QWidget):
             for t in (1 / 3, 2 / 3):
                 p.drawLine(QPointF(area.x() + t * area.width(), area.top()), QPointF(area.x() + t * area.width(), area.bottom()))
                 p.drawLine(QPointF(area.left(), area.y() + t * area.height()), QPointF(area.right(), area.y() + t * area.height()))
+        if self.faces:
+            self.paint_faces(p)
         geom = [self.start, self.end] if self.start is not None else self.mask_geometry
         if geom and self.tool in ('linear', 'radial'):
             a, b = self.screen(geom[0]), self.screen(geom[1])

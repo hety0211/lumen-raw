@@ -56,7 +56,7 @@ def test_dragging_the_histogram_changes_the_zone_slider(window):
 def test_grading_eyedropper_sets_the_zone_hue(window):
     w = window
     wait_until(lambda: w.rendered is not None and not w.render_running)
-    w.tabs.setCurrentIndex(6)
+    w.show_tab('color')
     w.grade_zone.setCurrentIndex(0)
     w.grade_pick_button.setChecked(True)
     assert w.canvas.tool == 'pick'
@@ -85,5 +85,5 @@ def test_grading_eyedropper_sets_the_zone_hue(window):
     assert w.edits['grading']['highlights'] == [40., 33.] and w.grade_pick_button.isChecked()
     assert '灰色' in w.statusBar().currentMessage()
     # Leaving the panel turns the eyedropper off.
-    w.tabs.setCurrentIndex(0)
+    w.show_tab('basic')
     assert not w.grade_pick_button.isChecked()

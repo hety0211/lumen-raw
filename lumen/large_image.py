@@ -59,7 +59,7 @@ def transform(image,edits):
     if abs(edits.get('straighten',0))>.001:
         # OpenCV affine output can use a mapped destination directly.
         import cv2
-        crop=dict(edits,straighten=0.,rotation=0)
+        crop=dict(edits,straighten=0.,rotation=0,flip=[False,False])
         image=transform(image,crop)
         h,w=image.shape[:2];theta=np.deg2rad(abs(edits['straighten']))
         scale=max(np.cos(theta)+h/w*np.sin(theta),np.cos(theta)+w/h*np.sin(theta))
@@ -72,7 +72,7 @@ def transform(image,edits):
         x0,y0=min(w-1,int(a*w)),min(h-1,int(b*h))
         x1,y1=max(x0+1,min(w,round(c*w))),max(y0+1,min(h,round(d*h)))
         image=image[y0:y1,x0:x1]
-    view=np.rot90(image,-edits['rotation'])
+    view=engine.flipped(np.rot90(image,-edits['rotation']),edits)
     if view.flags.c_contiguous:return view
     output=allocate(view.shape)
     for y,block in strips(view):output[y:y+len(block)]=block
@@ -99,7 +99,24 @@ def _macos_available_memory():
     except (OSError,AttributeError,ValueError):
         return None
 
+def memory_status():
+    """Windows: ``{physical_total, physical_available, commit_limit, commit_available}`` in bytes,
+    else None.  Windows grants memory against the *commit limit* (physical memory plus the page
+    file), not against free physical memory: other programs commit far more than they touch
+    (here 32 GB committed with 17 GB in use), so with a small or disabled page file an allocation
+    fails while Task Manager still shows gigabytes of free memory."""
+    if os.name!='nt':return None
+    import ctypes
+    class Status(ctypes.Structure):
+        _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(k,ctypes.c_ulonglong) for k in ('total','avail','page','freepage','virt','freevirt','ext')]
+    status=Status();status.length=ctypes.sizeof(Status)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):return None
+    return dict(physical_total=status.total,physical_available=status.avail,commit_limit=status.page,
+                commit_available=status.freepage)
+
 def available_memory():
+    """Bytes this process can still use without paging or failing, or None when unknown.
+    2.3.0: on Windows the smaller of free physical memory and the remaining commit."""
     if sys.platform=='darwin':return _macos_available_memory()
     if os.name!='nt':
         # Linux: MemAvailable already accounts for reclaimable page cache and swap headroom.
@@ -111,20 +128,56 @@ def available_memory():
         except (OSError,ValueError,IndexError):
             pass
         return None
-    import ctypes
-    class Status(ctypes.Structure):
-        _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(k,ctypes.c_ulonglong) for k in ('total','avail','page','freepage','virt','freevirt','ext')]
-    status=Status();status.length=ctypes.sizeof(Status)
-    if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):return status.avail
+    status=memory_status()
+    return min(status['physical_available'],status['commit_available']) if status else None
 
-def fits_in_memory(shape):
-    """Whole-image processing needs roughly 100 bytes per pixel of free memory."""
+#: Bytes per pixel a whole-frame render with spatial edits needs at most (2.3.0: measured 55–76 on a
+#: 61 MP ARW with clarity, texture, sharpening, two masks and dehaze; 140 before 2.3.0).
+FRAME_BYTES=100
+
+def fits_in_memory(shape,per_pixel=FRAME_BYTES):
+    """Whether a whole-frame render of ``shape`` fits the memory available now."""
     available=available_memory()
-    return available is None or shape[0]*shape[1]*100<=available*.85
+    return available is None or shape[0]*shape[1]*per_pixel<=available*.85
+
+def block_size(margin,available=None):
+    """Side of the square blocks a frame is rendered in when it does not fit memory: a block and
+    its ``margin`` take at most a quarter of the available memory."""
+    available=available or available_memory() or 4*2**30
+    side=int((available*.25/FRAME_BYTES)**.5)-2*margin
+    return max(512,min(8192,side))
+
+def out_of_memory(error):
+    """Whether an exception (or its text) reports that memory ran out: NumPy, OpenCV, ONNX
+    Runtime / DirectML (E_OUTOFMEMORY) and Windows (the page file is too small)."""
+    if isinstance(error,MemoryError):return True
+    text=str(error).lower()
+    return any(k in text for k in ('insufficient memory','unable to allocate','bad_alloc','bad allocation',
+        'out of memory','outofmemory','8007000e','e_outofmemory','paging file is too small',
+        'not enough memory','页面文件太小','内存资源不足','内存不足'))
+
+def explain(error):
+    """The text to show for an exception: plain words and the real numbers when memory ran out."""
+    text=str(error) or type(error).__name__
+    if not out_of_memory(error):return text
+    detail=text.strip().splitlines()[-1][:160] if text.strip() else type(error).__name__
+    lowered=text.lower()
+    if any(k in lowered for k in ('dml','directml','d3d12','gpu','cuda')):
+        return tr('显卡内存不足，无法完成这一步（{detail}）。可关闭其他占用显卡的程序，或在右侧面板底部改用“CPU 模式”后重试。',detail=detail)
+    status=memory_status()
+    if status:
+        G=2**30
+        used=(status['commit_limit']-status['commit_available'])/G
+        return tr('内存不足，无法完成这一步（{detail}）。\nWindows 按“已提交内存”分配，上限是物理内存加页面文件：当前已提交 {used:.1f} GB，上限 {limit:.1f} GB，'
+                  '可用物理内存 {free:.1f} GB。已提交接近上限时，即使任务管理器显示还有空闲内存，分配也会失败。\n'
+                  '可在“系统 → 系统信息 → 高级系统设置 → 性能 → 设置 → 高级 → 虚拟内存”中把页面文件改为“系统管理的大小”，或关闭其他程序后重试。',
+                  detail=detail,used=used,limit=status['commit_limit']/G,free=status['physical_available']/G)
+    return tr('内存不足，无法完成这一步（{detail}）。请关闭其他程序，或先裁切后再处理。',detail=detail)
 
 def process(source,edits,backend,apply_crop,detail_scale,cache=None,space=None):
-    """Stream point operations. Spatial edits retain the original whole-image math."""
-    from . import engine,lens,tone
+    """Stream point operations. Spatial edits retain the original whole-image math when the frame
+    fits memory; 2.3.0: otherwise they are rendered in blocks, as the 100 % view renders them."""
+    from . import engine,lens,tone,portrait
     if lens.active(edits.get('lens')):
         # 1.5.1: correct the lens once (disk-backed for large frames), then process without it.
         source=lens.correct(source,edits)
@@ -133,18 +186,38 @@ def process(source,edits,backend,apply_crop,detail_scale,cache=None,space=None):
     spatial=any(a[k] for k in ('dehaze','clarity','texture','sharpness','denoise','color_noise'))
     spatial|=any(m['enabled'] and any(m['adjustments'].values()) for m in edits['masks'])
     spatial|=any(o['enabled'] and o['opacity'] for o in edits.get('retouch',[]))
+    spatial|=bool(portrait.active(edits.get('portrait')))
     spatial|=bool(edits.get('effects',{}).get('vignette') or edits.get('effects',{}).get('grain'))
-    if spatial:
-        available=available_memory();required=source.shape[0]*source.shape[1]*100
-        if available is not None and required>available*.85:
-            raise ValueError(tr('当前空间类编辑预计需要约 {v:.1f} GB 可用内存。可先裁切、关闭质感／蒙版／修复，或在内存更大的电脑处理。4 亿像素的基础调色、AI 副本和 DNG 导出使用分块缓存。', v=required/2**30))
+    if spatial and fits_in_memory(source.shape):
         return engine.process(source,edits,backend,apply_crop,detail_scale,_stream=False,cache=cache,space=space)
     output=allocate(source.shape)
+    h,w=source.shape[:2]
+    context=None
     if engine.process_version(edits)==2 and tone.needs_context(a):
         # 1.6.0: local tone mapping reads the whole frame once, at its low resolution.
-        h,w=source.shape[:2];ratio=min(1.,tone.CONTEXT_EDGE/max(h,w))
+        ratio=min(1.,tone.CONTEXT_EDGE/max(h,w))
         small=cv2.resize(source,(max(1,round(w*ratio)),max(1,round(h*ratio))),interpolation=cv2.INTER_AREA) if ratio<1 else np.asarray(source)
         context=tone.context(small*engine._gain(edits),a)
+    if spatial:
+        # 2.3.0: the frame does not fit memory: blocks with the margins their neighbourhood tools
+        # need (engine.process_region, exact for any block).  Dehaze statistics come from a
+        # 3000-pixel copy (they are measured at 900 pixels anyway).
+        import logging
+        dehaze=None
+        if a.get('dehaze',0)>0:
+            ratio=min(1.,3000/max(h,w))
+            reduced=cv2.resize(np.asarray(source),(max(1,round(w*ratio)),max(1,round(h*ratio))),interpolation=cv2.INTER_AREA)
+            dehaze=engine.dehaze_context_for(reduced,edits,backend,detail_scale*ratio,context)
+        masks=[m for m in edits['masks'] if m['enabled'] and any(m['adjustments'].values())]
+        margin=engine.spatial_margin(a,(h,w),detail_scale)+max([engine.spatial_margin(m['adjustments'],(h,w),detail_scale) for m in masks],default=0)
+        side=block_size(margin)
+        logging.getLogger(__name__).info('rendering %d x %d in %d-pixel blocks (not enough memory for the whole frame)',w,h,side)
+        for y in range(0,h,side):
+            for x in range(0,w,side):
+                rect=(x,y,min(w,x+side),min(h,y+side))
+                output[rect[1]:rect[3],rect[0]:rect[2]]=engine.process_region(source,edits,backend,rect,detail_scale,dehaze,
+                    tone_context=context,space=space)
+    elif context is not None:
         for y in range(0,h,STRIP_ROWS):
             output[y:y+STRIP_ROWS]=engine.process_region(source,edits,backend,(0,y,w,min(h,y+STRIP_ROWS)),detail_scale,tone_context=context,space=space)
     else:

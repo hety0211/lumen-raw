@@ -380,7 +380,9 @@ class LibraryMixin:
             self.saved_snapshots=copy.deepcopy(document['saved_snapshots'])
             self.project_path=document['project']
             self.history=copy.deepcopy(document.get('history',model.History(self.edits)))
-        self.final_view.setChecked(bool(document.get('final',bool(self.edits['crop']))) if not explicit_project else bool(self.edits['crop']))
+        # 2.3.0: a photo turned, straightened or mirrored (not only cropped) opens as it was framed.
+        from .crop_tool import shaped
+        self.final_view.setChecked(bool(document.get('final',shaped(self.edits))) if not explicit_project else shaped(self.edits))
         item=self.film_item(path)
         if item:
             if not item.isSelected():

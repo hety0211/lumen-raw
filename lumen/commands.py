@@ -671,12 +671,15 @@ def edit_redo(context, path=None):
     return _summary(path, context.step(path, 1))
 
 
-@command('edit.auto', 'Automatic exposure and tone for a photo.', dict(path=PATH), tool='auto_tone')
+@command('edit.auto', 'Automatic white balance, exposure, tone and vibrance for a photo (the Auto button).',
+         dict(path=PATH), tool='auto_tone')
 def edit_auto(context, path=None):
+    # 2.3.0: the same automatic adjustment as the editor's 自动 button (lumen/auto_adjust.py).
+    from . import auto_adjust
     path = _target(context, path)
     source, _ = context.source(path)
     edits = context.edits(path)
-    edits['adjustments'].update(engine.auto_tone_for(source, edits))
+    edits['adjustments'].update(auto_adjust.suggest(source, edits))
     context.apply(path, model.validate(edits), 'edit.auto')
     return _summary(path, edits)
 

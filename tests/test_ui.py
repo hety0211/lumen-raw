@@ -24,10 +24,11 @@ def app():
 def wait_until(predicate, timeout=15):
     start = time.monotonic()
     while not predicate():
-        QTest.qWait(20)
-        # PySide's synthetic wait can retain the GIL on Windows; yield so the
-        # Python part of worker jobs can progress as it does under QApplication.exec.
-        time.sleep(.002)
+        QTest.qWait(5)
+        # PySide's synthetic wait keeps the GIL for its whole length (Windows and macOS); yield
+        # most of the time so the Python part of worker jobs can progress as it does under
+        # QApplication.exec (2.3.0: 自动 renders a dozen times and took 40 s on a Mac with 20/2 ms).
+        time.sleep(.01)
         if time.monotonic() - start > timeout:
             raise AssertionError('异步操作超时')
 
@@ -87,14 +88,16 @@ def test_open_adjust_undo_redo_and_stale_preview(window):
 
 def test_actual_canvas_crop_brush_curve_gestures(window):
     w = window
-    w.tabs.setCurrentIndex(5)
+    w.start_crop()
     a = w.canvas.screen([.1, .1]).toPoint()
     b = w.canvas.screen([.8, .8]).toPoint()
     QTest.mousePress(w.canvas, Qt.MouseButton.LeftButton, pos=a)
     QTest.mouseMove(w.canvas, b)
     QTest.mouseRelease(w.canvas, Qt.MouseButton.LeftButton, pos=b)
     assert w.edits['crop'] is not None
-    w.tabs.setCurrentIndex(4)
+    w.finish_crop(True)
+    w.final_view.setChecked(False)
+    w.show_tab('masks')
     w.add_mask('brush')
     a = w.canvas.screen([.4, .4]).toPoint()
     b = w.canvas.screen([.6, .6]).toPoint()
@@ -104,7 +107,7 @@ def test_actual_canvas_crop_brush_curve_gestures(window):
     assert len(w.selected_mask()['strokes']) == 1
     w.local_controls['exposure'].spin.setValue(.8)
     assert w.selected_mask()['adjustments']['exposure'] == .8
-    w.tabs.setCurrentIndex(1);w.tabs.widget(1).ensureWidgetVisible(w.curve)
+    w.show_tab('color');w.tabs.widget(w.tab_index('color')).ensureWidgetVisible(w.curve)
     QTest.mouseDClick(w.curve, Qt.MouseButton.LeftButton, pos=w.curve.screen([.5, .6]).toPoint())
     assert len(w.edits['curves']['RGB']) == 3
     w.rotate()
@@ -185,12 +188,12 @@ def test_white_balance_sample_and_split_gestures(window):
 
 def test_luminance_mask_and_color_wheel_gestures(window):
     w = window
-    w.tabs.setCurrentIndex(4)
+    w.show_tab('masks')
     w.add_mask('luminance')
     w.range_controls['low'].spin.setValue(70)
     assert w.selected_mask()['luminance_range'] == [70., 100.]
     assert w.range_box.isVisible() and w.canvas.overlay is not None
-    w.tabs.setCurrentIndex(6)
+    w.show_tab('color')
     wheel = w.wheels['shadows']
     center, radius = wheel.center_radius()
     pos = QPoint(round(center.x() + radius * .5), round(center.y()))
@@ -199,13 +202,13 @@ def test_luminance_mask_and_color_wheel_gestures(window):
     assert w.grade_zone.currentIndex() == 0
     w.effect_controls['grain'].spin.setValue(25)
     assert w.edits['effects']['grain'] == 25
-    w.straighten.spin.setValue(3)
+    w.crop_bar.angle.spin.setValue(3)
     assert w.edits['straighten'] == 3 and w.final_view.isChecked()
 
 
 def test_free_curve_drag_precise_tone_and_undo(window):
     w = window
-    w.tabs.setCurrentIndex(1);w.tabs.widget(1).ensureWidgetVisible(w.curve)
+    w.show_tab('color');w.tabs.widget(w.tab_index('color')).ensureWidgetVisible(w.curve)
     QTest.qWait(50)
     for tone in (.25, .5, .75):
         a = w.curve.screen([tone,tone]).toPoint()
@@ -223,7 +226,7 @@ def test_free_curve_drag_precise_tone_and_undo(window):
 
 def test_heal_clone_actual_gestures_disable_and_undo(window):
     w = window
-    w.tabs.setCurrentIndex(8)
+    w.show_tab('retouch')
     QTest.qWait(50)
     assert w.canvas.tool == 'heal'
     target = w.canvas.screen([.5,.5]).toPoint()
@@ -242,7 +245,7 @@ def test_heal_clone_actual_gestures_disable_and_undo(window):
     assert w.edits['retouch'][1]['enabled']
     w.remove_retouch()
     assert len(w.edits['retouch']) == 1
-    w.tabs.setCurrentIndex(4)
+    w.show_tab('masks')
     w.add_mask('brush')
     assert w.canvas.brush_radius == w.brush_size.spin.value()/200
     wait_until(lambda: not w.timer.isActive() and not w.render_running)
@@ -315,21 +318,21 @@ def test_multi_import_sync_retains_per_photo_edits_and_album(window,tmp_path):
 
 def test_enter_crop_hides_outside_and_mask_coordinates_remain_original(window):
     w=window
-    w.tabs.setCurrentIndex(5)
+    w.start_crop()
     w.edits.update(crop=[.2,.2,.8,.8],rotation=1,straighten=3)
     w.update_display()
     w.canvas.setFocus()
     QTest.keyClick(w.canvas,Qt.Key.Key_Return)
     assert w.final_view.isChecked() and w.canvas.crop is None
     assert w.canvas.image.width()==144 and w.canvas.image.height()==216
-    w.tabs.setCurrentIndex(4)
+    w.show_tab('masks')
     w.add_mask('brush')
     assert w.final_view.isChecked() and w.canvas.tool=='brush'
     point=[.5,.5]
     QTest.mouseClick(w.canvas,Qt.MouseButton.LeftButton,pos=w.canvas.screen(point).toPoint())
     np.testing.assert_allclose(w.selected_mask()['strokes'][0]['points'][0],point,atol=.004)
     assert w.canvas.overlay.width()==144 and w.canvas.overlay.height()==216
-    w.tabs.setCurrentIndex(8)
+    w.show_tab('retouch')
     QTest.mouseClick(w.canvas,Qt.MouseButton.LeftButton,pos=w.canvas.screen(point).toPoint())
     np.testing.assert_allclose(w.edits['retouch'][-1]['points'][0],point,atol=.004)
 
@@ -468,7 +471,7 @@ def test_compare_and_split_use_original_detail_tiles(window,tmp_path):
 
 def test_color_selection_ui_and_dng_export(window,tmp_path):
     w=window
-    w.tabs.setCurrentIndex(4)
+    w.show_tab('masks')
     w.color_region_button.setChecked(True)
     assert w.canvas.tool=='color'
     QTest.mouseClick(w.canvas,Qt.MouseButton.LeftButton,pos=w.canvas.screen([.4,.4]).toPoint())

@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QFrame, QSplitter, QProgressDialog, QStatusBar, QSizePolicy, QStackedWidget)
 from . import engine, model, compute, host, i18n, theme, __version__
 from .scheduler import Activity as A, Job, JobScheduler, JobSignals, WorkState, WorkStateAccess
-from .widgets import AdjustSlider, Canvas, CurveEditor, Histogram, TabStrip, WheelGuard
+from .widgets import AdjustSlider, Canvas, CurveEditor, Histogram, Section, TabStrip, WheelGuard
 from .studio import StudioMixin
 from .revision import RevisionMixin
 from .resolution import ResolutionMixin
@@ -27,6 +27,8 @@ from .lens_panel import LensMixin
 from .rating import RatingMixin
 from .agent_dialog import AgentMixin
 from .update_dialog import UpdateMixin
+from .crop_tool import CropMixin
+from .portrait_panel import PortraitMixin
 from . import geometry, develop, watermark
 from . import performance
 from .exposure_curve import ExposureCurve
@@ -140,7 +142,7 @@ def heading(text):
 from .enhance_dialog import ExportDialog
 
 
-class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, NaturalLanguageMixin, LensMixin, RatingMixin, LibraryModeMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, StudioMixin, QMainWindow):
+class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, NaturalLanguageMixin, LensMixin, RatingMixin, LibraryModeMixin, LibraryMixin, ResolutionMixin, AutoMaskMixin, RevisionMixin, CropMixin, PortraitMixin, StudioMixin, QMainWindow):
     export_progress = Signal(int, str)
 
     def __init__(self):
@@ -190,6 +192,10 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.history_timer.timeout.connect(self.commit)
         self.controls = {}
         self.local_controls = {}
+        #: 2.3.0: the develop panels by name (``panel``), so no code depends on their order.
+        self.tab_keys = []
+        self.init_crop()
+        self.init_portrait()
         self.init_studio()
         self.init_resolution()
         self.init_library()
@@ -255,6 +261,12 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         toolbar.setContentsMargins(16, 10, 16, 10)
         toolbar.addWidget(self.button(tr('撤销'), lambda: self.undo(-1)))
         toolbar.addWidget(self.button(tr('重做'), lambda: self.undo(1)))
+        # 2.3.0: crop is a tool on the photo (R), with its own floating toolbar.
+        self.crop_button = QPushButton(tr('裁切与拉直'))
+        self.crop_button.setCheckable(True)
+        self.crop_button.setToolTip(tr('裁切、旋转、翻转与拉直（R）'))
+        self.crop_button.clicked.connect(lambda: self.toggle_crop())
+        toolbar.addWidget(self.crop_button)
         toolbar.addStretch()
         self.split_check = QCheckBox(tr('前后对比'))
         self.split_check.toggled.connect(self.update_display)
@@ -277,7 +289,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.canvas.sampled.connect(self.pick_wb)
         self.canvas.picked.connect(self.pick_grade_color)
         self.canvas.object_picked.connect(self.object_clicked)
+        self.canvas.face_picked.connect(self.face_clicked)
         l.addWidget(self.canvas, 1)
+        self.build_crop_tool()
         footer = QHBoxLayout()
         footer.setContentsMargins(18, 12, 18, 12)
         self.file_label = note(tr('尚未打开原片'))
@@ -298,7 +312,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         heading_row = QHBoxLayout()
         heading_row.addWidget(heading(tr('显影  /  DEVELOP')), 1)
         self.auto_button = self.button(tr('自动'), self.automatic)
-        self.auto_button.setToolTip(tr('根据原片亮度分布设置曝光、暗部、亮部与对比度'))
+        self.auto_button.setToolTip(tr('自动设置白平衡、曝光、对比度、亮部、暗部、白色、黑色与自然饱和度；结果都是可以继续调整的滑块'))
         heading_row.addWidget(self.auto_button)
         r.addLayout(heading_row)
         self.histogram = Histogram()
@@ -320,15 +334,16 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.tab_strip = TabStrip(self.tabs)
         r.addWidget(self.tab_strip)
         r.addWidget(self.tabs, 1)
+        # 2.3.0: eight panels in one row; 色彩 holds the colour grading, 细节 the lens corrections,
+        # and crop is a tool on the photo.
         self.build_basic()
         self.build_color()
-        self.build_watermark()
         self.build_details()
         self.build_masks()
-        self.build_crop()
-        self.build_grading()
+        self.build_portrait()
         self.build_effects()
         self.build_retouch()
+        self.build_watermark()
         self.tab_strip.rebuild()
         backend_row = QHBoxLayout()
         self.backend_combo = QComboBox()
@@ -355,7 +370,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.statusBar().refresh_mode()
         self.build_menus()
 
-    def panel(self, title):
+    def panel(self, title, key):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -365,7 +380,20 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         layout.setSpacing(7)
         scroll.setWidget(page)
         self.tabs.addTab(scroll, title)
+        self.tab_keys.append(key)
         return layout
+
+    def tab_index(self, key):
+        """Index of the develop panel ``key`` ('basic', 'color', 'details', 'masks', 'portrait',
+        'effects', 'retouch', 'watermark')."""
+        return self.tab_keys.index(key)
+
+    def on_tab(self, key):
+        index = self.tabs.currentIndex()
+        return 0 <= index < len(self.tab_keys) and self.tab_keys[index] == key
+
+    def show_tab(self, key):
+        self.tabs.setCurrentIndex(self.tab_index(key))
 
     def add_adjustment(self, layout, label, key, low=-100, high=100, step=1, local=False):
         control = AdjustSlider(label, low, high, step)
@@ -375,7 +403,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         layout.addWidget(control)
 
     def build_basic(self):
-        l = self.panel(tr('光影'))
+        l = self.panel(tr('光影'), 'basic')
         l.addWidget(heading(tr('曝光与动态范围')))
         self.exposure_curve=ExposureCurve()
         self.exposure_curve.changed.connect(self.exposure_curve_changed)
@@ -406,14 +434,17 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         l.addStretch()
 
     def build_color(self):
-        l = self.panel(tr('色彩'))
-        l.addWidget(heading(tr('全局色彩')))
+        """2.3.0: one 色彩 panel for global colour, the mixer, colour grading (调色 before) and curves."""
+        panel = self.panel(tr('色彩'), 'color')
+        l = Section(tr('全局色彩'))
+        panel.addWidget(l)
         self.mono_check = QCheckBox(tr('黑白处理'))
         self.mono_check.toggled.connect(self.monochrome_changed)
         l.addWidget(self.mono_check)
         self.add_adjustment(l, tr('饱和度'), 'saturation')
         self.add_adjustment(l, tr('自然饱和度'), 'vibrance')
-        l.addWidget(heading(tr('色彩混合器')))
+        l = Section(tr('色彩混合器'))
+        panel.addWidget(l)
         swatches = QHBoxLayout()
         self.swatch_buttons = []
         for index, (title, _, color) in enumerate(model.COLORS):
@@ -439,11 +470,15 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
             l.addWidget(c)
             self.hsl_controls.append(c)
         l.addWidget(note(tr('8 个相互平滑过渡的色彩区间，可独立调整色相、饱和度与明度。')))
+        l = Section(tr('色彩分级'))
+        panel.addWidget(l)
+        self.build_grading(l)
+        l = Section(tr('RGB 与通道曲线'))
+        panel.addWidget(l)
         self.build_curves(l)
-        l.addStretch()
+        panel.addStretch()
 
     def build_curves(self,l):
-        l.addWidget(heading(tr('RGB 与通道曲线')))
         self.channel = QComboBox()
         self.channel.addItems(['RGB', 'R', 'G', 'B'])
         self.channel.currentTextChanged.connect(self.refresh_curve)
@@ -472,7 +507,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         l.addWidget(self.button(tr('重置当前通道'), self.reset_curve))
 
     def build_watermark(self):
-        l=self.panel(tr('水印'))
+        l=self.panel(tr('水印'),'watermark')
         l.addWidget(heading(tr('水印与边框')))
         self.watermark_editor=WatermarkEditor(self,compact=True)
         self.watermark_editor.changed.connect(self.watermark_changed)
@@ -500,7 +535,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.clear_preset_selection();self.changed()
 
     def build_details(self):
-        l = self.panel(tr('细节'))
+        l = self.panel(tr('细节'), 'details')
         l.addWidget(heading(tr('质感')))
         self.add_adjustment(l, tr('去薄雾'), 'dehaze')
         self.add_adjustment(l, tr('清晰度'), 'clarity')
@@ -512,10 +547,14 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.add_adjustment(l, tr('明度降噪'), 'denoise', 0, 100)
         self.add_adjustment(l, tr('彩色杂点'), 'color_noise', 0, 100)
         l.addWidget(note(tr('滑块使用传统降噪；AI 去杂色在独立窗口中处理并生成副本。\n点击 100% 检查原图锐化与降噪效果。')))
+        # 2.3.0: the lens profile corrections fold away at the bottom of 细节.
+        self.lens_section = Section(tr('镜头校正'), expanded=False)
+        l.addWidget(self.lens_section)
+        self.build_lens(self.lens_section)
         l.addStretch()
 
     def build_masks(self):
-        l = self.panel(tr('蒙版'))
+        l = self.panel(tr('蒙版'), 'masks')
         l.addWidget(heading(tr('局部调整')))
         row = QHBoxLayout()
         for title, kind in [(tr('画笔'), 'brush'), (tr('渐变'), 'linear'), (tr('径向'), 'radial'), (tr('亮度'), 'luminance')]:
@@ -576,34 +615,13 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         l.addWidget(note(tr('画笔：按住左键涂抹。渐变／径向：拖出范围，可重新拖动绘制。\n渐变从起点 0% 过渡至终点 100%；径向框内生效。蒙版按列表顺序叠加。')))
         l.addStretch()
 
-    def build_crop(self):
-        l = self.panel(tr('裁切·镜头'))
-        l.addWidget(heading(tr('重新构图')))
-        self.crop_ratio = QComboBox()
-        self.crop_ratio.addItems([tr('自由比例'), tr('原片比例'), '1 : 1', '3 : 2', '4 : 3', '16 : 9', '2 : 3', '9 : 16'])
-        self.crop_ratio.currentIndexChanged.connect(self.ratio_changed)
-        l.addWidget(self.crop_ratio)
-        l.addWidget(note(tr('在画面上拖动绘制裁切框。切换比例后重新拖动。\n裁切与蒙版始终保存在原片坐标中。')))
-        l.addWidget(self.button(tr('确认裁切（Enter）'), self.confirm_crop, True))
-        l.addWidget(self.button(tr('重新裁切'), lambda: self.final_view.setChecked(False)))
-        l.addWidget(self.button(tr('清除裁切'), self.clear_crop))
-        l.addWidget(self.button(tr('顺时针旋转 90°'), self.rotate))
-        self.straighten = AdjustSlider(tr('水平校正  °'), -15, 15, .1)
-        self.straighten.changed.connect(self.straighten_changed)
-        self.straighten.committed.connect(self.commit)
-        l.addWidget(self.straighten)
-        l.addWidget(note(tr('校正时自动放大填满裁切框，保留当前输出比例。')))
-        l.addWidget(note(tr('按 Enter 确认，只显示保留部分；重新裁切可调整范围。\n原片数据始终保留，蒙版和修复可在裁切后继续绘制。')))
-        self.build_lens(l)
-        l.addStretch()
-
     def shortcuts(self):
         for shortcut, fn in [('Ctrl+O', self.open_file), ('Ctrl+S', self.save), ('Ctrl+E', self.export),
                              ('Ctrl+Z', lambda: self.undo(-1)), ('Ctrl+Shift+Z', lambda: self.undo(1)),
                              ('Ctrl+0', self.canvas.fit), ('J', self.toggle_clipping),
-                             ('Return', self.confirm_crop), ('Enter', self.confirm_crop),
+                             ('Return', self.confirm_crop), ('Enter', self.confirm_crop), ('R', self.toggle_crop),
                              ('Y', lambda: self.split_check.setChecked(not self.split_check.isChecked())),
-                             ('Esc', lambda: (self.wb_button.setChecked(False), self.grade_pick_button.setChecked(False))),
+                             ('Esc', self.escape),
                              ('Ctrl+K', self.open_palette)]:
             action = QAction(self)
             action.setShortcut(QKeySequence(shortcut))
@@ -611,6 +629,13 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
             self.addAction(action)
         self.rating_shortcuts()
         self.library_shortcuts()
+
+    def escape(self):
+        if self.crop_active:
+            self.finish_crop(False)
+            return
+        self.wb_button.setChecked(False)
+        self.grade_pick_button.setChecked(False)
 
     def open_palette(self):
         from .palette import CommandPalette
@@ -678,6 +703,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         except Exception as exc:
             self.error(str(exc))
             return
+        self.finish_crop(True)
         self.work.begin(A.LOADING)
         self.cancel_detail()
         self.open_button.setEnabled(False)
@@ -734,6 +760,9 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
             self.refresh()
             self.update_thumbnails()
             self.changed()
+            # 2.3.0: with the 人像 panel already open, no tab change would look for faces.
+            if self.on_tab('portrait'):
+                self.portrait_shown()
             # 2.0.0: decode the neighbours in the filmstrip ahead (preview cache).
             self.prefetch_neighbours()
         def failed(text):
@@ -755,9 +784,12 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         dirty =self.edits != self.saved_edits or self.snapshots != self.saved_snapshots
         self.state_label.setText(tr('未保存编辑') if dirty else tr('编辑已保存'))
 
-    def commit(self):
+    def commit(self, label=None):
+        """Record the current edits as a history step; ``label`` names it (2.3.0), otherwise
+        ``history.describe`` does."""
         self.history_timer.stop()
-        self.history.push(self.edits)
+        if self.history.push(self.edits, label if isinstance(label, str) else None):
+            self.refresh_history()
 
     def render(self):
         if self.source is None or self.work.busy(A.LOADING, A.AI):
@@ -812,9 +844,16 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         if edited is None:return
         original = self.preview_original()
         image = original if self.comparing else edited
-        final = self.final_view.isChecked()
+        final = self.final_view.isChecked() and not self.crop_active
         size = (self.info.get('width',source.shape[1]),self.info.get('height',source.shape[0]))
-        if final:
+        if self.crop_active:
+            # 2.3.0: the whole photo as it will be oriented, the crop frame upright over it.
+            from .crop_tool import View
+            self.crop_view = View(self.edits, size)
+            self.canvas.to_source, self.canvas.to_display = self.crop_view.normalised()
+            self.canvas.reference_size = self.crop_view.size
+            self.canvas.brush_scale = 1.
+        elif final:
             matrix,display_size,brush_scale = geometry.frame(self.edits,size)
             inverse = np.linalg.inv(matrix)
             self.canvas.to_source = lambda p,m=inverse:geometry.point(m,p)
@@ -825,18 +864,20 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
             self.canvas.to_source = self.canvas.to_display = None
             self.canvas.reference_size = size
             self.canvas.brush_scale = 1.
-        display = engine.crop_rotate(image,self.edits) if final else image
+        background = theme.color('canvas')
+        display = engine.crop_rotate(image,self.edits) if final else \
+            self.crop_view.warp(image, background.lightnessF() * .8) if self.crop_active else image
         self.canvas.set_image(display)
         split = self.split_check.isChecked() and not self.comparing
         self.canvas.set_before((engine.crop_rotate(original,self.edits) if final else original) if split else None, split)
         self.canvas.set_clipping(display,self.shadow_warning.isChecked() and not self.comparing,
                                  self.highlight_warning.isChecked() and not self.comparing)
-        self.canvas.crop = None if final else self.edits['crop']
+        self.canvas.crop = None if final or self.crop_active else self.edits['crop']
         self.refresh_detail()
         self.update_tool()
         self.update_overlay()
-
-        if self.tabs.currentIndex()==2:self.watermark_editor.update_preview()
+        self.update_faces()
+        if self.on_tab('watermark'):self.watermark_editor.update_preview()
 
     def show_original(self, state):
         self.comparing = state
@@ -976,11 +1017,13 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
 
     def update_overlay(self, *_):
         mask = self.selected_mask()
-        if self.source is not None and mask and self.tabs.currentIndex() == 4 and self.overlay_check.isChecked() and not self.comparing and not self.split_check.isChecked():
+        if self.crop_active:
+            self.canvas.set_overlay(None)
+        elif self.source is not None and mask and self.on_tab('masks') and self.overlay_check.isChecked() and not self.comparing and not self.split_check.isChecked():
             reference = self.preview_reference() if mask['kind'] == 'luminance' else None
             alpha = engine.mask_alpha(mask,self.source.shape,reference)
             self.canvas.set_overlay(engine.crop_rotate(alpha,self.edits) if self.final_view.isChecked() else alpha)
-        elif self.source is not None and self.tabs.currentIndex() == 8 and getattr(self, 'removal_overlay', None) is not None:
+        elif self.source is not None and self.on_tab('retouch') and getattr(self, 'removal_overlay', None) is not None:
             # 2.1.0: the object an AI removal is filling.
             alpha = self.removal_overlay
             self.canvas.set_overlay(engine.crop_rotate(alpha,self.edits) if self.final_view.isChecked() else alpha)
@@ -990,53 +1033,54 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
     def update_tool(self, *_):
         if self.comparing or self.split_check.isChecked():
             self.canvas.tool = 'view'
-        elif hasattr(self,'color_region_button') and self.color_region_button.isChecked() and self.tabs.currentIndex()==4:
+        elif self.crop_active:
+            self.canvas.tool = 'crop'
+        elif hasattr(self,'color_region_button') and self.color_region_button.isChecked() and self.on_tab('masks'):
             self.canvas.tool = 'color'
         elif self.wb_sampling:
             self.canvas.tool = 'sample'
-        elif hasattr(self, 'grade_pick_button') and self.grade_pick_button.isChecked() and self.tabs.currentIndex() == 6:
+        elif hasattr(self, 'grade_pick_button') and self.grade_pick_button.isChecked() and self.on_tab('color'):
             self.canvas.tool = 'pick'
-        elif hasattr(self, 'object_button') and self.object_button.isChecked() and self.tabs.currentIndex() == 4:
+        elif hasattr(self, 'object_button') and self.object_button.isChecked() and self.on_tab('masks'):
             self.canvas.tool = 'object'
-        elif self.tabs.currentIndex() == 8:
+        elif self.on_tab('retouch'):
             from .revision import RETOUCH_TOOLS
             self.canvas.tool = RETOUCH_TOOLS[self.retouch_tool.currentIndex()]
             self.canvas.brush_radius = self.retouch_controls['size'].spin.value() / 200
-        elif self.tabs.currentIndex() == 5:
-            self.canvas.tool = 'view' if self.final_view.isChecked() else 'crop'
-        elif self.tabs.currentIndex() == 4 and self.selected_mask():
+        elif self.on_tab('portrait') and self.source is not None:
+            self.canvas.tool = 'face'
+        elif self.on_tab('masks') and self.selected_mask():
             mask = self.selected_mask()
             self.canvas.brush_radius = self.brush_size.spin.value() / 200
             self.canvas.tool = mask['kind'] if mask['kind'] in ('brush','linear','radial') else ('brush' if self.refine_mask_check.isChecked() and 'raster' in mask else 'view')
             self.canvas.mask_geometry = [mask['start'], mask['end']]
         else:
             self.canvas.tool = 'view'
-        self.canvas.setCursor(Qt.CursorShape.CrossCursor if self.canvas.tool in ('sample','color','pick','object') else Qt.CursorShape.ArrowCursor)
+        if self.canvas.tool != 'crop':
+            self.canvas.setCursor(Qt.CursorShape.CrossCursor if self.canvas.tool in ('sample','color','pick','object') else
+                                  Qt.CursorShape.PointingHandCursor if self.canvas.tool == 'face' else Qt.CursorShape.ArrowCursor)
         self.canvas.update()
 
     def tab_changed(self, *_):
-        if not hasattr(self, 'overlay_check'):
+        if not hasattr(self, 'overlay_check') or len(self.tab_keys) < self.tabs.count():
             return
-        if self.tabs.currentIndex()==5:
-            self.final_view.setChecked(False)
-        if self.tabs.currentIndex() in (4,5,8):
+        if self.crop_active:
+            self.finish_crop(True)
+        if self.on_tab('masks') or self.on_tab('retouch') or self.on_tab('portrait'):
             self.split_check.setChecked(False)
-        if self.wb_sampling and self.tabs.currentIndex() != 0:
+        if self.wb_sampling and not self.on_tab('basic'):
             self.wb_button.setChecked(False)
-        if hasattr(self, 'grade_pick_button') and self.tabs.currentIndex() != 6:
+        if hasattr(self, 'grade_pick_button') and not self.on_tab('color'):
             self.grade_pick_button.setChecked(False)
-        if self.tabs.currentIndex()==2:self.watermark_editor.update_preview()
+        if self.on_tab('watermark'):self.watermark_editor.update_preview()
+        if self.on_tab('portrait'):self.portrait_shown()
         self.update_tool()
         self.update_overlay()
+        self.update_faces()
 
     def geometry_changed(self, geometry):
         a, b = geometry
-        if self.canvas.tool == 'crop':
-            crop = [min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1])]
-            if crop[2] - crop[0] < .002 or crop[3] - crop[1] < .002:
-                return
-            self.edits['crop'] = crop
-        elif self.selected_mask():
+        if self.selected_mask():
             self.selected_mask().update(start=a, end=b)
         self.update_display()
         self.changed()
@@ -1058,33 +1102,19 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
 
     def object_clicked(self, point, mode):
         """2.1.0: a click with the object tool: remove it (retouch) or select it (masks)."""
-        if self.tabs.currentIndex() == 8:
+        if self.on_tab('retouch'):
             self.pick_removal(point)
-        elif self.tabs.currentIndex() == 4:
+        elif self.on_tab('masks'):
             self.pick_object(point, mode)
 
-    def ratio_changed(self, index):
-        self.canvas.ratio = [None, self.source.shape[1] / self.source.shape[0] if self.source is not None else 1.5,
-                             1., 1.5, 4 / 3, 16 / 9, 2 / 3, 9 / 16][index]
-
     def confirm_crop(self):
-        if self.source is None or self.tabs.currentIndex()!=5:return
-        self.final_view.setChecked(True)
-        self.canvas.fit()
-        self.commit()
-        self.statusBar().showMessage(tr('裁切已确认 · 仅显示保留部分，可继续调色或绘制蒙版'))
+        if self.source is not None and self.crop_active:
+            self.finish_crop(True)
 
     def clear_crop(self):
         self.edits['crop'] = None
         self.final_view.setChecked(False)
         self.canvas.fit()
-        self.update_display()
-        self.changed()
-        self.commit()
-
-    def rotate(self):
-        self.edits['rotation'] = (self.edits['rotation'] + 1) % 4
-        self.final_view.setChecked(True)
         self.update_display()
         self.changed()
         self.commit()
@@ -1100,6 +1130,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
 
     def reset_edits(self):
         if self.source is not None:
+            self.finish_crop(True)
             self.commit()
             self.edits = model.recipe()
             self.edits['white_balance'] = copy.deepcopy(self.info.get('white_balance', self.edits['white_balance']))
@@ -1110,19 +1141,30 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
             self.current_mask = -1
             self.refresh()
             self.changed()
-            self.commit()
+            self.commit(tr('重置'))
 
     def undo(self, delta):
         if self.source is None:
             return
         if delta < 0:
             self.commit()
-        self.edits = self.history.move(delta)
+        self.restore_history(self.history.move(delta))
+
+    def goto_history(self, index):
+        """2.3.0: back (or forward again) to step ``index`` of the history list."""
+        if self.source is None or not 0 <= index < len(self.history.items):
+            return
+        self.commit()
+        self.restore_history(self.history.goto(index))
+
+    def restore_history(self, edits):
+        self.edits = edits
         self.clear_preset_selection()
         self.current_mask = min(self.current_mask, len(self.edits['masks']) - 1)
         self.refresh()
         self.changed()
         self.history_timer.stop()
+        self.refresh_history()
 
     def refresh(self):
         self.refreshing = True
@@ -1147,12 +1189,14 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         self.refresh_process()
         self.update_library_status()
         self.refresh_retouch()
+        self.refresh_crop_bar()
+        self.refresh_portrait()
+        self.refresh_history()
         self.save_button.setEnabled(self.source is not None and not self.work.busy(A.LOADING))
         self.export_button.setEnabled(self.source is not None and not self.work.busy(A.EXPORTING, A.LOADING))
         self.refresh_access()
         self.compare.setEnabled(self.source is not None)
         self.refreshing = False
-        self.ratio_changed(self.crop_ratio.currentIndex())
         self.update_display()
 
     def save(self):

@@ -986,6 +986,8 @@ class LibraryModeMixin:
     def set_mode(self, mode):
         if mode == self.mode:
             return
+        if mode != 'develop' and getattr(self, 'crop_active', False):
+            self.finish_crop(True)       # 2.3.0: leaving the editor keeps the crop as it is
         self.mode = mode
         self.pages.setCurrentIndex(0 if mode == 'library' else 1)
         self.mode_buttons[mode].setChecked(True)

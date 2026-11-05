@@ -574,7 +574,7 @@ def use_service(w, server):
 
 def test_tab_sits_between_presets_and_snapshots(window):
     tabs = window.library_tabs
-    assert [tabs.tabText(i) for i in range(tabs.count())] == ['预设', '自然语言输入', '快照']
+    assert [tabs.tabText(i) for i in range(tabs.count())] == ['预设', '自然语言输入', '历史']
 
 
 def test_one_click_edit_applies_as_one_step_with_strength_and_undo(window, fake):

@@ -146,8 +146,9 @@ class Faces:
         width = float(np.linalg.norm(points[outer] - points[inner]))
         return float(np.mean([np.linalg.norm(points[a] - points[b]) for a, b in pairs])) / max(width, 1e-6)
 
-    def eyes(self, rgb, face):
-        """``(presence, right opening, left opening)`` of a detected face."""
+    def landmarks(self, rgb, face):
+        """``(points, presence)``: the 478 Face Mesh landmarks of a detected face in the image's
+        pixels, from a crop rolled so the eyes are level and refined once from its own points."""
         x, y, w, h, _, (rx, ry), (lx, ly) = face
         angle = math.degrees(math.atan2(ly - ry, lx - rx))
         points, presence = self._landmarks(rgb, x + w / 2, y + h / 2, 1.5 * max(w, h), angle)
@@ -156,6 +157,11 @@ class Faces:
         roll = math.degrees(math.atan2(*(points[LEFT_EYE[0]] - points[RIGHT_EYE[0]])[::-1]))
         if size > 8:
             points, presence = self._landmarks(rgb, float(cx), float(cy), size, roll)
+        return points, presence
+
+    def eyes(self, rgb, face):
+        """``(presence, right opening, left opening)`` of a detected face."""
+        points, presence = self.landmarks(rgb, face)
         return presence, self.opening(points, RIGHT_EYE), self.opening(points, LEFT_EYE)
 
     def analyse(self, rgb):

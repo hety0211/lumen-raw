@@ -26,7 +26,7 @@ from PIL import Image, ImageCms, ImageOps
 from .model import COLORS, RASTER_KINDS
 from . import white_balance, retouch, develop, selection, dng, photo_metadata
 from . import curves as tone_curves
-from . import large_image, performance, compute, gpu_graphs, lens, color, tone, lut
+from . import large_image, performance, compute, gpu_graphs, lens, color, tone, lut, portrait
 from .i18n import tr
 
 log = logging.getLogger(__name__)
@@ -423,6 +423,10 @@ GPU_TILE_PIXELS = 2 ** 21
 #: 1.8.0: the CPU's pointwise stages run on row strips in parallel.  NumPy releases the GIL in its
 #: array loops, so the strips scale with the cores (a 1.7 MP preview: about 4x on 8 threads).
 STRIP_PIXELS = 1 << 17
+#: 2.3.0: most pixels a strip holds.  A stage needs several times its block in temporaries (the
+#: process-2 tone stage about 100 bytes per pixel); with one strip per thread a 61 MP export held
+#: all of them at once (7 GB).  More strips than threads keep that to a few at a time.
+STRIP_WORK = 1 << 21
 _STRIP_THREAD = 'lumen-strip'
 _strip_pool = None
 _strip_lock = threading.Lock()
@@ -439,9 +443,15 @@ def in_strips(image, stage):
     with _strip_lock:
         if _strip_pool is None:
             _strip_pool = ThreadPoolExecutor(performance.THREADS, thread_name_prefix=_STRIP_THREAD)
+    count = max(count, min(h, -(-h * w // STRIP_WORK)))
     bounds = [h * i // count for i in range(count + 1)]
     parts = _strip_pool.map(lambda i: stage(image[bounds[i]:bounds[i + 1]], bounds[i], bounds[i + 1]), range(count))
-    return np.concatenate(list(parts), axis=0)
+    out = None
+    for i, part in enumerate(parts):
+        if out is None:
+            out = np.empty((h,) + part.shape[1:], part.dtype)
+        out[bounds[i]:bounds[i + 1]] = part
+    return out
 
 
 def strip_spec(spec, shape, y0, y1):
@@ -740,31 +750,64 @@ def reduce_noise(x, a):
 
 def spatial_details(rgb, a, detail_scale=1., reference_shape=None, dehaze_context=None, area=None):
     """Neighbourhood tools. ``reference_shape`` keeps radii of a padded region equal to the full frame;
-    a block of a frame (``area``) takes its dehaze statistics from ``dehaze_context``."""
+    a block of a frame (``area``) takes its dehaze statistics from ``dehaze_context``.
+
+    2.3.0: the tools work in place on one copy of the frame (``rgb`` itself is never changed),
+    in the same order of operations as before, so results are identical with a third of the
+    frame-sized temporaries."""
     x = np.ascontiguousarray(rgb, dtype=np.float32)
+    own = x is not rgb
     short = min((reference_shape or x.shape)[:2])
-    x = reduce_noise(x, a)
+
+    def writable():
+        nonlocal x, own
+        if not own:
+            x, own = x.copy(), True
+        return x
+    if a.get('denoise', 0) > 0 or a.get('color_noise', 0) > 0:
+        x, own = reduce_noise(x, a), True
     if a.get('dehaze', 0) > 0:
-        x = dehaze(x, a.get('dehaze', 0), dehaze_context, area)
+        x, own = dehaze(x, a.get('dehaze', 0), dehaze_context, area), True
     elif a.get('dehaze', 0) < 0:
-        x = x * (1 + a.get('dehaze', 0) / 220) - a.get('dehaze', 0) / 220
+        writable()
+        x *= 1 + a.get('dehaze', 0) / 220
+        x -= a.get('dehaze', 0) / 220
     if a.get('clarity', 0):
         lum = cv2.cvtColor(x, cv2.COLOR_RGB2GRAY)
-        blur = cv2.GaussianBlur(lum, (0, 0), max(1., short / 90))
-        x = np.clip(x + ((lum - blur) * a.get('clarity', 0) / 65)[..., None], 0, 1)
+        lum -= cv2.GaussianBlur(lum, (0, 0), max(1., short / 90))
+        lum *= a.get('clarity', 0)
+        lum /= 65
+        writable()
+        x += lum[..., None]
+        np.clip(x, 0, 1, out=x)
+        del lum
     if a.get('texture', 0):
         # Band-pass detail: keep large structures and the finest sensor noise out.
         lum = cv2.cvtColor(x, cv2.COLOR_RGB2GRAY)
         radius = max(.65, short / 800)
-        fine = cv2.GaussianBlur(lum, (0, 0), radius)
-        coarse = cv2.GaussianBlur(lum, (0, 0), radius * 3.5)
-        band = np.clip(fine - coarse, -.08, .08)
-        x = np.clip(x + (band * a['texture'] / 65)[..., None], 0, 1)
+        band = cv2.GaussianBlur(lum, (0, 0), radius)
+        band -= cv2.GaussianBlur(lum, (0, 0), radius * 3.5)
+        del lum
+        np.clip(band, -.08, .08, out=band)
+        band *= a['texture']
+        band /= 65
+        writable()
+        x += band[..., None]
+        np.clip(x, 0, 1, out=x)
+        del band
     if a.get('sharpness', 0) > 0:
-        blur = cv2.GaussianBlur(x, (0, 0), max(.45, detail_scale))
-        delta = x - blur
-        delta *= np.minimum(1, np.abs(delta) / .008)
-        x = np.clip(x + delta * a.get('sharpness', 0) / 40, 0, 1)
+        delta = cv2.GaussianBlur(x, (0, 0), max(.45, detail_scale))
+        np.subtract(x, delta, out=delta)
+        weight = np.abs(delta)
+        weight /= .008
+        np.minimum(1, weight, out=weight)
+        delta *= weight
+        del weight
+        delta *= a.get('sharpness', 0)
+        delta /= 40
+        writable()
+        x += delta
+        np.clip(x, 0, 1, out=x)
     return x
 
 
@@ -794,9 +837,10 @@ def saturation(x, a):
 
 def details(rgb, a, detail_scale=1., reference_shape=None, version=1, space=None):
     x = spatial_details(rgb, a, detail_scale, reference_shape)
+    # 2.3.0: per pixel, so in bounded strips (``in_strips``) like the other colour stages.
     if version == 2:
-        return color.adjust(x, a.get('saturation', 0), a.get('vibrance', 0), value=space)
-    return saturation(x, a)
+        return in_strips(x, lambda block, *_: color.adjust(block, a.get('saturation', 0), a.get('vibrance', 0), value=space))
+    return in_strips(x, lambda block, *_: saturation(block, a))
 
 
 def monochrome(x):
@@ -1050,14 +1094,28 @@ def apply_local(x, alpha, a, backend, detail_scale=1., reference_shape=None, ver
     local = local[y0 - py0:y1 - py0, x0 - px0:x1 - px0]
     weight = alpha[y0:y1, x0:x1, None]
     region = x[y0:y1, x0:x1]
-    region[:] = region * (1 - weight) + local * weight
+    # region · (1 − w) + local · w, with one temporary instead of three (same rounding).
+    blended = region * (1 - weight)
+    local = local * weight if np.may_share_memory(local, x) else np.multiply(local, weight, out=local)
+    blended += local
+    region[:] = blended
     return x
 
 
 def _base(corrected, edits, rect=None):
     """Retouched, white-balanced frame (or block ``rect``) that the tone stage starts from.
-    Process 1 clips it and applies the develop curve here; process 2 keeps it scene-linear."""
-    x = retouch.apply(corrected, edits.get('retouch', []), rect)
+    Process 1 clips it and applies the develop curve here; process 2 keeps it scene-linear.
+    2.3.0: portrait retouching follows the retouching, on the block its faces need."""
+    faces = portrait.active(edits.get('portrait'))
+    if faces:
+        h, w = corrected.shape[:2]
+        area = portrait.needed(faces, rect or (0, 0, w, h), h, w)
+        x = portrait.apply(retouch.apply(corrected, edits.get('retouch', []), area), faces, (h, w), area,
+                           keep=rect is not None)
+        if rect is not None:
+            x = x[rect[1] - area[1]:rect[3] - area[1], rect[0] - area[0]:rect[2] - area[0]]
+    else:
+        x = retouch.apply(corrected, edits.get('retouch', []), rect)
     if process_version(edits) == 1:
         x = develop.apply(clip01(x), edits.get('develop', {}))
     gain = _gain(edits)
@@ -1090,7 +1148,8 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
     lens_key = lens.key(edits.get('lens'))
     corrected = cache.get('lens', _key(lens_key, version), lambda: lens.correct(source, edits)) if lens_key else source
     base_key = _key(edits.get('wb_gain', [1., 1., 1.]), edits.get('white_balance', {}),
-                    edits.get('retouch', []), develop_settings, lens_key, version)
+                    edits.get('retouch', []), develop_settings, lens_key, version,
+                    portrait.active(edits.get('portrait')))
     balanced = cache.get('base', base_key, lambda: _base(corrected, edits))
     spec = None
     if version == 2:
@@ -1103,21 +1162,34 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
     color_key = _key(a.get('saturation', 0), a.get('vibrance', 0), edits['hsl'], edits['curves'],
                      edits.get('tone_curve'), edits.get('curve_mode', 'linear'), edits.get('monochrome', False),
                      edits.get('grading', {}), backend.gpu_pointwise, backend.gpu_version2)
+    # 2.3.0: without a cache (exports) every stage belongs to this call alone: each frame-sized
+    # intermediate is let go as soon as the next stage exists, so a 61 MP export peaks well below
+    # the ~140 bytes per pixel it needed when all of them stayed alive to the end.
+    owned = cache is _UNCACHED
+    masks = [m for m in edits['masks'] if m['enabled'] and any(m['adjustments'].values())]
+    luminance = any(m['kind'] == 'luminance' for m in masks)
+    if owned and lens_key and not luminance:
+        corrected = None
     if (backend.gpu_version2 if version == 2 else backend.gpu_pointwise) and not has_spatial(a) and space is None:
         x = cache.get('global', _key(tonal_key, 'fused', color_key), lambda: backend.fused(balanced, edits, spec))
     else:
         tonal = cache.get('tonal', tonal_key, lambda: backend.tonal(balanced, a, spec))
+        if owned:
+            balanced = None
         detail_key = _key(tonal_key, {k: a.get(k, 0) for k in SPATIAL_KEYS}, detail_scale)
         if has_spatial(a):
             tonal = cache.get('detail', detail_key, lambda: spatial_details(tonal, a, detail_scale))
         x = cache.get('global', _key(detail_key, color_key), lambda: backend.color(tonal, edits, space if version == 2 else None))
-    masks = [m for m in edits['masks'] if m['enabled'] and any(m['adjustments'].values())]
+        tonal = None
+    balanced = None
     if masks:
         reference_key = _key(develop_settings, lens_key, version, edits.get('retouch', []))
         mask_reference = cache.get('reference', reference_key,
                                    lambda: develop_view(retouch.apply(corrected, edits.get('retouch', [])), edits)) \
-            if any(m['kind'] == 'luminance' for m in masks) else None
-        x = x.copy()  # stage results are shared with the cache
+            if luminance else None
+        corrected = None
+        if not owned:
+            x = x.copy()  # stage results are shared with the cache
         for mask in masks:
             geometry = {k: v for k, v in mask.items() if k not in ('adjustments', 'name', 'enabled')}
             alpha_key = _key(geometry, x.shape, reference_key if mask['kind'] == 'luminance' else '')
@@ -1131,6 +1203,9 @@ def process(source, edits, backend=None, apply_crop=True, detail_scale=1., _stre
         x = crop_rotate(x, edits)
     if space is not None and version == 1:
         x = convert_display(x, space)
+    if owned:
+        x = np.ascontiguousarray(x, dtype=np.float32)
+        return np.clip(x, 0, 1, out=x)
     return np.ascontiguousarray(np.clip(x, 0, 1), dtype=np.float32)
 
 
@@ -1254,6 +1329,13 @@ def display_block(render, edits, size, rect, final=True):
     cw, ch = cx1 - cx0, cy1 - cy0
     dx0, dy0, dx1, dy1 = rect
     turns = edits.get('rotation', 0) % 4
+    # 2.3.0: a mirrored output's block comes from the mirrored place of the unmirrored one.
+    horizontal, vertical = (edits.get('flip') or (False, False))[:2]
+    ow, oh = (ch, cw) if turns % 2 else (cw, ch)
+    if horizontal:
+        dx0, dx1 = ow - dx1, ow - dx0
+    if vertical:
+        dy0, dy1 = oh - dy1, oh - dy0
     # Pre-rotation rectangle of np.rot90(x, -turns).
     ux0, uy0, ux1, uy1 = [(dx0, dy0, dx1, dy1), (dy0, ch - dx1, dy1, ch - dx0),
                           (cw - dx1, ch - dy1, cw - dx0, ch - dy0), (cw - dy1, dx0, cw - dy0, dx1)][turns]
@@ -1274,7 +1356,7 @@ def display_block(render, edits, size, rect, final=True):
                            borderMode=cv2.BORDER_REPLICATE)
     else:
         x = render((cx0 + ux0, cy0 + uy0, cx0 + ux1, cy0 + uy1))
-    return np.ascontiguousarray(np.rot90(x, -turns))
+    return np.ascontiguousarray(flipped(np.rot90(x, -turns), edits))
 
 
 def render_display(source, edits, backend, rect, final=False, detail_scale=1., kind='edited',
@@ -1379,6 +1461,17 @@ def sample_white_balance(source, position):
     return np.clip(target / sample, .125, 8).astype(float).tolist()
 
 
+def flipped(image, edits):
+    """2.3.0: the output mirrored as ``edits['flip'] = [horizontal, vertical]`` asks, after the
+    quarter turns (so it mirrors what is seen)."""
+    horizontal, vertical = (edits.get('flip') or (False, False))[:2]
+    if horizontal:
+        image = image[:, ::-1]
+    if vertical:
+        image = image[::-1]
+    return image
+
+
 def crop_rotate(image, edits):
     x = image
     if edits['crop']:
@@ -1390,7 +1483,7 @@ def crop_rotate(image, edits):
         # Enlarge the rotated image to cover all output corners, preserving crop ratio.
         matrix = _straighten_matrix(angle, w, h)
         x = cv2.warpAffine(x, matrix, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
-    return np.ascontiguousarray(np.rot90(x, -edits['rotation']))
+    return np.ascontiguousarray(flipped(np.rot90(x, -edits['rotation']), edits))
 
 
 def super_resolve(rgb, scale=2, model_path=None, use_cuda=True, progress=None, cancel=None):

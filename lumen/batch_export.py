@@ -159,6 +159,7 @@ def run(items, options, backend, progress, cancel):
             results.append((path, str(target), '\n'.join(exported.notes)))
         except Exception as exc:
             log.exception('batch export failed for %s', path)
-            results.append((path, None, str(exc) or type(exc).__name__))
+            from .large_image import explain
+            results.append((path, None, explain(exc)))
     progress(100, tr('批量导出完成'))
     return results

@@ -59,7 +59,7 @@ def test_scrolling_a_panel_does_not_change_the_slider_arriving_under_the_pointer
     from PySide6.QtWidgets import QScrollArea
     w = window
     w.resize(1600, 700)
-    w.tabs.setCurrentIndex(0)
+    w.show_tab('basic')
     wait_until(lambda: not w.render_running)
     area = w.tabs.currentWidget()
     assert isinstance(area, QScrollArea) and area.verticalScrollBar().maximum() > 0

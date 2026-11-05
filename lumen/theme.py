@@ -121,6 +121,17 @@ QListView#libraryGrid { background: @canvas; border: 0; }
 QTreeWidget#sourceTree { background: transparent; border: 0; }
 QTreeWidget#sourceTree::item { padding: 3px 2px; border-radius: 5px; }
 QTreeWidget#sourceTree::item:selected { background: @selection; color: @selection_text; }
+QToolButton#sectionHeader { color: @head; background: transparent; border: 0; border-bottom: 1px solid @border; padding: 8px 0 6px 0; font-size: 13px; font-weight: 600; text-align: left; }
+QToolButton#sectionHeader:hover { color: @accent; }
+QFrame#cropBar { background: @card; border: 1px solid @border_hi; border-radius: 12px; }
+QFrame#cropBar QLabel { background: transparent; }
+QFrame#cropBar QWidget#cropRow { background: transparent; }
+QFrame#cropBar QPushButton { padding: 5px 10px; border-radius: 11px; }
+QFrame#cropBar QPushButton#primary { padding: 5px 16px; }
+QToolButton#faceChip { background: @button; border: 1px solid @button_border; border-radius: 11px; padding: 3px 10px; margin: 0 5px 5px 0; color: @text; min-width: 16px; }
+QToolButton#faceChip:hover { border-color: @border_hi; }
+QToolButton#faceChip:checked { background: @checked; border-color: @checked_border; color: @checked_text; font-weight: 600; }
+QListWidget#historyList::item { padding: 5px 8px; }
 QToolButton#keywordChip { background: @card; border: 1px solid @border_hi; border-radius: 10px; padding: 2px 8px; color: @text; }
 QToolButton#keywordChip:hover { border-color: @accent_line; color: @accent; }
 QLabel#infoTitle { color: @head; font-size: 13px; font-weight: 600; background: transparent; }

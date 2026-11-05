@@ -86,7 +86,9 @@ def test_exiftool_errors_of_a_damaged_file_are_recorded(tmp_path, db):
     exiftool_or_skip()
     good = photo(tmp_path / 'good.jpg', when='2026:10:05 08:30:12')
     damaged = tmp_path / 'damaged.ARW'
-    damaged.write_bytes(os.urandom(5000))
+    # Fixed bytes with no 0xFF: about 1 % of random contents hold an MPEG frame sync, and ExifTool
+    # then reads the file as an MP3 without an error (2.3.0: one run in about 90 failed).
+    damaged.write_bytes(bytes(range(250)) * 20)
     db.add([good, str(damaged)])
     assert db.index_all() == 1
     row = db.record(str(damaged))

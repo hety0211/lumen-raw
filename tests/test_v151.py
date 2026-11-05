@@ -305,7 +305,8 @@ def test_language_menu_lists_every_language_and_marks_the_current_one(window):
 def test_tab_strip_wraps_the_panels_and_follows_the_selection(window):
     strip = window.tab_strip
     assert [b.text() for b in strip.buttons] == [window.tabs.tabText(i) for i in range(window.tabs.count())]
-    assert window.tabs.tabText(5) == '裁切·镜头'
+    assert [window.tabs.tabText(i) for i in range(window.tabs.count())] == \
+        ['光影', '色彩', '细节', '蒙版', '人像', '效果', '修复', '水印']
     strip.buttons[5].click()
     assert window.tabs.currentIndex() == 5
     window.tabs.setCurrentIndex(2)
