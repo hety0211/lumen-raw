@@ -309,7 +309,7 @@ class UpdateDialog(_Card):
         if isinstance(result, BaseException):
             self.progress.hide()
             self.status.setText(tr('更新下载失败：{error}', error=result))
-            self.show_help((tr('也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：'),
+            self.show_help((tr('也可以在发布页面手动下载完整安装包（含修图和选片用的全部 AI 模型；语音识别模型在第一次使用语音输入时下载），直接覆盖安装：'),
                             [page_link(self.update_info.page), page_link(updates.MIRROR_PAGE)]))
             self.rebind(self.primary, tr('重试'), self.start)
             self.rebind(self.secondary, tr('关闭'), self.reject)
@@ -409,7 +409,7 @@ class ModelsDialog(_Card):
         if isinstance(result, BaseException):
             self.show_state()
             self.status.setText(str(result))
-            self.show_help((tr('也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：'),
+            self.show_help((tr('也可以手动下载：最新版本的完整安装包含修图和选片用的全部 AI 模型，覆盖安装即可：'),
                             [page_link(updates.release_page()), page_link(updates.MIRROR_PAGE)]),
                            (tr('或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：'),
                             [page_link(ai_models.PAGE), folder_link(ai_models.download_folder(), tr('打开模型文件夹'))]))

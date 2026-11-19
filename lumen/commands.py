@@ -81,6 +81,14 @@ class Context:
     def notify(self, text):
         pass
 
+    def restored(self, path):
+        """True when the photo's edits came from a working copy an earlier session left (2.3.1)."""
+        return False
+
+    def persistence(self):
+        """Where edits are right now, in a sentence for the caller (2.3.1, issue #13)."""
+        return 'unsaved'
+
     def presets_changed(self):
         """The preset library changed (1.7.0): the window reloads its list."""
 
@@ -139,7 +147,16 @@ def run(context, command_id, args=None):
     if cmd is None:
         raise CommandError(f'unknown command {command_id!r}; see commands.list')
     result = cmd.handler(context, **arguments(cmd, args))
-    return result if isinstance(result, dict) else dict(result=result)
+    result = result if isinstance(result, dict) else dict(result=result)
+    if command_id in EDITING:
+        # 2.3.1 (issue #13): "applied" is not "saved"; every edit says where it is now.
+        result['persistence'] = context.persistence()
+    return result
+
+
+#: Commands that change a photo's edits: their result says where the edits are (``persistence``).
+EDITING = frozenset(('edit.apply', 'edit.reset', 'edit.undo', 'edit.redo', 'edit.auto', 'edit.preset', 'edit.copy',
+                     'edit.process', 'mask.refine'))
 
 
 def describe():
@@ -194,8 +211,209 @@ def _fresh(edits):
 
 
 def _summary(path, edits):
-    return dict(path=path, process=edits.get('process', 1), state=nl_edit.current_state(edits),
-                changes=nl_edit.changes(_fresh(edits), edits))
+    return dict(path=path, process=edits.get('process', 1), state=_state(edits),
+                changes=nl_edit.changes(_fresh(edits), edits) + _frame_changes(_fresh(edits), edits))
+
+
+# --------------------------------------------------------------------------- crop, spots, white balance (2.3.1)
+
+#: Coordinates agents give are fractions (0…1) of the uncropped photo's width and height, in the
+#: photo's own orientation: the same whatever the crop, quarter turns and mirroring are.
+POINT = 'fractions 0…1 of the uncropped photo (x from the left, y from the top)'
+
+
+def _state(edits):
+    """``nl_edit.current_state`` plus what only commands set (2.3.1, GitHub issues #14 and #15):
+    the crop, healed spots and a sampled white balance, in the words ``edit.apply`` accepts."""
+    state = nl_edit.current_state(edits)
+    crop = _crop_state(edits)
+    if crop:
+        state['crop'] = crop
+    spots = [dict(x=round(op['points'][0][0], 4), y=round(op['points'][0][1], 4), radius=round(op['radius'], 4),
+                  **({'source': [round(op['points'][0][0] + op['offset'][0], 4),
+                                 round(op['points'][0][1] + op['offset'][1], 4)]} if op['kind'] == 'clone' else {}))
+             for op in edits.get('retouch', []) if op['kind'] in ('heal', 'clone') and op.get('enabled', True)]
+    if spots:
+        state['spots'] = spots
+    gains = [round(float(v), 4) for v in edits.get('wb_gain', [1., 1., 1.])]
+    if gains != [1., 1., 1.]:
+        state['white_balance'] = dict(sampled=True, gains=gains)
+    return state
+
+
+def _crop_state(edits):
+    rect, angle = edits.get('crop'), float(edits.get('straighten', 0))
+    rotation, flip = int(edits.get('rotation', 0)), list(edits.get('flip') or [False, False])
+    if not rect and abs(angle) <= .001 and not rotation and not any(flip):
+        return None
+    return dict(rect=[round(float(v), 4) for v in (rect or [0., 0., 1., 1.])], angle=round(angle, 2),
+                rotate=rotation * 90, flip_horizontal=bool(flip[0]), flip_vertical=bool(flip[1]))
+
+
+def _frame_changes(before, after):
+    """What differs in crop, spots and sampled white balance between two recipes, as lines."""
+    lines = []
+    a, b = _crop_state(before), _crop_state(after)
+    if a != b:
+        if b is None:
+            lines.append('crop  removed (whole photo)')
+        else:
+            x0, y0, x1, y1 = b['rect']
+            text = f'crop  {x0:g}, {y0:g} – {x1:g}, {y1:g}'
+            if b['angle']:
+                text += f' · straighten {b["angle"]:+g}°'
+            if b['rotate']:
+                text += f' · rotate {b["rotate"]}°'
+            if b['flip_horizontal'] or b['flip_vertical']:
+                text += ' · mirrored ' + ' and '.join(n for n, on in (('horizontally', b['flip_horizontal']),
+                                                                    ('vertically', b['flip_vertical'])) if on)
+            lines.append(text)
+    count = lambda edits: sum(op['kind'] in ('heal', 'clone') for op in edits.get('retouch', []))
+    if count(before) != count(after):
+        lines.append(f'spots  {count(before)} → {count(after)}')
+    if list(before.get('wb_gain', [1., 1., 1.])) != list(after.get('wb_gain', [1., 1., 1.])):
+        lines.append('white balance  sampled' if list(after.get('wb_gain', [1., 1., 1.])) != [1., 1., 1.]
+                     else 'white balance  as shot')
+    return lines
+
+
+def _xy(value, name):
+    if not isinstance(value, (list, tuple)) or len(value) != 2 or \
+            not all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1 for v in value):
+        raise CommandError(f'{name} must be [x, y], {POINT}')
+    return [float(value[0]), float(value[1])]
+
+
+def _aspect(value, size):
+    """Width / height of the final picture for ``"4:5"``, a number or ``"original"``."""
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in ('original', 'as shot'):
+            return size[0] / size[1]
+        parts = text.replace('x', ':').replace('/', ':').split(':')
+        try:
+            numbers = [float(p) for p in parts]
+        except ValueError:
+            numbers = []
+        if len(numbers) == 2 and numbers[0] > 0 and numbers[1] > 0:
+            return numbers[0] / numbers[1]
+        if len(numbers) == 1 and numbers[0] > 0:
+            return numbers[0]
+    elif isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
+        return float(value)
+    raise CommandError('crop.aspect must be like "4:5", "16:9", "1:1", "original" or a number (width / height)')
+
+
+def _crop(context, path, target, request, notes):
+    """``crop`` of ``edit.apply`` (2.3.1, issue #14): the crop rectangle, straighten angle, quarter
+    turns and mirroring of the recipe ``target``, in place."""
+    if request is None:
+        target.update(crop=None, straighten=0., rotation=0, flip=[False, False])
+        return
+    known = ('rect', 'aspect', 'angle', 'rotate', 'flip_horizontal', 'flip_vertical')
+    if not isinstance(request, dict) or set(request) - set(known):
+        raise CommandError('crop must be null (whole photo) or an object with ' + ', '.join(known))
+    source, info = context.source(path)
+    rect = list(target.get('crop') or [0., 0., 1., 1.])
+    if 'rect' in request:
+        value = request['rect']
+        if value is None:
+            rect = [0., 0., 1., 1.]
+        elif isinstance(value, (list, tuple)) and len(value) == 4 and \
+                all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1 for v in value) and \
+                value[2] - value[0] >= .01 and value[3] - value[1] >= .01:
+            rect = [float(v) for v in value]
+        else:
+            raise CommandError(f'crop.rect must be [x1, y1, x2, y2] with x1 < x2 and y1 < y2, {POINT}, or null')
+    if 'rotate' in request:
+        if request['rotate'] not in (0, 90, 180, 270) or isinstance(request['rotate'], bool):
+            raise CommandError('crop.rotate must be 0, 90, 180 or 270 (clockwise)')
+        target['rotation'] = int(request['rotate']) // 90
+    flip = list(target.get('flip') or [False, False])
+    for index, key in enumerate(('flip_horizontal', 'flip_vertical')):
+        if key in request:
+            if not isinstance(request[key], bool):
+                raise CommandError(f'crop.{key} must be true or false')
+            flip[index] = request[key]
+    target['flip'] = flip
+    if 'angle' in request:
+        angle = request['angle']
+        if angle == 'auto':
+            # The same line vote as 自动水平 in the crop toolbar (lumen/straighten.py).
+            from . import straighten
+            found, _ = straighten.estimate(engine.selection_view(source, target))
+            if found is None:
+                notes.append('crop.angle auto: no clear horizon or verticals in this photo; the angle is unchanged')
+            else:
+                target['straighten'] = float(found)
+        elif isinstance(angle, (int, float)) and not isinstance(angle, bool) and abs(angle) <= model.STRAIGHTEN:
+            target['straighten'] = float(angle)
+        else:
+            raise CommandError(f'crop.angle must be -{model.STRAIGHTEN:g}…{model.STRAIGHTEN:g} degrees '
+                               '(positive turns the picture counter-clockwise) or "auto"')
+    if request.get('aspect') is not None:
+        width, height = info['width'], info['height']
+        wanted = _aspect(request['aspect'], (width, height))
+        if target.get('rotation', 0) % 2:
+            wanted = 1 / wanted                      # the quarter turn swaps the sides afterwards
+        w, h = (rect[2] - rect[0]) * width, (rect[3] - rect[1]) * height
+        if w / h > wanted:
+            w = h * wanted
+        else:
+            h = w / wanted
+        cx, cy = (rect[0] + rect[2]) / 2, (rect[1] + rect[3]) / 2
+        rect = [cx - w / width / 2, cy - h / height / 2, cx + w / width / 2, cy + h / height / 2]
+        rect = [min(max(v, 0.), 1.) for v in rect]
+    target['crop'] = None if [round(v, 6) for v in rect] == [0., 0., 1., 1.] else [round(v, 6) for v in rect]
+
+
+def _spots(target, request):
+    """``spots`` of ``edit.apply`` (2.3.1, issue #15): heal dust and small blemishes; with
+    ``source`` the spot is cloned from there.  ``null`` removes every healed and cloned spot."""
+    ops = [op for op in target.get('retouch', [])]
+    if request is None:
+        target['retouch'] = [op for op in ops if op['kind'] not in ('heal', 'clone')]
+        return
+    if not isinstance(request, list):
+        raise CommandError('spots must be a list of {x, y, radius, source} or null')
+    for index, spot in enumerate(request):
+        if not isinstance(spot, dict) or set(spot) - {'x', 'y', 'radius', 'source'}:
+            raise CommandError(f'spots[{index}] must be an object with x, y, radius and (optionally) source')
+        point = _xy([spot.get('x'), spot.get('y')], f'spots[{index}] x, y')
+        radius = spot.get('radius', .01)
+        if isinstance(radius, bool) or not isinstance(radius, (int, float)) or not .001 <= radius <= .1:
+            raise CommandError(f'spots[{index}].radius must be 0.001…0.1 (a fraction of the photo\'s short edge)')
+        op = dict(kind='heal', enabled=True, points=[point], radius=float(radius), opacity=100., feather=50.)
+        if spot.get('source') is not None:
+            source = _xy(spot['source'], f'spots[{index}].source')
+            op.update(kind='clone', offset=[source[0] - point[0], source[1] - point[1]])
+        ops.append(op)
+    if len(ops) > 500:
+        raise CommandError('a photo holds at most 500 retouching steps')
+    target['retouch'] = ops
+
+
+def _white_balance(context, path, target, request):
+    """``white_balance`` of ``edit.apply`` (2.3.1, issue #15): ``{"sample": [x, y]}`` makes the
+    patch there neutral, like the eyedropper (temperature and tint return to 0 and stay available
+    for fine tuning); ``null`` returns to the camera's white balance."""
+    from . import lens
+    source, info = context.source(path)
+    if request is None:
+        target['white_balance'] = copy.deepcopy(info.get('white_balance', model.recipe()['white_balance']))
+        target['wb_gain'] = [1., 1., 1.]
+        target['adjustments'].update(temperature=0., tint=0.)
+        return
+    if not isinstance(request, dict) or set(request) != {'sample'}:
+        raise CommandError('white_balance must be {"sample": [x, y]} or null')
+    point = _xy(request['sample'], 'white_balance.sample')
+    try:
+        gains = engine.sample_white_balance(lens.correct(source, target), point)
+    except ValueError as exc:
+        raise CommandError(str(exc))
+    target['white_balance']['kelvin'] = target['white_balance']['camera_kelvin']
+    target['wb_gain'] = gains
+    target['adjustments'].update(temperature=0., tint=0.)
 
 
 def _meta(context, path):
@@ -209,7 +427,7 @@ def _meta(context, path):
 def app_status(context):
     current = context.current()
     result = dict(application='LUMEN RAW', version=__version__, mode=context.mode, photos=len(context.photos()),
-                  current=current, selected=context.selected())
+                  current=current, selected=context.selected(), edits=context.persistence())
     if current:
         result['process'] = context.edits(current).get('process', 1)
     return result
@@ -503,7 +721,12 @@ def photo_open(context, path):
     context.open(path)
     current = context.current()
     _, info = context.source(current)
-    return {**_info(info), **_summary(current, context.edits(current))}
+    result = {**_info(info), **_summary(current, context.edits(current))}
+    if context.restored(current):
+        # 2.3.1: edits applied in an earlier session and never saved as a project are back.
+        result['restored'] = ('edits from an earlier session (working copy) were restored; '
+                              'reset_edits starts over from the unedited photo')
+    return result
 
 
 def _info(info):
@@ -528,6 +751,10 @@ def edit_get(context, path=None, full=False):
     path = _target(context, path)
     edits = context.edits(path)
     result = _summary(path, edits)
+    _, info = context.source(path)
+    result['size'] = _sizes(info, edits)
+    if context.restored(path):
+        result['restored'] = 'these edits come from an earlier session (working copy)'
     if full:
         from . import lut
         result['recipe'] = {k: v for k, v in model.validate(edits).items() if k != 'masks'} | dict(
@@ -547,7 +774,24 @@ CHANGES = dict(type='object', description=(
     'lut {path: ".cube file (1D or 3D LUT)", amount 0…100} to apply a creative LUT, {amount} to change its strength, '
     'null to remove it; '
     'masks [{region: sky|subject|person|background|foreground|water|vegetation|mountain|building|ground|top|bottom|center|edges, adjustments {…}}] '
-    '(sky…ground are detected locally by AI; at most 4 new masks; existing masks: {index, adjustments}).'))
+    '(sky…ground are detected locally by AI; at most 4 new masks; existing masks: {index, adjustments}, '
+    '{index, enabled: false}, {index, remove: true}). '
+    'Masks by position instead of region: {shape: "radial", center [x, y], radius r or [rx, ry]}, '
+    '{shape: "linear", from [x, y] (no effect), to [x, y] (full effect)}, '
+    '{shape: "brush", points [[x, y], …], size 0.001…0.5 of the short edge}; every mask takes invert true/false, '
+    'feather 0…100 and opacity 0…100. '
+    'crop {rect [x1, y1, x2, y2], aspect "4:5"|"16:9"|"1:1"|"original", angle -45…45 (counter-clockwise +) or "auto" '
+    '(levels the horizon), rotate 0|90|180|270 (clockwise), flip_horizontal, flip_vertical}; crop null shows the whole photo. '
+    'spots [{x, y, radius 0.001…0.1 of the short edge, source [x, y] (optional: clone from there)}] heals dust and '
+    'blemishes; spots null removes them. '
+    'white_balance {sample: [x, y]} makes that patch neutral (grey card, white wall); null returns to the camera\'s. '
+    'All coordinates are fractions 0…1 of the uncropped photo (x from the left, y from the top).'))
+
+
+def _sizes(info, edits):
+    """Pixel sizes for working with coordinates: the uncropped photo and the picture after the crop."""
+    full = (int(info['width']), int(info['height']))
+    return dict(photo=list(full), result=list(engine.display_size(edits, full)))
 
 
 def _original(context, path):
@@ -614,10 +858,21 @@ def edit_apply(context, changes, path=None, reset=False, amount=100, label='', f
         raise CommandError(str(exc))
     plan = _regions(context, path, plan, fine)
     target = nl_edit.blend(plan.base, plan.target, amount / 100) if amount != 100 else plan.target
-    target = model.validate(target)
-    lines = nl_edit.changes(before, target)
+    # 2.3.1 (issues #14, #15): the frame and spot tools are set as given, whatever ``amount`` is.
+    if 'white_balance' in changes:
+        _white_balance(context, path, target, changes['white_balance'])
+    if 'spots' in changes:
+        _spots(target, changes['spots'])
+    if 'crop' in changes:
+        _crop(context, path, target, changes['crop'], plan.notes)
+    try:
+        target = model.validate(target)
+    except ValueError as exc:
+        raise CommandError(str(exc))
+    lines = nl_edit.changes(before, target) + _frame_changes(before, target)
     context.apply(path, target, label or '; '.join(lines[:3]) or 'edit.apply')
-    return dict(path=path, applied=lines, notes=plan.notes, state=nl_edit.current_state(target))
+    _, info = context.source(path)
+    return dict(path=path, applied=lines, notes=plan.notes, state=_state(target), size=_sizes(info, target))
 
 
 @command('mask.refine', 'Refine the edges of a photo\'s AI masks (sky, subject, person, background) on the original '
@@ -784,6 +1039,37 @@ def preview_image(context, path, size=1024, original=False):
     return engine.resize_limit(np.ascontiguousarray(rgb), size), edits
 
 
+#: Largest part of a photo ``render.preview`` renders at 100 % in one call.
+REGION_PIXELS = 16 * 2 ** 20
+
+
+def region_image(context, path, region, size, original=False):
+    """Part of the photo at its original resolution (2.3.1, issue #15): ``region`` is
+    ``[x1, y1, x2, y2]`` in the uncropped photo.  Rendered from the full-size decode, so sharpening,
+    noise reduction and fine mask edges show as they export; reduced only when its long edge
+    exceeds ``size``.  Returns ``(rgb, edits, scale)`` with ``scale`` 1 for true 100 %."""
+    if not isinstance(region, (list, tuple)) or len(region) != 4 or \
+            not all(isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1 for v in region) or \
+            region[2] <= region[0] or region[3] <= region[1]:
+        raise CommandError(f'region must be [x1, y1, x2, y2] with x1 < x2 and y1 < y2, {POINT}')
+    edits = context.edits(path)
+    full = _original(context, path)
+    h, w = full.shape[:2]
+    x0, y0 = min(w - 1, int(region[0] * w)), min(h - 1, int(region[1] * h))
+    x1, y1 = max(x0 + 1, min(w, round(region[2] * w))), max(y0 + 1, min(h, round(region[3] * h)))
+    if (x1 - x0) * (y1 - y0) > REGION_PIXELS:
+        raise CommandError(f'region covers {(x1 - x0) * (y1 - y0) / 1e6:.0f} megapixels of the original; at most '
+                           f'{REGION_PIXELS / 1e6:.0f} are rendered at 100 % in one call: choose a smaller region, '
+                           'or leave region out for the whole photo')
+    if original:
+        rgb = engine.develop_view(np.asarray(full[y0:y1, x0:x1], np.float32), edits)
+    else:
+        rgb = engine.process_region(full, edits, context.backend(), (x0, y0, x1, y1))
+    rgb = np.ascontiguousarray(rgb)
+    reduced = engine.resize_limit(rgb, size)
+    return reduced, edits, reduced.shape[1] / rgb.shape[1]
+
+
 def jpeg(rgb, quality=88):
     from PIL import Image
     buffer = io.BytesIO()
@@ -791,20 +1077,32 @@ def jpeg(rgb, quality=88):
     return buffer.getvalue()
 
 
-@command('render.preview', 'Render the edited photo (or its unedited original) as a JPEG image to look at.',
-         dict(path=PATH, size=dict(type='integer', minimum=128, maximum=2048, description='Long edge, default 1024.'),
+@command('render.preview', 'Render the edited photo (or its unedited original) as a JPEG image to look at. '
+                           'With region, that part is rendered from the original at 100 % (sharpening, noise, mask edges).',
+         dict(path=PATH, size=dict(type='integer', minimum=128, maximum=4096, description='Long edge, default 1024.'),
               original=dict(type='boolean', description='The developed original without edits.'),
+              region=dict(type='array', items=dict(type='number'),
+                          description='[x1, y1, x2, y2], fractions 0…1 of the uncropped photo: render only this part, '
+                                      'at the original\'s resolution (reduced only if larger than size).'),
               output=dict(type='string', description='Also save the JPEG to this file.')),
          read_only=True, tool='render_preview')
-def render_preview(context, path=None, size=1024, original=False, output=None):
+def render_preview(context, path=None, size=1024, original=False, output=None, region=None):
     path = _target(context, path)
-    rgb, edits = preview_image(context, path, size, original)
-    data = jpeg(rgb)
+    scale = None
+    if region is not None:
+        rgb, edits, scale = region_image(context, path, region, size, original)
+    else:
+        rgb, edits = preview_image(context, path, size, original)
+    data = jpeg(rgb, 92 if region is not None else 88)
     if output:
         Path(output).expanduser().write_bytes(data)
     stats = nl_edit.image_statistics(rgb)
-    return dict(path=path, width=rgb.shape[1], height=rgb.shape[0], mime='image/jpeg',
-                image=base64.b64encode(data).decode('ascii'), statistics=stats, output=output)
+    result = dict(path=path, width=rgb.shape[1], height=rgb.shape[0], mime='image/jpeg',
+                  image=base64.b64encode(data).decode('ascii'), statistics=stats, output=output)
+    if region is not None:
+        # 1 = one preview pixel per pixel of the original (100 %).
+        result.update(region=[float(v) for v in region], scale=round(scale, 4))
+    return result
 
 
 FORMATS = {'.jpg': '.jpg', '.jpeg': '.jpg', '.png': '.png', '.tif': '.tif', '.tiff': '.tif', '.dng': '.dng'}

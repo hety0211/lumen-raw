@@ -41,7 +41,7 @@ def run_records(records,kind,requested_reference=None,preview=True,use_edits=Fal
     reference=reference_index(infos,requested_reference)
     if not preview and kind!='panorama':merge.check_memory(infos[reference]['width']*infos[reference]['height'],len(records))
     shared_develop=infos[reference].get('develop',model.recipe()['develop'])
-    frames=[]
+    frames=[];lens_record=None
     for i,record in enumerate(records):
         merge.notify(progress,10+int(10*i/len(records)),tr('准备合成像素 {v} / {n_records}', v=i+1, n_records=len(records)),cancel)
         edits=copy.deepcopy(record['edits']) if use_edits else model.recipe()
@@ -49,8 +49,15 @@ def run_records(records,kind,requested_reference=None,preview=True,use_edits=Fal
         elif not record.get('initialized',False):edits['develop']=copy.deepcopy(infos[i].get('develop',edits['develop']))
         source=previews[i] if preview else engine.load_image(record['path'],None)[0]
         frames.append(engine.process(source,edits,engine.Backend('cpu')))
+        if i==reference:
+            from . import lens
+            lens_record=lens.copy_record(infos[i].get('lens_exif'),edits,infos[i].get('lens_match'))
+    frame_shape=frames[reference].shape[:2]
     result,details=merge.merge_images(frames,kind,reference,ghost,crop,align,progress,cancel)
-    return dict(image=result,reference=reference,photo=infos[reference].get('photo',{}),details=details,
+    # 2.3.1: the merged copy keeps the reference frame's lens facts; a panorama or a trimmed merge
+    # no longer shows that frame, so its profile does not apply.
+    if lens_record is not None and (kind=='panorama' or result.shape[:2]!=frame_shape):lens_record['frame']='cropped'
+    return dict(image=result,reference=reference,photo=infos[reference].get('photo',{}),details=details,lens=lens_record,
                 source=records[reference]['path'],watermark=copy.deepcopy(records[reference]['edits']['watermark']))
 
 
@@ -126,7 +133,7 @@ class MergeDialog(QDialog):
                 if self.request['preview']:return result
                 merge.check(self.cancel_event);target=reserve_result(self.destination,Path(result['source']).stem,self.request['kind'])
                 self.progressed.emit(96,tr('正在保存 16 位线性 DNG…'))
-                engine.export_image(target,result['image'],photo=result['photo'],provenance=dict(operation=self.request['kind'],sources=[Path(r['path']).name for r in self.records],reference=Path(result['source']).name,**result['details']))
+                engine.export_image(target,result['image'],photo=result['photo'],provenance=dict(operation=self.request['kind'],sources=[Path(r['path']).name for r in self.records],reference=Path(result['source']).name,lens=result.get('lens'),**result['details']))
                 merge.check(self.cancel_event);result.pop('image');result['path']=str(target);return result
             except BaseException:
                 if target is not None:target.unlink(missing_ok=True)

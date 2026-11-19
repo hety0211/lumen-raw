@@ -7,7 +7,7 @@
   #define AppBuild "dist\LumenRAW"
 #endif
 #ifndef AppVersion
-  #define AppVersion "2.3.0"
+  #define AppVersion "2.3.1"
 #endif
 #ifdef UpdatePackage
   #define PackageKind "Update"

@@ -1276,6 +1276,8 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
         photo = copy.deepcopy(self.info.get('photo', {}))
         # 1.6.1 (issue #5): the original's EXIF, IPTC and XMP go into the exported file.
         original = dict(source=source_path, location=location) if metadata else None
+        # 2.3.1: a DNG / TIFF export keeps its lens facts (reopened, it is not corrected twice).
+        provenance = engine.export_provenance(source_path, self.info, edits)
         use_cuda = self.backend_combo.currentIndex() == 0
         def work():
             self.export_progress.emit(2, tr('正在全尺寸解码…'))
@@ -1300,7 +1302,7 @@ class MainWindow(WorkStateAccess, WorkflowMixin, AgentMixin, UpdateMixin, Natura
             from .batch_export import fit_long_edge
             result = watermark.apply(fit_long_edge(result, long_edge), edits['watermark'], photo, space)
             exported = engine.export_image(path, result, quality, photo=photo, metadata=original, space=space,
-                                           max_kb=max_kb)
+                                           max_kb=max_kb, provenance=provenance)
             return result.shape, backend, exported
         def success(result):
             self.close_export_dialog()

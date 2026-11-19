@@ -916,6 +916,74 @@ def _curve(points):
     return result if 2 <= len(result) <= 16 else None
 
 
+#: Masks placed by coordinates (2.3.1, GitHub issue #15): ``shape`` instead of ``region``.
+SHAPES = ('linear', 'radial', 'brush')
+
+
+def _point(value):
+    """``[x, y]`` in 0…1 (fractions of the photo's width and height), or None."""
+    if not isinstance(value, (list, tuple)) or len(value) != 2:
+        return None
+    x, y = _number(value[0]), _number(value[1])
+    if x is None or y is None or not (0 <= x <= 1 and 0 <= y <= 1):
+        return None
+    return [float(x), float(y)]
+
+
+def _shaped(shape, request, number, notes):
+    """A linear, radial or brush mask from coordinates, or None (with a note) when they are
+    missing or outside the photo.
+
+    * linear: ``from`` (no effect) → ``to`` (full effect and beyond);
+    * radial: ``center`` and ``radius`` (one number, or ``[rx, ry]``: fractions of the width and
+      height), full effect in the middle; the ellipse is kept inside the photo;
+    * brush: ``points`` (a path) painted with ``size`` (radius as a fraction of the short edge)."""
+    mask = model.new_mask(shape, number)
+    if shape == 'linear':
+        start = _point(request.get('from', request.get('start')))
+        end = _point(request.get('to', request.get('end')))
+        if start is None or end is None or start == end:
+            notes.append(tr('蒙版坐标无效，已忽略'))
+            return None
+        mask.update(start=start, end=end)
+    elif shape == 'radial':
+        center = _point(request.get('center'))
+        radius = request.get('radius', .25)
+        radius = [radius, radius] if not isinstance(radius, (list, tuple)) else list(radius)
+        rx, ry = (_number(radius[0]), _number(radius[1])) if len(radius) == 2 else (None, None)
+        if center is None or rx is None or ry is None or rx <= 0 or ry <= 0:
+            notes.append(tr('蒙版坐标无效，已忽略'))
+            return None
+        box = [center[0] - rx, center[1] - ry, center[0] + rx, center[1] + ry]
+        kept = [min(max(v, 0.), 1.) for v in box]
+        if kept[2] - kept[0] < .002 or kept[3] - kept[1] < .002:
+            notes.append(tr('蒙版坐标无效，已忽略'))
+            return None
+        if kept != box:
+            notes.append(tr('径向蒙版超出画面的部分已收回画面内'))
+        mask.update(start=kept[:2], end=kept[2:])
+    else:
+        points = request.get('points')
+        points = [_point(p) for p in points] if isinstance(points, (list, tuple)) else []
+        size = _number(request.get('size', .05))
+        if not points or len(points) > 2000 or any(p is None for p in points) or size is None:
+            notes.append(tr('蒙版坐标无效，已忽略'))
+            return None
+        mask['strokes'] = [dict(points=points, radius=_clip(size, .001, .5), erase=False)]
+    return mask
+
+
+def _mask_options(request, mask):
+    """``invert``, ``feather``, ``opacity`` and ``enabled`` of a mask request (2.3.1)."""
+    for key in ('invert', 'enabled'):
+        if isinstance(request.get(key), bool):
+            mask[key] = request[key]
+    for key in ('feather', 'opacity'):
+        value = _number(request.get(key))
+        if value is not None:
+            mask[key] = _clip(value, 0, 100)
+
+
 def _gradient(region, mask):
     if region == 'top':
         mask.update(start=[.5, .6], end=[.5, 0.])
@@ -1041,44 +1109,65 @@ def plan(edits, reply, files=False):
     regions = []
     masks = reply.get('masks')
     if isinstance(masks, list):
+        removed, added = set(), 0
         for request in masks:
             if not isinstance(request, dict):
                 continue
             values = request.get('adjustments') if isinstance(request.get('adjustments'), dict) else \
                 {k: v for k, v in request.items() if _adjustment_key(k) in PARAMS}
             index = _number(request.get('index'))
-            if index is not None and request.get('region') is None:
+            shape = str(request.get('shape') or '').strip().lower()
+            if index is not None and request.get('region') is None and not shape:
                 index = int(index)
-                if 0 <= index < len(target['masks']):
+                if 0 <= index < len(base['masks']):
+                    # 2.3.1: an existing mask can also be removed, switched off or inverted.
+                    if request.get('remove') is True:
+                        removed.add(index)
+                        continue
+                    _mask_options(request, target['masks'][index])
                     _adjustments(values, target['masks'][index]['adjustments'])
                 else:
                     notes.append(tr('没有序号为 {index} 的蒙版', index=index))
                 continue
             region = str(request.get('region', '')).strip().lower()
             region = REGION_ALIASES.get(region, region)
-            if region not in REGIONS:
-                notes.append(tr('不支持的区域：{region}', region=region or tr('（未指定）')))
+            if shape not in SHAPES and region not in REGIONS:
+                notes.append(tr('不支持的区域：{region}', region=region or shape or tr('（未指定）')))
                 continue
-            if len(regions) + len(target['masks']) - len(base['masks']) >= MAX_NEW_MASKS:
+            if len(regions) + added >= MAX_NEW_MASKS:
                 notes.append(tr('一次最多新增 {count} 个蒙版', count=MAX_NEW_MASKS))
                 break
-            if len(target['masks']) + len(regions) >= 32:
+            if len(target['masks']) - len(removed) + len(regions) >= 32:
                 notes.append(tr('蒙版数量已达上限 32'))
                 break
-            title, kind = REGIONS[region]
-            mask = model.new_mask(kind, len(target['masks']) + len(regions) + 1)
-            mask['name'] = tr('{title}（自然语言）', title=tr(title))
-            if kind in ('linear', 'radial'):
-                _gradient(region, mask)
+            number = len(target['masks']) + len(regions) + 1
+            if shape in SHAPES:
+                # 2.3.1 (issue #15): a mask placed by coordinates instead of a named region.
+                mask = _shaped(shape, request, number, notes)
+                if mask is None:
+                    continue
+                kind = shape
+                if request.get('name'):
+                    mask['name'] = str(request['name'])[:60]
             else:
-                mask['feather'] = 3.
+                title, kind = REGIONS[region]
+                mask = model.new_mask(kind, number)
+                mask['name'] = tr('{title}（自然语言）', title=tr(title))
+                if kind in ('linear', 'radial'):
+                    _gradient(region, mask)
+                else:
+                    mask['feather'] = 3.
+            _mask_options(request, mask)
             _adjustments(values, mask['adjustments'])
             if not any(mask['adjustments'].values()):
                 continue
-            if region in AI_REGIONS:
+            if not shape and region in AI_REGIONS:
                 regions.append((kind, mask))
             else:
                 target['masks'].append(mask)
+                added += 1
+        if removed:
+            target['masks'] = [m for i, m in enumerate(target['masks']) if i not in removed]
     explanation = str(reply.get('explanation') or reply.get('说明') or '').strip()[:600]
     return Plan(base, target, regions, explanation, notes)
 

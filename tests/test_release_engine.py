@@ -33,7 +33,8 @@ def test_develop_curve_preserves_hue_is_saved_and_not_synced():
     out=develop.apply(src,r['develop'])
     assert np.mean(out)>np.mean(src)
     np.testing.assert_allclose(out[...,0]/out[...,1],src[...,0]/src[...,1],atol=1e-5)
-    assert model.validate(r)['develop']==r['develop']
+    # 2.3.1: validation adds the camera colour reference, 1 (colours as decoded) when absent.
+    assert model.validate(r)['develop']==dict(r['develop'],chroma=1.)
     selected=model.apply_look(r,model.builtin_presets()[1]['look'])
     assert selected['develop']==r['develop']
     old=model.recipe();old['version']=3;old.pop('develop')

@@ -162,8 +162,9 @@ def _value(text):
         return text
 
 
-def _context(headless):
-    """The open editor (through its control channel) unless ``headless``; otherwise a session."""
+def _context(headless, keep=False):
+    """The open editor (through its control channel) unless ``headless``; otherwise a session.
+    ``keep`` (``lumen-cli run``): edits are kept as working copies between runs (2.3.1)."""
     from . import commands, control
     if not headless:
         try:
@@ -178,7 +179,7 @@ def _context(headless):
         except control.Unavailable:
             pass
     from .session import Session
-    session = Session()
+    session = Session(keep=keep)
 
     class Local:
         mode = 'headless'
@@ -338,7 +339,7 @@ def main(argv=None):
             payload = _value(args.args)
             if not isinstance(payload, dict):
                 raise commands.CommandError('arguments must be a JSON object')
-            context = _context(args.headless)
+            context = _context(args.headless, keep=True)
             result = dict(context.run(args.command, payload), mode=context.mode)
     except (commands.CommandError, ValueError, OSError) as exc:
         sys.stderr.write(f'lumen-cli: {exc}\n')

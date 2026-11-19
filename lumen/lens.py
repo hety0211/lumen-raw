@@ -367,6 +367,116 @@ def identify(exif, db=None):
     return match
 
 
+# ---------------------------------------------------------------- pictures LUMEN rendered itself
+
+#: ``match['copy']`` of a picture LUMEN rendered (an AI copy, a DNG / TIFF export), 2.3.1:
+#: its pixels are no longer the camera's frame, so the profile may not apply any more.
+COPY_APPLIED = 'applied'      # rendered with the profile corrections on
+COPY_CROPPED = 'cropped'      # cropped or straightened: the lens axis is no longer the centre
+COPY_LEGACY = 'legacy'        # made before 2.3.1: nothing recorded, the facts come from the original
+_EXIF_TEXT = ('make', 'model', 'lens_make', 'lens_model', 'lens', 'lens_id')
+_EXIF_NUMBERS = ('focal', 'aperture', 'distance', 'crop35')
+
+
+def clean_exif(exif):
+    """``exif_from_tags`` facts as they are kept inside a rendered copy (JSON), or None."""
+    if not isinstance(exif, dict):
+        return None
+    result = {key: re.sub(r'[\x00-\x1f]', ' ', str(exif.get(key) or ''))[:200] for key in _EXIF_TEXT}
+    for key in _EXIF_NUMBERS:
+        value = _float(exif.get(key))
+        result[key] = value if value and value > 0 else None
+    return result if any(result[key] for key in ('model', 'lens_model', 'lens', 'lens_id')) else None
+
+
+def copy_record(exif, edits, match=None):
+    """What a rendered copy keeps about its lens (``provenance['lens']``), or None without EXIF:
+    the capture facts, whether the profile corrections are already in its pixels and whether it
+    still shows the camera's whole frame.  ``match`` is the source's own match: a copy of a copy
+    inherits what was done to the first one."""
+    exif = clean_exif(exif)
+    if exif is None:
+        return None
+    state = (match or {}).get('copy')
+    # Quarter turns and mirroring keep the lens axis in the centre; a crop or straightening does not.
+    crop = edits.get('crop')
+    whole = (not crop or [float(v) for v in crop] == [0., 0., 1., 1.]) and abs(edits.get('straighten', 0)) <= .001
+    record = dict(exif=exif, corrected=active(edits.get('lens')) or state == COPY_APPLIED,
+                  frame='full' if whole and state != COPY_CROPPED else 'cropped')
+    if state == COPY_LEGACY:
+        record['uncertain'] = True
+    return record
+
+
+def auto_enables(match):
+    """Whether "enable for newly opened photos" applies: never to a copy LUMEN rendered, whose
+    pixels may already be corrected (2.3.1)."""
+    return not (match or {}).get('copy')
+
+
+def _number(text):
+    found = re.search(r'\d+(?:\.\d+)?', str(text or ''))
+    return float(found.group()) if found else None
+
+
+def from_copy(processing, photo, path=None, size=None, db=None):
+    """``(lens_exif, lens_match)`` of a picture LUMEN rendered itself (2.3.1).
+
+    ``processing`` is the copy's provenance (``photo_metadata.processing``), ``photo`` its shooting
+    data.  Copies made since 2.3.1 carry their lens facts; older ones take them from the original
+    next to them (its name is in the provenance), or else from the shooting data alone, without
+    the in-camera crop mode."""
+    processing = processing if isinstance(processing, dict) else {}
+    record = processing.get('lens')
+    state = ''
+    exif = clean_exif(record.get('exif')) if isinstance(record, dict) else None
+    if exif is not None:
+        state = COPY_APPLIED if record.get('corrected') else COPY_CROPPED if record.get('frame') != 'full' \
+            else COPY_LEGACY if record.get('uncertain') else ''
+    elif photo and (photo.get('lens') or photo.get('body')):
+        state = COPY_LEGACY
+        original = _original_of(processing, path)
+        if original is not None:
+            exif, frame = original
+            scale = _float(processing.get('scale'), 1.) or 1.
+            # The same frame (turned or not), enlarged by the copy's scale: within a pixel or two.
+            if size and frame and any(abs(a - b * scale) > 2 for a, b in zip(sorted(size), sorted(frame))):
+                state = COPY_CROPPED
+        if exif is None:
+            exif = clean_exif(dict(make=photo.get('brand'), model=photo.get('body'), lens_make=photo.get('lens_brand'),
+                                   lens_model=photo.get('lens'), focal=_number(photo.get('focal')),
+                                   aperture=_number(photo.get('aperture'))))
+    if exif is None:
+        return None, None
+    match = identify(exif, db)
+    if match is not None and state:
+        match['copy'] = state
+    return exif, match
+
+
+def _original_of(processing, path):
+    """``(exif facts, (width, height))`` of the original a copy was made from, when it still lies
+    next to the copy; None otherwise."""
+    name = processing.get('source') or processing.get('reference')
+    if not path or not isinstance(name, str) or not name or Path(name).name != name:
+        return None
+    original = Path(path).parent / name
+    if not original.is_file():
+        return None
+    try:
+        from . import white_balance
+        exif = clean_exif(exif_from_tags(white_balance.metadata(original)[0]))
+        if exif is None:
+            return None
+        import rawpy
+        with rawpy.imread(str(original)) as raw:
+            frame = (raw.sizes.width, raw.sizes.height)
+        return exif, frame
+    except Exception:
+        log.info('original %s of a copy could not be read', original, exc_info=True)
+        return None
+
+
 def _match_lens(db, exif, camera):
     queries = [q for q in (exif.get('lens_model'), exif.get('lens_id'), exif.get('lens')) if q]
     if not queries:
@@ -516,11 +626,16 @@ def prepare(settings, match, db=None):
     Returns ``(settings, reason)``; the profile is kept when it already fits this photo, so
     reopening a project or undoing never changes it.  ``reason`` explains a missing profile."""
     result = {**defaults(), **copy.deepcopy(settings or {})}
-    wanted = result['manual'] or (match or {}).get('lens')
+    match = match or {}
+    if match.get('copy') in (COPY_APPLIED, COPY_CROPPED) and not result['manual']:
+        # 2.3.1: a copy LUMEN rendered with the corrections on, or cropped: correcting it (again)
+        # would bend it.  A lens chosen by hand is the user's own call.
+        result['profile'] = None
+        return result, match['copy']
+    wanted = result['manual'] or match.get('lens')
     if not wanted:
         result['profile'] = None
-        return result, 'nolens' if match and match.get('query') else 'noexif'
-    match = match or {}
+        return result, 'nolens' if match.get('query') else 'noexif'
     lens = (db or database()).find(wanted.get('maker'), wanted.get('model'))
     if lens is None:
         result['profile'] = None

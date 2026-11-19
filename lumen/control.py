@@ -24,7 +24,7 @@ import threading
 import time
 from pathlib import Path
 
-from . import commands, engine, i18n, model, viewport
+from . import commands, engine, i18n, model, viewport, working
 
 log = logging.getLogger(__name__)
 
@@ -259,6 +259,9 @@ class WindowContext(commands.Context):
                     item.setText(item.text() + ' •')
             w.agent_activity(label, path)
         self._gui(run)
+        # 2.3.1 (issue #13): what an agent applied is also kept as a working copy, so a session
+        # without the window continues from it if the window closes in the middle of a task.
+        working.save(path, edits)
 
     def step(self, path, delta):
         def run():
@@ -270,7 +273,14 @@ class WindowContext(commands.Context):
             history = document.setdefault('history', model.History(document['edits']))
             document['edits'] = history.move(delta)
             return copy.deepcopy(document['edits'])
-        return self._gui(run)
+        edits = self._gui(run)
+        working.save(path, edits)
+        return edits
+
+    def persistence(self):
+        return ('unsaved: shown in the editor window (the user can undo it with Ctrl+Z) and kept as a working '
+                'copy that a session without the window restores; closing the window without saving discards '
+                'it there; save_project writes a .lumen project next to the photo')
 
     def source(self, path):
         def run():
@@ -299,7 +309,10 @@ class WindowContext(commands.Context):
                 document.update(project=target, saved_edits=copy.deepcopy(document['edits']),
                                 saved_snapshots=copy.deepcopy(document['snapshots']))
             return target
-        return self._gui(run)
+        saved = self._gui(run)
+        if Path(target).resolve() == Path(path).with_suffix('.lumen').resolve():
+            working.discard(path)       # the project next to the photo now holds these edits
+        return saved
 
     def backend(self):
         if self._backend is None:

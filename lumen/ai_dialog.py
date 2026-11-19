@@ -91,7 +91,10 @@ class EnhancementDialog(QDialog):
         self.cancel_button.setText(tr('取消运算'));self.progress.setValue(0)
         w.timer.stop();w.detail_timer.stop();w.cancel_detail()
         self.status.setText(tr('等待已开始的任务结束，然后优先进行 AI 运算…'))
+        # 2.3.1: the copy keeps its lens facts and whether it is already corrected or cropped.
+        from . import lens
         self._request=dict(preview=preview,path=w.source_path,edits=copy.deepcopy(w.edits),
+                           lens=lens.copy_record(w.info.get('lens_exif'),w.edits,w.info.get('lens_match')),
                            photo=copy.deepcopy(w.info.get('photo',{})),scale=[2,4][self.scale.currentIndex()],
                            amount=self.amount.value(),method=self.method.currentIndex(),cuda=w.backend_combo.currentIndex()==0,folder=self.folder.text())
         self.wait_for_idle()
@@ -139,7 +142,7 @@ class EnhancementDialog(QDialog):
                 del rgb
                 self.progressed.emit(96,tr('正在保存 DNG 副本…'))
                 target=reserve_copy(r['folder'],Path(r['path']).stem,self.kind)
-                engine.export_image(target,output,photo=r['photo'],provenance=dict(operation=self.kind,source=Path(r['path']).name,backend=backend,scale=r['scale'] if self.kind=='super' else 1,amount=r['amount'] if self.kind=='denoise' else 0))
+                engine.export_image(target,output,photo=r['photo'],provenance=dict(operation=self.kind,source=Path(r['path']).name,backend=backend,scale=r['scale'] if self.kind=='super' else 1,amount=r['amount'] if self.kind=='denoise' else 0,lens=r['lens']))
                 if self.cancel_event.is_set():raise InterruptedError(tr('已取消'))
                 return dict(path=str(target),backend=backend,shape=output.shape)
             except BaseException:

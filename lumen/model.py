@@ -36,7 +36,7 @@ PROCESS = 2
 
 def recipe():
     from .watermark import defaults
-    return dict(version=VERSION, process=PROCESS, watermark=defaults(), develop=dict(mode='linear', curve=[[0.,0.],[1.,1.]], source=N_('线性起点')), adjustments=adjustments(), curve_mode='smooth',
+    return dict(version=VERSION, process=PROCESS, watermark=defaults(), develop=dict(mode='linear', curve=[[0.,0.],[1.,1.]], source=N_('线性起点'), chroma=1.), adjustments=adjustments(), curve_mode='smooth',
                 hsl=[[0., 0., 0.] for _ in COLORS],
                 curves={c: [[0., 0.], [1., 1.]] for c in ['RGB', 'R', 'G', 'B']},
                 tone_curve=[[0., 0.], [1., 1.]],
@@ -107,7 +107,9 @@ def validate(data):
     curve = [point(p) for p in profile.get('curve', [[0,0],[1,1]])]
     if not 2 <= len(curve) <= 32 or curve[0] != [0,0] or curve[-1] != [1,1] or any(b[0] <= a[0] or b[1] < a[1] for a,b in zip(curve,curve[1:])):
         raise ValueError(tr('无效的默认显影曲线。'))
-    r['develop'] = dict(mode=profile['mode'],curve=curve,source=str(profile.get('source',''))[:80])
+    # 2.3.1: the camera colour reference; recipes made before it have none (1: colours as decoded).
+    r['develop'] = dict(mode=profile['mode'],curve=curve,source=str(profile.get('source',''))[:80],
+                        chroma=number(profile.get('chroma', 1.), .25, 4.))
     r['adjustments'] = adj(data.get('adjustments', {}))
     hsl = data.get('hsl', r['hsl'])
     if len(hsl) != 8 or any(len(row) != 3 for row in hsl):

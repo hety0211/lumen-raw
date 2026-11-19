@@ -301,7 +301,7 @@ class AutoMaskMixin:
         self.develop_combo.addItems([tr('相机参考显影'),tr('线性显影（旧版）')])
         self.develop_combo.currentIndexChanged.connect(self.change_develop_profile)
         layout.addWidget(self.develop_combo)
-        self.develop_hint=QLabel(tr('RAW 默认使用相机预览作为亮度参考，曝光滑块仍从 0 EV 开始。'))
+        self.develop_hint=QLabel(tr('RAW 默认以相机预览为亮度与色彩参考，曝光与饱和度滑块仍从 0 开始。'))
         self.develop_hint.setObjectName('subtle');self.develop_hint.setWordWrap(True)
         layout.addWidget(self.develop_hint)
         # 1.6.0: process version of the recipe; projects from 1.x keep version 1 until upgraded.
@@ -332,6 +332,8 @@ class AutoMaskMixin:
     def change_develop_profile(self,index):
         if self.refreshing or self.source is None:return
         self.edits['develop']['mode']='camera' if index==0 else 'linear'
-        if index==0 and self.edits['develop']['curve']==[[0.,0.],[1.,1.]]:
-            self.edits['develop']=self.info.get('develop',self.edits['develop']).copy()
+        # 2.3.1: back to the camera reference takes the photo's current one (brightness and colour),
+        # so a project made before the colour reference can adopt it.
+        if index==0 and (self.info.get('develop') or {}).get('mode')=='camera':
+            self.edits['develop']=copy.deepcopy(self.info['develop'])
         self.changed();self.commit()

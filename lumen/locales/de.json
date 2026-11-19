@@ -198,7 +198,7 @@
  "主体识别显著对象；近景按相对深度估算较近区域。\n背景为主体的反选。自动蒙版可用画笔修整，结果随工程保存。": "„Motiv“ findet das auffälligste Objekt; „Vordergrund“ schätzt nähere Bereiche aus relativer Tiefe.\n„Hintergrund“ ist die Umkehrung des Motivs. KI-Masken lassen sich mit dem Pinsel verfeinern und werden mit dem Projekt gespeichert.",
  "画笔修整自动蒙版": "KI-Maske mit Pinsel verfeinern",
  "正在本地识别选区…": "Bereich wird lokal erkannt…",
- "RAW 默认使用相机预览作为亮度参考，曝光滑块仍从 0 EV 开始。": "RAW-Dateien nutzen standardmäßig die Kameravorschau als Helligkeitsreferenz; der Belichtungsregler beginnt trotzdem bei 0 EV.",
+ "RAW 默认以相机预览为亮度与色彩参考，曝光与饱和度滑块仍从 0 开始。": "RAW-Dateien nutzen standardmäßig die Kameravorschau als Helligkeits- und Farbreferenz; Belichtungs- und Sättigungsregler beginnen trotzdem bei 0.",
  "天空": "Himmel",
  "人物": "Personen",
  "背景": "Hintergrund",
@@ -1392,8 +1392,8 @@
  "连接被拒绝（请检查代理设置）": "die Verbindung wurde abgelehnt (Proxy-Einstellungen prüfen)",
  "连接被中断": "die Verbindung wurde unterbrochen",
  "服务器返回的更新信息无法读取": "Die Update-Informationen des Servers konnten nicht gelesen werden",
- "也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：": "Sie können das vollständige Installationsprogramm (mit allen KI-Modellen) auch selbst von der Release-Seite laden und über diese Version installieren:",
- "也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：": "Sie können auch selbst laden: Das vollständige Installationsprogramm der neuesten Version enthält alle KI-Modelle; installieren Sie es einfach über diese Version:",
+ "也可以在发布页面手动下载完整安装包（含修图和选片用的全部 AI 模型；语音识别模型在第一次使用语音输入时下载），直接覆盖安装：": "Sie können das vollständige Installationsprogramm auch selbst von der Release-Seite laden und über diese Version installieren (es enthält alle KI-Modelle für Bearbeitung und Auswahl; das Spracherkennungsmodell wird bei der ersten Spracheingabe geladen):",
+ "也可以手动下载：最新版本的完整安装包含修图和选片用的全部 AI 模型，覆盖安装即可：": "Sie können auch selbst laden: Das vollständige Installationsprogramm der neuesten Version enthält alle KI-Modelle für Bearbeitung und Auswahl; installieren Sie es einfach über diese Version:",
  "或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：": "Oder laden Sie nur die fehlenden Modelldateien (Namen nicht ändern), legen Sie sie in den Modellordner und klicken Sie auf „Erneut versuchen“:",
  "打开模型文件夹": "Modellordner öffnen",
  "请检查网络连接后重试，或在发布页面手动下载最新版本：": "Prüfen Sie die Netzwerkverbindung und versuchen Sie es erneut, oder laden Sie die neueste Version selbst von der Release-Seite:",
@@ -1523,5 +1523,11 @@
  "已自动调整白平衡、曝光、影调与自然饱和度，可继续微调各滑块。": "Weißabgleich, Belichtung, Tonwerte und Dynamik automatisch gesetzt; jeder Regler lässt sich feinjustieren.",
  "内存不足，无法完成这一步（{detail}）。请关闭其他程序，或先裁切后再处理。": "Nicht genug Arbeitsspeicher für diesen Schritt ({detail}). Andere Programme schließen oder das Foto zuerst zuschneiden.",
  "显卡内存不足，无法完成这一步（{detail}）。可关闭其他占用显卡的程序，或在右侧面板底部改用“CPU 模式”后重试。": "Nicht genug Grafikspeicher für diesen Schritt ({detail}). Andere Programme, die die GPU nutzen, schließen oder unten im rechten Bereich „CPU-Modus“ wählen und erneut versuchen.",
- "内存不足，无法完成这一步（{detail}）。\nWindows 按“已提交内存”分配，上限是物理内存加页面文件：当前已提交 {used:.1f} GB，上限 {limit:.1f} GB，可用物理内存 {free:.1f} GB。已提交接近上限时，即使任务管理器显示还有空闲内存，分配也会失败。\n可在“系统 → 系统信息 → 高级系统设置 → 性能 → 设置 → 高级 → 虚拟内存”中把页面文件改为“系统管理的大小”，或关闭其他程序后重试。": "Nicht genug Arbeitsspeicher für diesen Schritt ({detail}).\nWindows vergibt Speicher bis zur Zusagegrenze (Arbeitsspeicher plus Auslagerungsdatei): {used:.1f} GB von {limit:.1f} GB zugesagt, {free:.1f} GB Arbeitsspeicher frei. Nahe der Grenze schlagen Anforderungen fehl, auch wenn der Task-Manager noch freien Speicher zeigt.\nUnter „System → Info → Erweiterte Systemeinstellungen → Leistung → Einstellungen → Erweitert → Virtueller Arbeitsspeicher“ die Auslagerungsdatei auf „Größe wird vom System verwaltet“ stellen oder andere Programme schließen und erneut versuchen."
+ "内存不足，无法完成这一步（{detail}）。\nWindows 按“已提交内存”分配，上限是物理内存加页面文件：当前已提交 {used:.1f} GB，上限 {limit:.1f} GB，可用物理内存 {free:.1f} GB。已提交接近上限时，即使任务管理器显示还有空闲内存，分配也会失败。\n可在“系统 → 系统信息 → 高级系统设置 → 性能 → 设置 → 高级 → 虚拟内存”中把页面文件改为“系统管理的大小”，或关闭其他程序后重试。": "Nicht genug Arbeitsspeicher für diesen Schritt ({detail}).\nWindows vergibt Speicher bis zur Zusagegrenze (Arbeitsspeicher plus Auslagerungsdatei): {used:.1f} GB von {limit:.1f} GB zugesagt, {free:.1f} GB Arbeitsspeicher frei. Nahe der Grenze schlagen Anforderungen fehl, auch wenn der Task-Manager noch freien Speicher zeigt.\nUnter „System → Info → Erweiterte Systemeinstellungen → Leistung → Einstellungen → Erweitert → Virtueller Arbeitsspeicher“ die Auslagerungsdatei auf „Größe wird vom System verwaltet“ stellen oder andere Programme schließen und erneut versuchen.",
+ "相机预览亮度与色彩参考": "Helligkeits- und Farbreferenz der Kameravorschau",
+ "这个副本由旧版本生成，没有记录当时是否已校正或裁切：如果已经校正过或裁切过，请不要启用。": "Diese Kopie stammt aus einer früheren Version, die nicht festhielt, ob sie schon korrigiert oder beschnitten war: Falls ja, schalten Sie die Korrekturen nicht ein.",
+ "这个副本生成时已经做过镜头校正（{lens}），不需要再校正。": "Diese Kopie wurde bereits mit Objektivkorrekturen erstellt ({lens}) und braucht keine weitere Korrektur.",
+ "这个副本生成时已裁切或拉直，画面中心不再是镜头中心，配置文件不再适用；需要校正请在原片上启用后重新生成副本。": "Diese Kopie wurde beim Erstellen beschnitten oder begradigt; ihre Mitte ist nicht mehr die Objektivmitte und das Profil passt nicht mehr. Zum Korrigieren die Korrekturen am Original einschalten und die Kopie neu erstellen.",
+ "蒙版坐标无效，已忽略": "Ungültige Maskenkoordinaten, ignoriert",
+ "径向蒙版超出画面的部分已收回画面内": "Der Teil der radialen Maske außerhalb des Fotos wurde ins Bild verschoben"
 }

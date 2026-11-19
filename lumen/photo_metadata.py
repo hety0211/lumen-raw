@@ -147,15 +147,29 @@ def copy_from(source, target, location=True, position=None):
     return ''
 
 
-def embedded(path):
-    if Path(path).suffix.lower() not in ('.dng','.tif','.tiff'): return {}
+def _described(path):
+    """The record LUMEN wrote into a DNG / TIFF it rendered (``description``), or None."""
+    if Path(path).suffix.lower() not in ('.dng','.tif','.tiff'): return None
     try:
         import tifffile
         with tifffile.TiffFile(path) as f:
             text = f.pages[0].description or ''
-            if len(text)>16384: return {}
+            if len(text)>16384: return None
             data = json.loads(text)
-            if data.get('application')=='Lumen photo' and data.get('version')==1:
-                return clean(data.get('photo'))
+            if isinstance(data, dict) and data.get('application')=='Lumen photo' and data.get('version')==1:
+                return data
     except (OSError, ValueError, AttributeError): pass
-    return {}
+    return None
+
+
+def embedded(path):
+    data = _described(path)
+    return clean(data.get('photo')) if data else {}
+
+
+def processing(path):
+    """How a copy LUMEN rendered was made (the ``provenance`` it was written with): operation,
+    source file name, scale and, since 2.3.1, its lens facts (``lens.copy_record``); {} otherwise."""
+    data = _described(path)
+    found = data.get('processing') if data else None
+    return found if isinstance(found, dict) else {}

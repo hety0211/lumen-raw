@@ -155,7 +155,8 @@ def run(items, options, backend, progress, cancel):
                 target_path(options['folder'], path, options['extension'], taken)
             original = dict(source=path, location=options.get('location', True)) if options.get('metadata', True) else None
             exported = engine.export_image(target, result, options['quality'], photo=photo, metadata=original,
-                                           space=options.get('space'), max_kb=options.get('max_kb'))
+                                           space=options.get('space'), max_kb=options.get('max_kb'),
+                                           provenance=engine.export_provenance(path, info, edits))
             results.append((path, str(target), '\n'.join(exported.notes)))
         except Exception as exc:
             log.exception('batch export failed for %s', path)

@@ -198,7 +198,7 @@
  "主体识别显著对象；近景按相对深度估算较近区域。\n背景为主体的反选。自动蒙版可用画笔修整，结果随工程保存。": "Subject finds the salient object; Foreground estimates nearer areas from relative depth.\nBackground is the inverse of Subject. AI masks can be refined with the brush and are saved with the project.",
  "画笔修整自动蒙版": "Refine AI mask with brush",
  "正在本地识别选区…": "Detecting the area locally…",
- "RAW 默认使用相机预览作为亮度参考，曝光滑块仍从 0 EV 开始。": "RAW files use the camera preview as the brightness reference by default; the Exposure slider still starts at 0 EV.",
+ "RAW 默认以相机预览为亮度与色彩参考，曝光与饱和度滑块仍从 0 开始。": "RAW files use the camera preview as the brightness and colour reference by default; the Exposure and Saturation sliders still start at 0.",
  "天空": "Sky",
  "人物": "People",
  "背景": "Background",
@@ -1392,8 +1392,8 @@
  "连接被拒绝（请检查代理设置）": "the connection was refused (check the proxy settings)",
  "连接被中断": "the connection was interrupted",
  "服务器返回的更新信息无法读取": "The update information from the server could not be read",
- "也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：": "You can also download the full installer (it includes every AI model) from the release page and install it over this version:",
- "也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：": "You can also download by hand: the full installer of the newest version includes every AI model; install it over this version:",
+ "也可以在发布页面手动下载完整安装包（含修图和选片用的全部 AI 模型；语音识别模型在第一次使用语音输入时下载），直接覆盖安装：": "You can also download the full installer from the release page and install it over this version (it includes every AI model for editing and culling; the speech recognition model downloads the first time you use voice input):",
+ "也可以手动下载：最新版本的完整安装包含修图和选片用的全部 AI 模型，覆盖安装即可：": "You can also download by hand: the full installer of the newest version includes every AI model for editing and culling; install it over this version:",
  "或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：": "Or download only the missing model files (keep their names), put them into the model folder and click “Retry”:",
  "打开模型文件夹": "Open model folder",
  "请检查网络连接后重试，或在发布页面手动下载最新版本：": "Check the network connection and try again, or download the newest version by hand from the release page:",
@@ -1523,5 +1523,11 @@
  "已自动调整白平衡、曝光、影调与自然饱和度，可继续微调各滑块。": "White balance, exposure, tones and vibrance set automatically; fine-tune any slider.",
  "内存不足，无法完成这一步（{detail}）。请关闭其他程序，或先裁切后再处理。": "Not enough memory to finish this step ({detail}). Close other programs, or crop the photo first.",
  "显卡内存不足，无法完成这一步（{detail}）。可关闭其他占用显卡的程序，或在右侧面板底部改用“CPU 模式”后重试。": "Not enough graphics memory to finish this step ({detail}). Close other programs using the GPU, or choose “CPU Mode” at the bottom of the right panel and try again.",
- "内存不足，无法完成这一步（{detail}）。\nWindows 按“已提交内存”分配，上限是物理内存加页面文件：当前已提交 {used:.1f} GB，上限 {limit:.1f} GB，可用物理内存 {free:.1f} GB。已提交接近上限时，即使任务管理器显示还有空闲内存，分配也会失败。\n可在“系统 → 系统信息 → 高级系统设置 → 性能 → 设置 → 高级 → 虚拟内存”中把页面文件改为“系统管理的大小”，或关闭其他程序后重试。": "Not enough memory to finish this step ({detail}).\nWindows grants memory against the commit limit, which is physical memory plus the page file: {used:.1f} GB committed of {limit:.1f} GB, {free:.1f} GB of physical memory free. Near the limit, allocations fail even while Task Manager still shows free memory.\nIn “System → About → Advanced system settings → Performance → Settings → Advanced → Virtual memory”, set the page file to “System managed size”, or close other programs and try again."
+ "内存不足，无法完成这一步（{detail}）。\nWindows 按“已提交内存”分配，上限是物理内存加页面文件：当前已提交 {used:.1f} GB，上限 {limit:.1f} GB，可用物理内存 {free:.1f} GB。已提交接近上限时，即使任务管理器显示还有空闲内存，分配也会失败。\n可在“系统 → 系统信息 → 高级系统设置 → 性能 → 设置 → 高级 → 虚拟内存”中把页面文件改为“系统管理的大小”，或关闭其他程序后重试。": "Not enough memory to finish this step ({detail}).\nWindows grants memory against the commit limit, which is physical memory plus the page file: {used:.1f} GB committed of {limit:.1f} GB, {free:.1f} GB of physical memory free. Near the limit, allocations fail even while Task Manager still shows free memory.\nIn “System → About → Advanced system settings → Performance → Settings → Advanced → Virtual memory”, set the page file to “System managed size”, or close other programs and try again.",
+ "相机预览亮度与色彩参考": "Camera preview brightness and colour reference",
+ "这个副本由旧版本生成，没有记录当时是否已校正或裁切：如果已经校正过或裁切过，请不要启用。": "This copy was made by an earlier version, which did not record whether it was already corrected or cropped: if it was, do not turn corrections on.",
+ "这个副本生成时已经做过镜头校正（{lens}），不需要再校正。": "This copy was made with lens corrections already applied ({lens}); it needs no further correction.",
+ "这个副本生成时已裁切或拉直，画面中心不再是镜头中心，配置文件不再适用；需要校正请在原片上启用后重新生成副本。": "This copy was cropped or straightened when it was made, so its centre is no longer the lens centre and the profile no longer fits; to correct it, turn corrections on for the original and make the copy again.",
+ "蒙版坐标无效，已忽略": "Invalid mask coordinates, ignored",
+ "径向蒙版超出画面的部分已收回画面内": "The part of the radial mask outside the photo was moved inside it"
 }

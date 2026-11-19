@@ -35,7 +35,10 @@ INSTRUCTIONS = '''LUMEN RAW is a RAW photo editor (landscape and travel). Typica
 4. export_photo / export_photos write files; save_project keeps the edits (.lumen) without exporting.
 5. rate_photos / flag_photos / label_photos organise the library (0–5 stars, pick/reject, colour labels).
 lumen_status tells whether the editor window is open ("gui": the user sees each change and can undo it with Ctrl+Z)
-or not ("headless": edits live in this server until saved or exported). Originals are never modified.'''
+or not ("headless"). Applied edits are unsaved until save_project: every editing result says where they are
+("persistence"). They are also kept as a working copy, so a session without the window finds them again when it
+opens the photo (also after a reconnect; open_photo then reports "restored"). If the window closes during a task,
+the next result carries a "notice" and the session continues headless. Originals are never modified.'''
 
 
 def tools():
@@ -58,18 +61,25 @@ def tools():
 class Dispatcher:
     """Runs commands in the open editor when there is one, else in a headless session."""
 
+    #: Told once when the editor window this server was using is gone (2.3.1, issue #13).
+    WINDOW_GONE = ('the LUMEN RAW editor window is no longer open: this server now works without it (headless), '
+                   'with no current photo. Edits applied through the window were kept as working copies and '
+                   'come back when a photo is opened (open_photo, or any command with path); check with get_edits.')
+
     def __init__(self, headless=False):
         self.headless = headless
         self._session = None
         self._lock = threading.Lock()
+        self._window = False        # the last command ran in the editor window
 
     def session(self):
         if self._session is None:
             from .session import Session
-            self._session = Session()
+            self._session = Session(keep=True)      # 2.3.1: edits survive a reconnect (``working``)
         return self._session
 
     def run(self, command, args):
+        notice = None
         if not self.headless:
             try:
                 client = control.Client(connect_timeout=.5)
@@ -77,11 +87,32 @@ class Dispatcher:
                 client = None
             if client is not None:
                 try:
-                    return client.call(command, args)
+                    result = client.call(command, args)
+                    self._window = True
+                    return result
+                except commands.CommandError:
+                    self._window = True
+                    raise
+                except (ConnectionError, OSError, ValueError) as exc:
+                    # The window closed (or its process ended) while the command ran.  It used to
+                    # surface as a bare "ConnectionError", and the next call silently started an
+                    # empty headless session: the agent's edits seemed to have vanished.
+                    log.warning('editor window lost during %s: %s', command, exc)
+                    self._window = False
+                    raise commands.CommandError(
+                        f'the LUMEN RAW editor window closed while running {command}; its result is unknown. '
+                        'Edits applied before were kept as working copies: call again to continue without the '
+                        'window (headless), where open_photo restores them.')
                 finally:
                     client.close()
+            elif self._window:
+                self._window = False
+                notice = self.WINDOW_GONE
         with self._lock:
-            return commands.run(self.session(), command, args)
+            result = commands.run(self.session(), command, args)
+        if notice and isinstance(result, dict):
+            result = dict(result, notice=notice)
+        return result
 
 
 class Server:

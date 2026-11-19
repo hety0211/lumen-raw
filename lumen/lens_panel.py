@@ -142,7 +142,7 @@ class LensMixin:
 
     def init_lens_states(self, states, new_photo):
         """``states``: every recipe of the photo being opened (edits, saved edits, history)."""
-        enable = new_photo and auto_enable()
+        enable = new_photo and auto_enable() and lens.auto_enables(self.lens_match())
         reason = ''
         for index, state in enumerate(states):
             if enable:
@@ -237,7 +237,12 @@ class LensMixin:
                     'nolens': tr('数据库中没有找到“{lens}”，可手动选择镜头。', lens=match.get('query', '')),
                     'unknown': tr('所选镜头不在当前数据库中，请重新选择。'),
                     'focal': tr('照片没有记录焦距，变焦镜头无法插值。'),
-                    'crop': tr('此镜头按更小的画幅标定，不适用于这台机身的画面。')}.get(reason, '')
+                    'crop': tr('此镜头按更小的画幅标定，不适用于这台机身的画面。'),
+                    # 2.3.1: copies LUMEN rendered itself (AI copies, DNG / TIFF exports).
+                    lens.COPY_APPLIED: tr('这个副本生成时已经做过镜头校正（{lens}），不需要再校正。',
+                                          lens=match.get('label') or match.get('query', '')),
+                    lens.COPY_CROPPED: tr('这个副本生成时已裁切或拉直，画面中心不再是镜头中心，配置文件不再适用；'
+                                          '需要校正请在原片上启用后重新生成副本。')}.get(reason, '')
             return text
         parts = [profile.get('label') or profile.get('model', '')]
         parts.append(tr('手动选择') if settings.get('manual') else tr('自动识别'))
@@ -251,6 +256,8 @@ class LensMixin:
         if missing:
             text += '\n' + tr('配置文件不含：{items}', items='、'.join(missing) if i18n.language().startswith('zh')
                                  else ', '.join(missing))
+        if match.get('copy') == lens.COPY_LEGACY and not settings.get('manual'):
+            text += '\n' + tr('这个副本由旧版本生成，没有记录当时是否已校正或裁切：如果已经校正过或裁切过，请不要启用。')
         return text
 
     def lens_states_for_document(self, document):

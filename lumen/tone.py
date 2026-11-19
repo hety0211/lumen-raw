@@ -222,11 +222,24 @@ def tonal(image, a, spec_):
     return color.encode(color.gamut_map(x, spec_.space), spec_.space)
 
 
+def look_saturation(edits):
+    """The saturation the colour stage works with: the slider with the camera colour reference
+    (``develop.chroma``, 2.3.1) folded in.  Both scale OkLCh chroma, so one factor carries them:
+    k · (1 + s / 100); every backend already takes that factor as its ``saturation`` input."""
+    from .develop import chroma
+    gain = chroma(edits.get('develop'))
+    slider = edits['adjustments'].get('saturation', 0)
+    return slider if gain == 1 else ((1 + slider / 100) * gain - 1) * 100
+
+
 def develop_view(source, develop):
     """The developed starting point (before / after comparison, masks, thumbnails)."""
+    from .develop import chroma
     x = np.asarray(source, np.float32)
     y = color.luminance(x)
-    return color.linear_to_srgb(color.gamut_map(x * (lookup(table(develop), y) / np.maximum(y, 1e-7))[..., None]))
+    view = color.linear_to_srgb(color.gamut_map(x * (lookup(table(develop), y) / np.maximum(y, 1e-7))[..., None]))
+    gain = chroma(develop)
+    return view if gain == 1 else color.adjust(view, (gain - 1) * 100)
 
 
 def auto_tone(source, develop, gains=None):

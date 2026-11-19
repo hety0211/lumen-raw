@@ -193,7 +193,7 @@ def test_a_failed_update_download_links_its_release_and_retries(app, feed_server
     wait_until(lambda: dialog.primary.isVisible() and dialog.primary.text() == '重试', 15)
     assert dialog.status.text() == '更新下载失败：127.0.0.1: 服务器返回 HTTP 404'
     assert dialog.help.isVisible() and _links(dialog.help) == [feed_server + 'page', updates.MIRROR_PAGE]
-    assert '已包含全部 AI 模型' in dialog.help.text()
+    assert '含修图和选片用的全部 AI 模型' in dialog.help.text()
     _Files.files['/v2.9.0/LumenRAW-2.9.0-Update.exe'] = payload
     dialog.primary.click()
     assert not dialog.help.isVisible()

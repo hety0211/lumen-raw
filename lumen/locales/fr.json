@@ -198,7 +198,7 @@
  "主体识别显著对象；近景按相对深度估算较近区域。\n背景为主体的反选。自动蒙版可用画笔修整，结果随工程保存。": "« Sujet » trouve l’objet saillant ; « Premier plan » estime les zones proches d’après la profondeur relative.\n« Arrière-plan » est l’inverse du sujet. Les masques IA peuvent être affinés au pinceau et sont enregistrés avec le projet.",
  "画笔修整自动蒙版": "Affiner le masque IA au pinceau",
  "正在本地识别选区…": "Détection locale de la zone…",
- "RAW 默认使用相机预览作为亮度参考，曝光滑块仍从 0 EV 开始。": "Les fichiers RAW utilisent par défaut l’aperçu de l’appareil comme référence de luminosité ; le curseur d’exposition part toujours de 0 EV.",
+ "RAW 默认以相机预览为亮度与色彩参考，曝光与饱和度滑块仍从 0 开始。": "Les fichiers RAW utilisent par défaut l’aperçu de l’appareil comme référence de luminosité et de couleur ; les curseurs d’exposition et de saturation partent toujours de 0.",
  "天空": "Ciel",
  "人物": "Personnes",
  "背景": "Arrière-plan",
@@ -1392,8 +1392,8 @@
  "连接被拒绝（请检查代理设置）": "connexion refusée (vérifiez les paramètres du proxy)",
  "连接被中断": "la connexion a été interrompue",
  "服务器返回的更新信息无法读取": "Les informations de mise à jour du serveur n’ont pas pu être lues",
- "也可以在发布页面手动下载完整安装包（已包含全部 AI 模型），直接覆盖安装：": "Vous pouvez aussi télécharger vous-même le programme d’installation complet (avec tous les modèles d’IA) depuis la page de la version et l’installer par-dessus :",
- "也可以手动下载：最新版本的完整安装包已包含全部 AI 模型，覆盖安装即可：": "Vous pouvez aussi télécharger vous-même : le programme d’installation complet de la dernière version contient tous les modèles d’IA ; installez-le par-dessus :",
+ "也可以在发布页面手动下载完整安装包（含修图和选片用的全部 AI 模型；语音识别模型在第一次使用语音输入时下载），直接覆盖安装：": "Vous pouvez aussi télécharger vous-même le programme d’installation complet depuis la page de la version et l’installer par-dessus (il contient tous les modèles d’IA de retouche et de tri ; le modèle de reconnaissance vocale se télécharge à la première saisie vocale) :",
+ "也可以手动下载：最新版本的完整安装包含修图和选片用的全部 AI 模型，覆盖安装即可：": "Vous pouvez aussi télécharger vous-même : le programme d’installation complet de la dernière version contient tous les modèles d’IA de retouche et de tri ; installez-le par-dessus :",
  "或者只下载缺少的模型文件（不要改文件名），放进模型文件夹后点“重试”：": "Ou téléchargez seulement les fichiers de modèle manquants (sans les renommer), placez-les dans le dossier des modèles puis cliquez sur « Réessayer » :",
  "打开模型文件夹": "Ouvrir le dossier des modèles",
  "请检查网络连接后重试，或在发布页面手动下载最新版本：": "Vérifiez la connexion réseau et réessayez, ou téléchargez vous-même la dernière version depuis la page de la version :",
@@ -1523,5 +1523,11 @@
  "已自动调整白平衡、曝光、影调与自然饱和度，可继续微调各滑块。": "Balance des blancs, exposition, tons et vibrance réglés automatiquement ; affinez avec les curseurs.",
  "内存不足，无法完成这一步（{detail}）。请关闭其他程序，或先裁切后再处理。": "Mémoire insuffisante pour terminer cette étape ({detail}). Fermez d’autres programmes ou recadrez d’abord la photo.",
  "显卡内存不足，无法完成这一步（{detail}）。可关闭其他占用显卡的程序，或在右侧面板底部改用“CPU 模式”后重试。": "Mémoire graphique insuffisante pour terminer cette étape ({detail}). Fermez les autres programmes qui utilisent le GPU, ou choisissez « Mode CPU » en bas du panneau de droite et réessayez.",
- "内存不足，无法完成这一步（{detail}）。\nWindows 按“已提交内存”分配，上限是物理内存加页面文件：当前已提交 {used:.1f} GB，上限 {limit:.1f} GB，可用物理内存 {free:.1f} GB。已提交接近上限时，即使任务管理器显示还有空闲内存，分配也会失败。\n可在“系统 → 系统信息 → 高级系统设置 → 性能 → 设置 → 高级 → 虚拟内存”中把页面文件改为“系统管理的大小”，或关闭其他程序后重试。": "Mémoire insuffisante pour terminer cette étape ({detail}).\nWindows attribue la mémoire dans la limite de validation (mémoire physique plus fichier d’échange) : {used:.1f} Go validés sur {limit:.1f} Go, {free:.1f} Go de mémoire physique libre. Près de la limite, les allocations échouent même si le Gestionnaire des tâches montre encore de la mémoire libre.\nDans « Système → Informations système → Paramètres système avancés → Performances → Paramètres → Avancé → Mémoire virtuelle », réglez le fichier d’échange sur « Taille gérée par le système », ou fermez d’autres programmes et réessayez."
+ "内存不足，无法完成这一步（{detail}）。\nWindows 按“已提交内存”分配，上限是物理内存加页面文件：当前已提交 {used:.1f} GB，上限 {limit:.1f} GB，可用物理内存 {free:.1f} GB。已提交接近上限时，即使任务管理器显示还有空闲内存，分配也会失败。\n可在“系统 → 系统信息 → 高级系统设置 → 性能 → 设置 → 高级 → 虚拟内存”中把页面文件改为“系统管理的大小”，或关闭其他程序后重试。": "Mémoire insuffisante pour terminer cette étape ({detail}).\nWindows attribue la mémoire dans la limite de validation (mémoire physique plus fichier d’échange) : {used:.1f} Go validés sur {limit:.1f} Go, {free:.1f} Go de mémoire physique libre. Près de la limite, les allocations échouent même si le Gestionnaire des tâches montre encore de la mémoire libre.\nDans « Système → Informations système → Paramètres système avancés → Performances → Paramètres → Avancé → Mémoire virtuelle », réglez le fichier d’échange sur « Taille gérée par le système », ou fermez d’autres programmes et réessayez.",
+ "相机预览亮度与色彩参考": "Référence de luminosité et de couleur de l’aperçu appareil",
+ "这个副本由旧版本生成，没有记录当时是否已校正或裁切：如果已经校正过或裁切过，请不要启用。": "Cette copie a été créée par une version antérieure, qui n’indiquait pas si elle était déjà corrigée ou recadrée : si c’est le cas, n’activez pas les corrections.",
+ "这个副本生成时已经做过镜头校正（{lens}），不需要再校正。": "Cette copie a été créée avec les corrections d’objectif déjà appliquées ({lens}) ; elle n’a pas besoin d’être corrigée à nouveau.",
+ "这个副本生成时已裁切或拉直，画面中心不再是镜头中心，配置文件不再适用；需要校正请在原片上启用后重新生成副本。": "Cette copie a été recadrée ou redressée à sa création : son centre n’est plus celui de l’objectif et le profil ne s’applique plus. Pour la corriger, activez les corrections sur l’original et recréez la copie.",
+ "蒙版坐标无效，已忽略": "Coordonnées de masque non valides, ignorées",
+ "径向蒙版超出画面的部分已收回画面内": "La partie du masque radial hors de la photo a été ramenée à l’intérieur"
 }

@@ -158,6 +158,7 @@ def _load_image(path, preview_limit=1600, develop_reference=False, clip=False):
         rgb = dng.read(path,preview_limit)
         info.update(width=width,height=height,raw=False,note=tr('Lumen 16-bit 线性 DNG · 已应用编辑'))
         info['photo'] = photo_metadata.embedded(path)
+        _copy_lens_info(info, path)
     elif path.suffix.lower() in RAW_EXTENSIONS:
         import rawpy
         tags, warning = white_balance.metadata(path)
@@ -190,8 +191,8 @@ def _load_image(path, preview_limit=1600, develop_reference=False, clip=False):
             if conversion is not None:
                 camera_to_srgb(rgb, conversion, clip)
             if preview_limit or develop_reference:
-                curve,label = develop.camera_curve(raw, np.clip(resize_limit(rgb, 800), 0, 1), path)
-                info['develop'] = dict(mode='camera',curve=curve,source=label)
+                # 2.3.1: the camera picture's brightness (tone curve) and colourfulness (chroma).
+                info['develop'] = develop.camera_reference(raw, resize_limit(rgb, 800), path)
         info['note'] = tr('LibRaw · 相机白平衡 · 线性 sRGB · 16-bit 解码')
     elif path.suffix.lower() in {'.tif', '.tiff', '.png'}:
         arr = cv2.imdecode(np.fromfile(str(path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
@@ -222,7 +223,9 @@ def _load_image(path, preview_limit=1600, develop_reference=False, clip=False):
                     note = tr('16-bit 输入按 sRGB 解读（这个文件的 ICC 配置文件无法读取）') if note else tr('sRGB · 16-bit')
             info.update(width=rgb.shape[1], height=rgb.shape[0], raw=False, note=note)
             info['photo'] = embedded or photo_metadata.from_tags(tags)
-            if not embedded:
+            if embedded:
+                _copy_lens_info(info, path)
+            else:
                 _lens_info(info, tags)
         else:
             return load_pillow(path, preview_limit)
@@ -240,6 +243,18 @@ def _lens_info(info, tags):
     except Exception:
         log.exception('lens identification failed')
         info['lens_match'] = None
+
+
+def _copy_lens_info(info, path):
+    """``_lens_info`` of a picture LUMEN rendered itself (an AI copy, a DNG / TIFF export), 2.3.1:
+    its lens facts travel in the file, with whether it is already corrected or cropped; copies of
+    earlier versions take them from the original next to them.  Never fails a load."""
+    try:
+        info['lens_exif'], info['lens_match'] = lens.from_copy(
+            photo_metadata.processing(path), info.get('photo'), path, (info['width'], info['height']))
+    except Exception:
+        log.exception('lens identification of a rendered copy failed')
+        info['lens_exif'] = info['lens_match'] = None
 
 
 def camera_matrix(raw, model):
@@ -855,7 +870,8 @@ def color_stage(x, edits, space=None):
         # Process 2: curves, then one OkLCh pass (saturation, mixer, monochrome, grading).
         a = edits['adjustments']
         x = apply_curves(x, edits['curves'], edits.get('curve_mode', 'linear'), edits.get('tone_curve'))
-        x = color.adjust(x, a['saturation'], a['vibrance'], edits['hsl'], edits.get('monochrome', False),
+        # 2.3.1: the camera colour reference of the develop starting point rides on saturation.
+        x = color.adjust(x, tone.look_saturation(edits), a['vibrance'], edits['hsl'], edits.get('monochrome', False),
                          edits.get('grading', {}), space)
         return np.clip(x, 0, 1).astype(np.float32)
     x = saturation(x, edits['adjustments'])
@@ -1598,6 +1614,14 @@ def _fit_jpeg(image, quality, budget, options):
     if best is not None:
         return best[0], best[1], True
     return _jpeg(image, JPEG_MIN_QUALITY, options, 2), JPEG_MIN_QUALITY, False
+
+
+def export_provenance(source, info, edits):
+    """What an exported DNG / TIFF records about how it was made (2.3.1): the original's name and
+    its lens facts (``lens.copy_record``), so reopening the export neither loses the lens nor
+    corrects it twice.  None when the photo has no lens data."""
+    record = lens.copy_record((info or {}).get('lens_exif'), edits, (info or {}).get('lens_match'))
+    return dict(operation='export', source=Path(source).name, lens=record) if record else None
 
 
 def export_image(path, rgb, quality=95, photo=None, provenance=None, metadata=None, space=None, max_kb=None):

@@ -386,7 +386,7 @@ def tonal2_inputs(a, spec, shape):
 def lab_stage(edits):
     """True when process 2's colour stage needs its OkLCh pass."""
     a = edits['adjustments']
-    return bool(a['saturation'] or a['vibrance'] or np.any(edits['hsl']) or edits.get('monochrome', False)
+    return bool(tone.look_saturation(edits) or a['vibrance'] or np.any(edits['hsl']) or edits.get('monochrome', False)
                 or color.graded(edits.get('grading', {})))
 
 
@@ -408,7 +408,8 @@ def color2_inputs(edits):
         return inputs
     shift, chroma, light = color.mixer_tables(edits['hsl'])
     grading = edits.get('grading', {})
-    inputs.update(saturation=scalar(1 + a['saturation'] / 100), vibrance=scalar(a['vibrance'] / 100),
+    # 2.3.1: ``look_saturation`` folds the camera colour reference into the saturation factor.
+    inputs.update(saturation=scalar(1 + tone.look_saturation(edits) / 100), vibrance=scalar(a['vibrance'] / 100),
                   chroma_keep=scalar(0. if edits.get('monochrome', False) else 1.),
                   hue_shift=shift, chroma_lut=chroma, light_lut=light, vibrance_lut=color.vibrance_weights(),
                   balance=scalar(grading.get('balance', 0) / 300))
