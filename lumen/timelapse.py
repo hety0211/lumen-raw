@@ -255,9 +255,16 @@ def photo_size(path):
         from . import dng
         if not (suffix == '.dng' and dng.is_rendered(path)):
             import rawpy
-            with rawpy.imread(str(path)) as raw:
-                w, h = raw.sizes.width, raw.sizes.height
-                return (h, w) if raw.sizes.flip in (5, 6) else (w, h)
+            try:
+                with rawpy.imread(str(path)) as raw:
+                    return engine.raw_size(raw, path)      # 2.3.2: without Sony tile padding
+            except rawpy.LibRawFileUnsupportedError:
+                from . import previews
+                found = previews.exiftool_jpeg(path)      # 2.3.2: Sony "Compressed RAW 2"
+                if found is None or found[2] is None:
+                    raise
+                w, h = found[2]
+                return (h, w) if found[1] in (5, 6) else (w, h)
     from PIL import Image, ImageOps
     with Image.open(path) as image:
         upright = ImageOps.exif_transpose(image)

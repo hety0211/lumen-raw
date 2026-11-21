@@ -469,8 +469,11 @@ def _original_of(processing, path):
         if exif is None:
             return None
         import rawpy
+        from .engine import raw_size
         with rawpy.imread(str(original)) as raw:
-            frame = (raw.sizes.width, raw.sizes.height)
+            width, height = raw_size(raw, original)
+            # Sensor orientation, as before; 2.3.2: without Sony tile padding.
+            frame = (height, width) if raw.sizes.flip in (5, 6) else (width, height)
         return exif, frame
     except Exception:
         log.info('original %s of a copy could not be read', original, exc_info=True)

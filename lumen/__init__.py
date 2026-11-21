@@ -9,7 +9,7 @@ from . import native_stdio
 native_stdio.repair()
 from . import performance
 performance.configure()
-__version__ = '2.3.1'
+__version__ = '2.3.2'
 # 1.8.0: Windows records the microphone through Qt Multimedia's Media Foundation backend; the
 # packages leave out Qt's FFmpeg backend, so source runs use the same one.
 if os.name == 'nt':

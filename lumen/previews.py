@@ -51,6 +51,48 @@ def libraw_preview(raw):
     return orient(data[..., :3], raw.sizes.flip) if data.ndim == 3 else None
 
 
+#: EXIF Orientation → LibRaw ``sizes.flip``.
+EXIF_FLIP = {1: 0, 3: 3, 6: 6, 8: 5}
+
+
+def exiftool_jpeg(path):
+    """``(jpeg bytes, flip, (width, height) or None)`` of the largest embedded JPEG, read with
+    ExifTool, for RAW files LibRaw cannot open at all (2.3.2: Sony "Compressed RAW 2" of the
+    ILCE-7M5); ``(width, height)`` is the camera's picture size (DefaultCropSize).  None without
+    ExifTool or a JPEG."""
+    import json
+    import subprocess
+    from .white_balance import exiftool
+    command = exiftool()
+    if command is None:
+        return None
+    env = dict(os.environ, LC_ALL='C', LANG='C', LC_CTYPE='C')
+    flags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+    target = ['--', str(Path(path).resolve())]
+    try:
+        result = subprocess.run([*command, '-config', '', '-j', '-n', '-charset', 'filename=UTF8', '-IFD0:Orientation',
+                                 '-JpgFromRawLength', '-PreviewImageLength', '-DefaultCropSize', *target],
+                                capture_output=True, timeout=15, env=env, creationflags=flags)
+        if result.returncode:
+            return None
+        tags = json.loads(result.stdout.decode('utf-8'))[0]
+        lengths = {name: tags.get(name + 'Length') for name in ('JpgFromRaw', 'PreviewImage')}
+        lengths = {name: value for name, value in lengths.items() if isinstance(value, int) and value > 0}
+        if not lengths:
+            return None
+        result = subprocess.run([*command, '-config', '', '-b', '-charset', 'filename=UTF8',
+                                 '-' + max(lengths, key=lengths.get), *target],
+                                capture_output=True, timeout=30, env=env, creationflags=flags)
+    except (OSError, ValueError, IndexError, subprocess.TimeoutExpired):
+        log.info('ExifTool preview of %s unavailable', path, exc_info=True)
+        return None
+    if result.returncode or not result.stdout.startswith(b'\xff\xd8'):
+        return None
+    size = str(tags.get('DefaultCropSize', '')).split()
+    size = (int(float(size[0])), int(float(size[1]))) if len(size) == 2 else None
+    return result.stdout, EXIF_FLIP.get(tags.get('Orientation'), 0), size
+
+
 def _boxes(buffer):
     position = 0
     while position + 8 <= len(buffer):
@@ -273,8 +315,24 @@ def embedded_view(path, long_edge=VIEW_EDGE):
     at most ``long_edge``; ``(array, full_size)`` where ``full_size`` is True when the preview has
     at least half the sensor's pixels (good enough to judge focus at 100 %).  None without one."""
     import rawpy
-    with rawpy.imread(str(path)) as raw:
-        flip, pixels = raw.sizes.flip, raw.sizes.width * raw.sizes.height
+    try:
+        opened = rawpy.imread(str(path))
+    except rawpy.LibRawFileUnsupportedError:
+        found = exiftool_jpeg(path)       # 2.3.2: a format LibRaw cannot open
+        if found is None:
+            return None
+        data, flip, size = found
+        try:
+            with Image.open(io.BytesIO(data)) as probe:
+                width, height = probe.size
+            return jpeg_view(data, long_edge, flip), size is None or width * height >= .5 * size[0] * size[1]
+        except Exception:
+            log.info('embedded JPEG of %s unreadable', path, exc_info=True)
+            return None
+    with opened as raw:
+        from .engine import raw_size
+        width, height = raw_size(raw, path)
+        flip, pixels = raw.sizes.flip, width * height
         try:
             thumb = raw.extract_thumb()
         except Exception:

@@ -164,13 +164,20 @@ def _load_image(path, preview_limit=1600, develop_reference=False, clip=False):
         tags, warning = white_balance.metadata(path)
         if tags.get('NEFCompression') in NIKON_HIGH_EFFICIENCY:
             return load_embedded(path, preview_limit, info, (tags, warning))
-        with rawpy.imread(str(path)) as raw:
+        try:
+            opened = rawpy.imread(str(path))
+        except rawpy.LibRawFileUnsupportedError:
+            # 2.3.2: a format LibRaw does not know at all (Sony "Compressed RAW 2", ILCE-7M5).
+            return load_embedded(path, preview_limit, info, (tags, warning), known=False)
+        with opened as raw:
             try:
                 raw.unpack()
             except (rawpy.LibRawFileUnsupportedError, rawpy.LibRawDataError):
                 # Not recognised from the metadata: an unsupported compression or damaged sensor data.
                 return load_embedded(path, preview_limit, info, (tags, warning), known=False)
-            info['width'], info['height'] = ((raw.sizes.height,raw.sizes.width) if raw.sizes.flip in (5,6) else (raw.sizes.width,raw.sizes.height))
+            # 2.3.2: before postprocess, which changes ``raw.sizes`` of a half-size decode.
+            area, flip = picture_area(raw, path), raw.sizes.flip
+            info['width'], info['height'] = raw_size(raw, path)
             info['raw'] = True
             info['camera_model'] = tags.get('Model', '')
             matrix = camera_matrix(raw, info['camera_model'])
@@ -186,7 +193,9 @@ def _load_image(path, preview_limit=1600, develop_reference=False, clip=False):
             rgb = raw.postprocess(use_camera_wb=True, no_auto_bright=True, output_bps=16, gamma=(1, 1),
                                   output_color=rawpy.ColorSpace.sRGB if conversion is None else rawpy.ColorSpace.raw,
                                   half_size=bool(preview_limit), user_flip=None,
-                                  highlight_mode=rawpy.HighlightMode.Blend).astype(np.float32)
+                                  highlight_mode=rawpy.HighlightMode.Blend)
+            # 2.3.2: the picture without LibRaw's tile padding (a view; astype copies only the picture).
+            rgb = crop_picture(rgb, area, flip, 2 if preview_limit else 1).astype(np.float32)
             rgb /= 65535  # in place: a 61 MP frame would otherwise briefly need a second 700 MB copy
             if conversion is not None:
                 camera_to_srgb(rgb, conversion, clip)
@@ -255,6 +264,61 @@ def _copy_lens_info(info, path):
     except Exception:
         log.exception('lens identification of a rendered copy failed')
         info['lens_exif'] = info['lens_match'] = None
+
+
+#: Sony RAW extensions (2.3.2: tile padding, see ``picture_area``).
+SONY_RAW = {'.arw', '.sr2', '.srf'}
+#: Sony's lossless compressed RAW stores the sensor in tiles of this many pixels.
+SONY_TILE = 512
+
+
+def picture_area(raw, path):
+    """``(x0, y0, width, height)`` of the picture inside LibRaw's visible frame, in sensor
+    orientation, when LibRaw shows more than the camera's picture; None otherwise (2.3.2).
+
+    Sony's lossless compressed RAW (ILCE-7M5 / A7 V, ILCE-1M2 / A1 II, DSC-RX1RM3…) stores the
+    sensor in 512-pixel tiles.  For bodies the bundled LibRaw 0.22 has no size entry for, it shows
+    the whole tile grid — 7168 × 5120 for the A7 V's 7008 × 4672 picture, with empty black bands at
+    the right and bottom and the wrong aspect ratio.  The file's DefaultCrop is the camera's
+    picture (as Lightroom shows it).  Bodies LibRaw knows keep its own frame: their default crop
+    only trims a few edge pixels, and photos edited earlier keep their size."""
+    if Path(path).suffix.lower() not in SONY_RAW:
+        return None
+    s = raw.sizes
+    if s.left_margin or s.top_margin or s.width % SONY_TILE or s.height % SONY_TILE:
+        return None
+    x0, y0, width, height = s.crop_left_margin, s.crop_top_margin, s.crop_width, s.crop_height
+    if width <= 0 or height <= 0 or x0 < 0 or y0 < 0 or x0 + width > s.width or y0 + height > s.height:
+        return None
+    if s.width - width <= .01 * s.width and s.height - height <= .01 * s.height:
+        return None
+    return x0, y0, width, height
+
+
+def raw_size(raw, path):
+    """``(width, height)`` of a RAW photo as displayed (orientation applied), 2.3.2."""
+    s = raw.sizes
+    area = picture_area(raw, path)
+    width, height = (area[2], area[3]) if area else (s.width, s.height)
+    return (height, width) if s.flip in (5, 6) else (width, height)
+
+
+def crop_picture(image, area, flip, scale=1):
+    """View of ``picture_area`` in a decode LibRaw already oriented by ``flip`` (0, 3, 5, 6);
+    ``scale`` 2 for a half-size decode.  ``image`` itself when ``area`` is None (2.3.2)."""
+    if area is None:
+        return image
+    x0, y0, width, height = (v // scale for v in area)
+    x1, y1 = x0 + width, y0 + height
+    rows, cols = image.shape[:2]
+    w, h = (rows, cols) if flip in (5, 6) else (cols, rows)        # sensor-oriented size
+    if flip == 3:
+        return image[h - y1:h - y0, w - x1:w - x0]
+    if flip == 5:        # 90° counter-clockwise: sensor x runs bottom to top
+        return image[w - x1:w - x0, y0:y1]
+    if flip == 6:        # 90° clockwise: sensor y runs right to left
+        return image[x0:x1, h - y1:h - y0]
+    return image[y0:y1, x0:x1]
 
 
 def camera_matrix(raw, model):
@@ -331,9 +395,26 @@ def load_embedded(path, limit, info, metadata=None, known=True):
     import rawpy
     from . import previews
     # A handle whose unpack failed no longer returns previews; open the file again.
-    with rawpy.imread(str(path)) as raw:
-        preview = previews.libraw_preview(raw)
-        width, height = raw.sizes.width, raw.sizes.height
+    try:
+        opened = rawpy.imread(str(path))
+    except rawpy.LibRawFileUnsupportedError:
+        opened = None
+    if opened is None:
+        # 2.3.2: LibRaw cannot open the file at all (Sony "Compressed RAW 2"): ExifTool reads the JPEG.
+        found = previews.exiftool_jpeg(path)
+        preview = width = height = None
+        if found is not None:
+            data, flip, size = found
+            try:
+                preview = previews.jpeg_view(data, None, flip)
+            except Exception:
+                log.info('embedded JPEG of %s unreadable', path, exc_info=True)
+            if preview is not None:
+                width, height = size or (preview.shape[1], preview.shape[0])
+    else:
+        with opened as raw:
+            preview = previews.libraw_preview(raw)
+            width, height = raw_size(raw, path)
     if preview is None or preview.shape[0] * preview.shape[1] < .5 * width * height:
         size = f'{preview.shape[1]} × {preview.shape[0]}' if preview is not None else tr('无')
         raise ValueError(tr('内置 LibRaw 无法解码这个文件的传感器数据（例如尼康“高效率”压缩），文件内嵌的预览（{size}）也不足以编辑。请在相机中改用无损压缩 RAW，或先用厂商软件转换为 DNG / TIFF。', size=size))
